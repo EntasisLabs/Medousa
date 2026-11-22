@@ -858,11 +858,17 @@ fn notes_visual_acceptance() {
         }
         if suffix == "narrow" {
             // Exercise the breadcrumb focus chrome, not just its idle paint.
-            let group = app.world().resource::<Notes>().unwrap().actions.values()
+            let group = app
+                .world()
+                .resource::<Notes>()
+                .unwrap()
+                .actions
+                .values()
                 .find_map(|a| match a {
                     Action::Picker(Picker::Group, anchor) => Some(*anchor),
                     _ => None,
-                }).unwrap();
+                })
+                .unwrap();
             assert!(request_focus(app.world_mut(), group));
             rndr_paint::frame(&mut app);
         }
@@ -1170,7 +1176,10 @@ fn default_sidebar_lists_loaded_notes_by_date_without_opening_folders() {
     let mut n = std::mem::take(w.resource_mut::<Notes>().unwrap());
     assert_eq!(n.browse, Browse::Recent);
     assert!(w.get::<Hidden>(n.search.unwrap()).is_some());
-    n.list = vec![summary("a/archive.md", "Archived", "2021-03-04T00:00:00Z"), summary("b/design.md", "Design", "2022-04-02T00:00:00Z")];
+    n.list = vec![
+        summary("a/archive.md", "Archived", "2021-03-04T00:00:00Z"),
+        summary("b/design.md", "Design", "2022-04-02T00:00:00Z"),
+    ];
     n.list[1].kind = "Project".into();
     let (nodes, _) = library_model(&mut n);
     assert!(nodes.iter().all(|node| node.parent.is_none()));
@@ -1321,24 +1330,39 @@ fn notes_modes_appearances_widths_render_fixture() {
     // Activation requires a root-identity reply before it admits note loads.
     // Exercise that real handshake rather than misrouting Loaded to Identity.
     let identity = drain_commands(app.world_mut()).pop().unwrap();
-    assert!(matches!(identity.operation, Operation::Manage(management::Command::Identity)));
-    apply(app.world_mut(), NoteUpdate {
-        command: identity,
-        result: Ok(Response::Managed(json!({"activeRootId":"fixture-root","roots":[]}))),
-    });
+    assert!(matches!(
+        identity.operation,
+        Operation::Manage(management::Command::Identity)
+    ));
+    apply(
+        app.world_mut(),
+        NoteUpdate {
+            command: identity,
+            result: Ok(Response::Managed(
+                json!({"activeRootId":"fixture-root","roots":[]}),
+            )),
+        },
+    );
     let listing = drain_commands(app.world_mut());
     assert_eq!(listing.len(), 1);
     assert!(matches!(listing[0].operation, Operation::List { .. }));
-    apply(app.world_mut(), NoteUpdate {
-        command: listing.into_iter().next().unwrap(),
-        result: Ok(Response::List(VaultNotesListResponse {
-            notes: vec![summary("fixtures/synthetic.md", "Synthetic parity fixture", "2026-01-01T00:00:00Z")],
-            vault_generation: Some(1),
-            next_cursor: None,
-            truncated: false,
-            reset_required: false,
-        })),
-    });
+    apply(
+        app.world_mut(),
+        NoteUpdate {
+            command: listing.into_iter().next().unwrap(),
+            result: Ok(Response::List(VaultNotesListResponse {
+                notes: vec![summary(
+                    "fixtures/synthetic.md",
+                    "Synthetic parity fixture",
+                    "2026-01-01T00:00:00Z",
+                )],
+                vault_generation: Some(1),
+                next_cursor: None,
+                truncated: false,
+                reset_required: false,
+            })),
+        },
+    );
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
     app.world_mut().insert_resource(engine);
     // Intentionally synthetic: no daemon IO, live note writes or real secrets.
@@ -1439,13 +1463,25 @@ fn group_popup_keeps_library_in_place_and_search_preserves_scope() {
     let w = app.world_mut();
     let n = w.resource::<Notes>().unwrap();
     let tree = n.tree.unwrap().root;
-    let trigger = n.actions.values().find(|a| matches!(a, Action::Picker(Picker::Group, _))).unwrap().clone();
+    let trigger = n
+        .actions
+        .values()
+        .find(|a| matches!(a, Action::Picker(Picker::Group, _)))
+        .unwrap()
+        .clone();
     click(w, trigger);
     let n = w.resource::<Notes>().unwrap();
     assert_eq!(n.tree.unwrap().root, tree);
     let (menu, items) = n.menu.as_ref().unwrap();
-    let id = *items.iter().find(|(_,a)| matches!(a, Action::Group(Some("projects/")))).unwrap().0;
-    let picked = rndr_ui::menu::MenuPicked { menu: menu.root, item: id };
+    let id = *items
+        .iter()
+        .find(|(_, a)| matches!(a, Action::Group(Some("projects/"))))
+        .unwrap()
+        .0;
+    let picked = rndr_ui::menu::MenuPicked {
+        menu: menu.root,
+        item: id,
+    };
     send(w, picked);
     app.update();
     let w = app.world_mut();

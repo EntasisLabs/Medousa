@@ -268,7 +268,13 @@ pub fn mount(world: &mut World, parent: Entity) {
         height: Size::Hug,
         ..Layout::row()
     },));
-    world.insert(header, Align { items: Items::Center, justify: Justify::Start });
+    world.insert(
+        header,
+        Align {
+            items: Items::Center,
+            justify: Justify::Start,
+        },
+    );
     set_parent(world, header, sidebar);
     let search_row = world.spawn((Layout {
         width: Size::Fill,

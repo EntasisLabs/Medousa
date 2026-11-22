@@ -965,7 +965,9 @@ pub(super) fn apply(
             control(w, p, c, "History", Action::History, true);
         }
         Kind::Diff(path) => {
-            if value["work_id"].as_str() != Some(&work) || value["path"].as_str() != Some(path.as_str()) {
+            if value["work_id"].as_str() != Some(&work)
+                || value["path"].as_str() != Some(path.as_str())
+            {
                 caption(w, p, "Diff identity mismatch · refresh Changes.");
             } else if value["binary"].as_bool() == Some(true) {
                 caption(w, p, "Binary file · no text diff available.");
@@ -1103,7 +1105,11 @@ pub(super) fn apply(
             if let Some(runs) = value["runs"].as_array() {
                 // A list can lag a timed-out admission; it is not proof of absence.
                 if c.workbench.run_uncertain.contains(&work) {
-                    caption(w, p, "Previous start has unknown outcome. Do not replay it; inspect retained runs and reconcile the original admission.");
+                    caption(
+                        w,
+                        p,
+                        "Previous start has unknown outcome. Do not replay it; inspect retained runs and reconcile the original admission.",
+                    );
                 }
                 for run in runs.iter().take(64) {
                     if run["work_id"].as_str() == Some(&work) {

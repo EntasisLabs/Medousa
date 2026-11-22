@@ -56,7 +56,13 @@ pub(super) fn sidebar_header(w: &mut World, n: &mut Notes, header: Entity) {
         let id = next();
         if !matches!(picker, Picker::Vault) {
             let slash = text(w, header, "/", Typography::Label).expect("breadcrumb separator");
-            w.insert(slash, UiStyle { foreground: Some(rndr_ui::Token::Secondary.into()), ..UiStyle::default() });
+            w.insert(
+                slash,
+                UiStyle {
+                    foreground: Some(rndr_ui::Token::Secondary.into()),
+                    ..UiStyle::default()
+                },
+            );
             w.get_mut::<Layout>(slash).unwrap().width = Size::Hug;
         }
         let h = visual::document_action(w, header, id, label, true);

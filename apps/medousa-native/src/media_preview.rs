@@ -460,7 +460,13 @@ fn lightbox_action(
     let h = crate::native_style::icon_action(world, parent, id, icon, name, true);
     let face = world.get::<Parent>(h.label).unwrap().entity;
     world.insert(face, Align::center());
-    world.insert(face, rndr_ui::UiStyle { padding: Some(rndr_ui::Space::Zero), ..Default::default() });
+    world.insert(
+        face,
+        rndr_ui::UiStyle {
+            padding: Some(rndr_ui::Space::Zero),
+            ..Default::default()
+        },
+    );
     world.get_mut::<Layout>(h.label).unwrap().width = Size::Hug;
     let mut layer = face;
     while layer != h.root {
@@ -474,11 +480,14 @@ fn lightbox_action(
 // Reserve the readout's place so changing zoom doesn't shift the buttons
 // under the pointer. Center the measured text, not a padded label box.
 fn zoom_readout(world: &mut World, dock: Entity) -> Entity {
-    let slot = world.spawn((Layout {
-        width: Size::Px(50.),
-        height: Size::Px(crate::native_style::ACTION_SIZE),
-        ..Layout::row()
-    }, Align::center()));
+    let slot = world.spawn((
+        Layout {
+            width: Size::Px(50.),
+            height: Size::Px(crate::native_style::ACTION_SIZE),
+            ..Layout::row()
+        },
+        Align::center(),
+    ));
     set_parent(world, slot, dock);
     let label = rndr_ui::text(world, slot, "Fit", rndr_ui::Typography::Secondary).unwrap();
     world.insert(label, LabelBox::CONTENT);
@@ -487,7 +496,14 @@ fn zoom_readout(world: &mut World, dock: Entity) -> Entity {
 }
 
 fn lightbox_close(world: &mut World, parent: Entity) {
-    let h = crate::native_style::icon_action(world, parent, 0x494d04, Icon::X, "Close image preview", true);
+    let h = crate::native_style::icon_action(
+        world,
+        parent,
+        0x494d04,
+        Icon::X,
+        "Close image preview",
+        true,
+    );
     *world.get_mut::<Layout>(h.root).unwrap() = Layout {
         width: Size::Px(32.),
         height: Size::Px(32.),

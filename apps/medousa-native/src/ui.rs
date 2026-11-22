@@ -164,9 +164,17 @@ pub fn app() -> App {
         KeyBinding::new("chat.send", [Keystroke::named(NamedKey::Enter).primary()])
             .context("Chat composer"),
     );
+    // Tests render the default theme, not whatever this machine has chosen.
+    let medousa = crate::theme::resolve(&if cfg!(test) {
+        crate::theme::default_id()
+    } else {
+        crate::theme::active_id()
+    });
+    app.world_mut().insert_resource(medousa.radii);
     let theme = UiTheme {
         density: Density::Compact,
         ramp: visual::ramp(),
+        palette: medousa.palette,
         ..Default::default()
     };
     rndr_ui::apply_theme_bridge(app.world_mut(), theme);
@@ -1234,11 +1242,15 @@ fn update(world: &mut World) {
                 continue;
             }
             crate::surfaces::SurfaceId::Calendar => {
-                if let Some(host) = host { crate::calendar::action(world, &host); }
+                if let Some(host) = host {
+                    crate::calendar::action(world, &host);
+                }
                 continue;
             }
             crate::surfaces::SurfaceId::Peers => {
-                if let Some(host) = host { crate::peers::action(world, &host); }
+                if let Some(host) = host {
+                    crate::peers::action(world, &host);
+                }
                 continue;
             }
             crate::surfaces::SurfaceId::Chat => {}

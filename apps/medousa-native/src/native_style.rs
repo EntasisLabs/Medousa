@@ -231,8 +231,9 @@ pub fn canvas() -> Token {
 pub fn navigation() -> Token {
     Token::Navigation
 }
+/// The rail shares the navigation plane, as in medousa-home's shell.
 pub fn rail() -> Token {
-    Token::Canvas
+    Token::Navigation
 }
 pub fn raised() -> Token {
     Token::Raised
@@ -246,16 +247,16 @@ pub fn text() -> Token {
 pub fn secondary() -> Token {
     Token::Secondary
 }
+/// User bubbles are a quiet wash, not the selection color.
 pub fn user() -> Token {
-    Token::Selected
+    Token::Raised
 }
 
 pub fn color(world: &World, token: Token) -> Color {
-    world
-        .resource::<UiTheme>()
-        .cloned()
-        .unwrap_or_default()
-        .color(token)
+    match world.resource::<UiTheme>() {
+        Some(theme) => theme.color(token),
+        None => UiTheme::default().color(token),
+    }
 }
 
 /// Reapply the explicit RNDR bridge only when effective settings change.

@@ -31,6 +31,9 @@ fn fixture() -> (App, tokio::sync::mpsc::UnboundedReceiver<Request>) {
 #[test]
 fn retained_composer_follows_live_appearance_without_pinning_mount_color() {
     let (mut app, _rx) = fixture();
+    // RNDR eases fill changes; this checks where the fill lands, not the fade.
+    app.world_mut()
+        .insert_resource(rndr_ui::InteractionMotion::snap());
     let ui = *app.world().resource::<Ui>().unwrap();
     let document = app.world().resource::<Model>().unwrap().document;
     for dark in [true, false, true] {
@@ -314,10 +317,13 @@ fn assistant_image_visual_acceptance() {
     let bytes = std::fs::read("verification/concepts/01-conversation-first.png").unwrap();
     let mut exporter = rndr_render::Exporter::new().unwrap();
     for (width, height, suffix) in [(1200, 850, "wide"), (760, 650, "narrow")] {
-        publish_system_appearance(app.world_mut(), SystemAppearance {
-            dark: Some(suffix == "wide"),
-            ..Default::default()
-        });
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(suffix == "wide"),
+                ..Default::default()
+            },
+        );
         app.world_mut()
             .insert_resource(Viewport::new(width as f32, height as f32));
         for _ in 0..8 {

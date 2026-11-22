@@ -120,8 +120,8 @@ pub fn tick(world: &mut World) {
         .unwrap_or_default();
     for update in updates {
         match update {
-            Update::PeerManagement(u) => crate::peer_management::apply(world,u),
-            Update::Peers(u) => crate::peers::apply(world,u),
+            Update::PeerManagement(u) => crate::peer_management::apply(world, u),
+            Update::Peers(u) => crate::peers::apply(world, u),
             Update::Calendar(u) => crate::calendar::apply(world, u),
             Update::Note(u) => crate::notes::apply(world, u),
             Update::Review(u) => crate::reviews::apply(world, u),
@@ -161,9 +161,21 @@ pub fn dispatch(world: &mut World) {
     let commands = crate::notes::drain_commands(world)
         .into_iter()
         .map(Command::Note)
-        .chain(crate::calendar::take_commands(world).into_iter().map(Command::Calendar))
-        .chain(crate::peers::take_commands(world).into_iter().map(Command::Peers))
-        .chain(crate::peer_management::take_commands(world).into_iter().map(Command::PeerManagement))
+        .chain(
+            crate::calendar::take_commands(world)
+                .into_iter()
+                .map(Command::Calendar),
+        )
+        .chain(
+            crate::peers::take_commands(world)
+                .into_iter()
+                .map(Command::Peers),
+        )
+        .chain(
+            crate::peer_management::take_commands(world)
+                .into_iter()
+                .map(Command::PeerManagement),
+        )
         .chain(
             crate::reviews::take_commands(world)
                 .into_iter()

@@ -665,7 +665,9 @@ pub fn apply(w: &mut World, u: Update) {
             refresh(&mut s);
         }
         (kind, Err(error)) => {
-            if let Kind::File { path, .. } = &kind { s.file_errors.insert(path.clone()); }
+            if let Kind::File { path, .. } = &kind {
+                s.file_errors.insert(path.clone());
+            }
             s.message = error;
             if matches!(kind, Kind::Mutate { .. } | Kind::Review { .. }) {
                 s.uncertain = true;
@@ -673,7 +675,9 @@ pub fn apply(w: &mut World, u: Update) {
             s.confirmation = None;
         }
     }
-    if s.file_pending.is_none() { s.loading_path = None; }
+    if s.file_pending.is_none() {
+        s.loading_path = None;
+    }
     load_next_file(&mut s);
     view::render(w, &mut s);
     s.redraw = false;

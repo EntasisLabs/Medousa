@@ -1063,12 +1063,13 @@ mod tests {
         );
         app.update();
         assert_eq!(snapshot(app.world()).layout.tabs.len(), 1);
-        assert!(!app
-            .world()
-            .resource::<Deck>()
-            .unwrap()
-            .closed
-            .contains(&route));
+        assert!(
+            !app.world()
+                .resource::<Deck>()
+                .unwrap()
+                .closed
+                .contains(&route)
+        );
     }
     #[test]
     fn close_is_not_delete_and_reopening_restores_draft() {

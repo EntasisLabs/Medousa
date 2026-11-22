@@ -674,7 +674,11 @@ fn presentation_tabs_keep_file_navigation_out_of_summary_and_details_collapsed()
     let mut w = seeded();
     let s = w.resource::<State>().unwrap();
     assert!(!s.changes);
-    assert!(!s.actions.values().any(|a| matches!(a, Action::File(_) | Action::ToggleFile(_))));
+    assert!(
+        !s.actions
+            .values()
+            .any(|a| matches!(a, Action::File(_) | Action::ToggleFile(_)))
+    );
     assert!(
         !w.query::<Label>()
             .iter()
@@ -766,19 +770,39 @@ pub(crate) fn assert_visual_geometry(w: &World, changes: bool) {
             );
         }
     } else {
-        let files = label_rect(&format!("{} changed files", w.resource::<State>().unwrap().review["changed_files"].as_array().unwrap().len()));
-        let diff = w.query::<Semantics>().into_iter().find(|(e, sem)|
-            sem.name.as_deref() == Some("Sealed changes to src/main.rs")
-            && crate::surfaces::descendant(w, *e, detail)
-        ).unwrap().0;
+        let files = label_rect(&format!(
+            "{} changed files",
+            w.resource::<State>().unwrap().review["changed_files"]
+                .as_array()
+                .unwrap()
+                .len()
+        ));
+        let diff = w
+            .query::<Semantics>()
+            .into_iter()
+            .find(|(e, sem)| {
+                sem.name.as_deref() == Some("Sealed changes to src/main.rs")
+                    && crate::surfaces::descendant(w, *e, detail)
+            })
+            .unwrap()
+            .0;
         let rect = w.get::<Rect>(diff).unwrap();
-        assert!(rect.h > 150., "Diff must retain a usable viewport: {rect:?}");
-        assert!(rect.w > detail_rect.w - 12., "Accordion diffs use the full reading width: {rect:?}; detail {detail_rect:?}");
+        assert!(
+            rect.h > 150.,
+            "Diff must retain a usable viewport: {rect:?}"
+        );
+        assert!(
+            rect.w > detail_rect.w - 12.,
+            "Accordion diffs use the full reading width: {rect:?}; detail {detail_rect:?}"
+        );
         assert_eq!(w.get::<Layout>(diff).unwrap().height, Size::Fill);
         for (e, label) in w.query::<Label>() {
             if label.text.contains("inspect_sealed_changes") {
                 let row = w.get::<Rect>(e).unwrap();
-                assert!(row.h >= crate::diff_presentation::row_height(w) - 0.1, "Diff code line must not clip: {row:?}");
+                assert!(
+                    row.h >= crate::diff_presentation::row_height(w) - 0.1,
+                    "Diff code line must not clip: {row:?}"
+                );
             }
         }
         assert!(
@@ -802,21 +826,31 @@ fn diff_rows_use_code_metrics_without_altering_source() {
     value["hunks"][0]["lines"][1]["content"] = json!(format!("{long}\n"));
     let w = World::new();
     let (rows, _) = crate::diff_presentation::rows(&w, &value);
-    assert!(rows.iter().all(|r| r.height == crate::diff_presentation::row_height(&w)));
+    assert!(
+        rows.iter()
+            .all(|r| r.height == crate::diff_presentation::row_height(&w))
+    );
     assert!(rows[2].text.ends_with(&long));
 }
 
 pub(crate) fn scroll_visual_diff_to_end(w: &mut World) {
-    let root = w.query::<Semantics>().into_iter().find(|(_, sem)|
-        sem.name.as_deref() == Some("Sealed changes to src/main.rs")
-    ).unwrap().0;
+    let root = w
+        .query::<Semantics>()
+        .into_iter()
+        .find(|(_, sem)| sem.name.as_deref() == Some("Sealed changes to src/main.rs"))
+        .unwrap()
+        .0;
     rndr_ui::collections::VirtualViewHandle { root }
-        .jump(w, rndr_ui::collections::ItemId(81), 0).unwrap();
+        .jump(w, rndr_ui::collections::ItemId(81), 0)
+        .unwrap();
 }
 pub(crate) fn assert_visual_diff_end(w: &World) {
-    assert!(w.query::<Label>().into_iter().any(|(_, label)|
-        label.text.contains("let result_80 = inspect_sealed_changes()")),
-        "Last sealed diff row must be reachable");
+    assert!(
+        w.query::<Label>().into_iter().any(|(_, label)| label
+            .text
+            .contains("let result_80 = inspect_sealed_changes()")),
+        "Last sealed diff row must be reachable"
+    );
 }
 
 fn multi_file(w: &mut World) {
@@ -1002,40 +1036,67 @@ pub(crate) fn visual_context(w: &mut World, expanded: bool) {
         {"kind":"deletion","old_line":2,"content":"let café = old(10);\n"},
         {"kind":"addition","new_line":2,"content":"let café = new(20);\n"}]}]);
     let s = w.resource_mut::<State>().unwrap();
-    s.expanded.clear(); s.expanded.insert("src/main.rs".into());
-    s.context.clear(); s.context_cache.clear(); if expanded { s.context.insert("src/main.rs".into()); }
-    s.file_cache.insert("src/main.rs".into(),value.clone());
-    s.file = Some(("src/main.rs".into(),value));
-    s.diff_positions.clear(); s.changes = true; s.redraw = true;
+    s.expanded.clear();
+    s.expanded.insert("src/main.rs".into());
+    s.context.clear();
+    s.context_cache.clear();
+    if expanded {
+        s.context.insert("src/main.rs".into());
+    }
+    s.file_cache.insert("src/main.rs".into(), value.clone());
+    s.file = Some(("src/main.rs".into(), value));
+    s.diff_positions.clear();
+    s.changes = true;
+    s.redraw = true;
     sync(w);
 }
 
 #[test]
 fn context_toggle_is_local_preserves_comment_authority_and_resets_on_revision_change() {
-    let mut w = seeded(); visual_context(&mut w,false);
+    let mut w = seeded();
+    visual_context(&mut w, false);
     take_commands(&mut w);
-    body(&mut w,"Keep my anchored draft");
+    body(&mut w, "Keep my anchored draft");
     let original = w.resource::<State>().unwrap().file.clone();
-    act(&mut w,Action::Context("src/main.rs".into())); sync(&mut w);
+    act(&mut w, Action::Context("src/main.rs".into()));
+    sync(&mut w);
     let s = w.resource::<State>().unwrap();
-    assert!(s.context.contains("src/main.rs")); assert_eq!(s.file,original);
-    assert_eq!(s.draft.body,"Keep my anchored draft");
-    assert!(w.query::<Label>().iter().any(|(_,l)| l.text == "Collapse unchanged context"));
+    assert!(s.context.contains("src/main.rs"));
+    assert_eq!(s.file, original);
+    assert_eq!(s.draft.body, "Keep my anchored draft");
+    assert!(
+        w.query::<Label>()
+            .iter()
+            .any(|(_, l)| l.text == "Collapse unchanged context")
+    );
     assert!(take_commands(&mut w).is_empty());
-    act(&mut w,Action::Context("src/main.rs".into())); sync(&mut w);
+    act(&mut w, Action::Context("src/main.rs".into()));
+    sync(&mut w);
     assert!(w.resource::<State>().unwrap().context.is_empty());
-    assert!(w.query::<Label>().iter().any(|(_,l)| l.text == "Show unchanged context"));
-    act(&mut w,Action::Context("src/main.rs".into()));
-    act(&mut w,Action::Candidate("older".into()));
+    assert!(
+        w.query::<Label>()
+            .iter()
+            .any(|(_, l)| l.text == "Show unchanged context")
+    );
+    act(&mut w, Action::Context("src/main.rs".into()));
+    act(&mut w, Action::Candidate("older".into()));
     assert!(w.resource::<State>().unwrap().context.is_empty());
 }
 
 #[test]
 fn incomplete_sealed_file_has_no_context_control() {
-    let mut w = seeded(); visual_context(&mut w,false);
+    let mut w = seeded();
+    visual_context(&mut w, false);
     let s = w.resource_mut::<State>().unwrap();
     s.file_cache.get_mut("src/main.rs").unwrap()["truncated"] = json!(true);
     s.context_cache.clear();
-    s.redraw = true; sync(&mut w);
-    assert!(!w.resource::<State>().unwrap().actions.values().any(|a| matches!(a,Action::Context(_))));
+    s.redraw = true;
+    sync(&mut w);
+    assert!(
+        !w.resource::<State>()
+            .unwrap()
+            .actions
+            .values()
+            .any(|a| matches!(a, Action::Context(_)))
+    );
 }

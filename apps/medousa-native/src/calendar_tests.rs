@@ -292,9 +292,13 @@ fn native_calendar_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         if name.starts_with("buttons-") {
-            let root = app.world().query::<Semantics>().iter()
+            let root = app
+                .world()
+                .query::<Semantics>()
+                .iter()
                 .find(|(_, sem)| sem.name.as_deref() == Some("Month"))
-                .map(|(e, _)| *e).unwrap();
+                .map(|(e, _)| *e)
+                .unwrap();
             let rect = *app.world().get::<Rect>(root).unwrap();
             let input = app.world_mut().resource_mut::<Input>().unwrap();
             input.pointer.position = [rect.x + rect.w / 2., rect.y + rect.h / 2.];
@@ -303,8 +307,14 @@ fn native_calendar_visual_acceptance() {
             input.pointer.pressed = name == "buttons-press";
             input.pointer.press_at = input.pointer.down.then_some(input.pointer.position);
             rndr_paint::frame(&mut app);
-            app.world_mut().resource_mut::<Input>().unwrap().pointer.pressed = false;
-            for _ in 0..3 { rndr_paint::frame(&mut app); }
+            app.world_mut()
+                .resource_mut::<Input>()
+                .unwrap()
+                .pointer
+                .pressed = false;
+            for _ in 0..3 {
+                rndr_paint::frame(&mut app);
+            }
         }
         if name.starts_with("reminders-") {
             let root = app.world().resource::<State>().unwrap().root;

@@ -95,12 +95,13 @@ fn exchange_back_retains_parent_draft_document_scroll_and_focus() {
         "fixture must exercise a nonzero parent viewport: {scroll:?}"
     );
     activate(&mut app, marker);
-    assert!(app
-        .world()
-        .resource::<Model>()
-        .unwrap()
-        .collaboration
-        .is_open());
+    assert!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .is_open()
+    );
     assert!(!app.world().has::<Hidden>(ui.exchange.root));
     assert_eq!(
         app.world().resource::<Focus>().unwrap().entity,
@@ -113,12 +114,13 @@ fn exchange_back_retains_parent_draft_document_scroll_and_focus() {
     assert!(!app.world().has::<Hidden>(ui.timeline));
 
     activate(&mut app, ui.exchange.back);
-    assert!(!app
-        .world()
-        .resource::<Model>()
-        .unwrap()
-        .collaboration
-        .is_open());
+    assert!(
+        !app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .is_open()
+    );
     assert!(app.world().has::<Hidden>(ui.exchange.root));
     assert_eq!(
         app.world().resource::<Focus>().unwrap().entity,
@@ -239,13 +241,14 @@ fn background_reply_is_routed_to_retained_parent_and_not_another_chat() {
             },
         },
     );
-    assert!(app
-        .world()
-        .resource::<Model>()
-        .unwrap()
-        .collaboration
-        .rows
-        .is_empty());
+    assert!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .rows
+            .is_empty()
+    );
     conversations::with_session(app.world_mut(), "parent", |world| {
         let m = world.resource::<Model>().unwrap();
         assert!(m.collaboration.is_open());
@@ -285,11 +288,12 @@ fn unanchored_history_is_collapsed_and_reconciles_to_correct_turn() {
     let ui = *app.world().resource::<Ui>().unwrap();
     assert!(!app.world().has::<Hidden>(ui.exchange.earlier));
     assert!(app.world().has::<Hidden>(ui.exchange.earlier_rows));
-    assert!(!app
-        .world()
-        .query::<Target>()
-        .iter()
-        .any(|(_, t)| t.0 == "older"));
+    assert!(
+        !app.world()
+            .query::<Target>()
+            .iter()
+            .any(|(_, t)| t.0 == "older")
+    );
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
@@ -361,15 +365,16 @@ fn finished_history_dismiss_restore_is_local_and_live_work_reappears() {
     receive(app.world_mut(), "parent", Ok(vec![row("older", None)]));
     app.update();
     assert!(!app.world().has::<Hidden>(marker));
-    assert!(app
-        .world()
-        .resource::<Model>()
-        .unwrap()
-        .collaboration
-        .history
-        .dismissed
-        .values()
-        .all(|ids| !ids.contains("older")));
+    assert!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .history
+            .dismissed
+            .values()
+            .all(|ids| !ids.contains("older"))
+    );
 }
 #[test]
 fn history_preferences_are_authority_session_scoped_and_attention_is_never_hidden() {
@@ -416,15 +421,16 @@ fn history_preferences_are_authority_session_scoped_and_attention_is_never_hidde
             name
         }
     ));
-    assert!(app
-        .world()
-        .resource::<Model>()
-        .unwrap()
-        .collaboration
-        .history
-        .dismissed
-        .values()
-        .all(HashSet::is_empty));
+    assert!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .history
+            .dismissed
+            .values()
+            .all(HashSet::is_empty)
+    );
 }
 
 #[test]
@@ -436,10 +442,12 @@ fn full_text_beats_preview_and_reading_ids_do_not_depend_on_content() {
     let after = project(&row);
     assert_eq!(before.items[1].id, after.items[1].id);
     assert_ne!(before.revision, after.revision);
-    assert!(after
-        .items
-        .iter()
-        .any(|i| i.content == "complete persisted result"));
+    assert!(
+        after
+            .items
+            .iter()
+            .any(|i| i.content == "complete persisted result")
+    );
     assert!(!after.items.iter().any(|i| i.content == "short preview"));
     assert_eq!(
         after
@@ -453,9 +461,11 @@ fn full_text_beats_preview_and_reading_ids_do_not_depend_on_content() {
         1
     );
     row.worker_transcript = None;
-    assert!(project(&row).items[0]
-        .content
-        .contains("Only the card preview"));
+    assert!(
+        project(&row).items[0]
+            .content
+            .contains("Only the card preview")
+    );
 }
 #[test]
 fn tool_disclosure_uses_worker_snapshot_and_closes_on_return() {
@@ -487,11 +497,12 @@ fn tool_disclosure_uses_worker_snapshot_and_closes_on_return() {
         .expect("inspector remains open through settled exchange frames")
         .0;
     assert!(app.world().is_alive(inspector));
-    assert!(app
-        .world()
-        .query::<Label>()
-        .iter()
-        .any(|(_, l)| l.text.contains("Pane state is retained")));
+    assert!(
+        app.world()
+            .query::<Label>()
+            .iter()
+            .any(|(_, l)| l.text.contains("Pane state is retained"))
+    );
     let ui = *app.world().resource::<Ui>().unwrap();
     // The inspector owns input; dismiss it before the relationship header.
     let close = app
@@ -504,12 +515,13 @@ fn tool_disclosure_uses_worker_snapshot_and_closes_on_return() {
     activate(&mut app, close);
     assert!(!app.world().is_alive(inspector));
     activate(&mut app, ui.exchange.back);
-    assert!(!app
-        .world()
-        .resource::<Model>()
-        .unwrap()
-        .collaboration
-        .is_open());
+    assert!(
+        !app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .is_open()
+    );
 }
 #[test]
 fn exchange_refresh_is_single_flight_and_failures_preserve_recorded_text() {
@@ -526,12 +538,16 @@ fn exchange_refresh_is_single_flight_and_failures_preserve_recorded_text() {
         rx.try_recv().unwrap().command,
         rx.try_recv().unwrap().command,
     ];
-    assert!(commands
-        .iter()
-        .any(|c| matches!(c, Command::Collaboration { .. })));
-    assert!(commands
-        .iter()
-        .any(|c| matches!(c, Command::PeerCollaboration { .. })));
+    assert!(
+        commands
+            .iter()
+            .any(|c| matches!(c, Command::Collaboration { .. }))
+    );
+    assert!(
+        commands
+            .iter()
+            .any(|c| matches!(c, Command::PeerCollaboration { .. }))
+    );
     for _ in 0..8 {
         app.update();
     }
@@ -793,13 +809,14 @@ fn late_reply_ack_preserves_new_edits_and_unknown_delivery_blocks_replay() {
         count += usize::from(matches!(request.command, Command::ThreadReply { .. }));
     }
     assert_eq!(count, 2);
-    assert!(app
-        .world()
-        .resource::<Model>()
-        .unwrap()
-        .collaboration
-        .reply_pending
-        .is_some());
+    assert!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .reply_pending
+            .is_some()
+    );
 }
 
 #[test]

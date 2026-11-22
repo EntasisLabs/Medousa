@@ -14,6 +14,14 @@ credentials. It does **not** start, install, or restart a daemon on launch. The 
 confirmed Peers LAN control can restart only the managed personal engine.
 An unavailable daemon is an ordinary connection error, not a separate preview application.
 
+Colors come from the same theme catalog as the Tauri shell. The native app
+embeds `themes/medousa-themes.json`, generated from `apps/medousa-home/themes`
+with `npm run themes:native` (CI checks it with `npm run check:native-themes`
+and the vitest catalog test). At launch it uses the color theme chosen for the
+active workshop in the workshop registry, falling back to Obsidian, and follows
+the system light/dark setting. `src/theme.rs` maps Medousa's roles onto RNDR
+tokens; RNDR's high-contrast palette still takes precedence.
+
 The shell has a slim app-level rail for **Chat**, **Notes**, **Code**, and **Reviews**, separate from the
 contextual sidebar. Only mounted destinations appear; there are no placeholder
 screens. Switching surfaces retains chat tabs, splits, drafts, scroll, and ongoing

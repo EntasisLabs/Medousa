@@ -8,7 +8,7 @@ use std::collections::HashSet;
 const SECTION: u64 = 80;
 const LABELS: [&str; 5] = ["Today", "Yesterday", "Previous 7 days", "Older", "Pinned"];
 type Pins = HashMap<String, HashSet<String>>;
-use rndr_ui::menu::{open_menu, MenuAt, MenuHandle, MenuItem, MenuPicked};
+use rndr_ui::menu::{MenuAt, MenuHandle, MenuItem, MenuPicked, open_menu};
 const ROW_OPEN: u64 = 0x5347_1001;
 const ROW_PIN: u64 = 0x5347_1002;
 const ROW_RENAME: u64 = 0x5347_1003;
@@ -483,7 +483,11 @@ pub(super) fn render(
             rows.iter()
                 .enumerate()
                 .filter_map(|(i, (id, _))| {
-                    let group = if authority.as_ref().and_then(|a| s.pins.get(a)).is_some_and(|pins| pins.contains(id)) {
+                    let group = if authority
+                        .as_ref()
+                        .and_then(|a| s.pins.get(a))
+                        .is_some_and(|pins| pins.contains(id))
+                    {
                         4
                     } else {
                         bucket(s.summaries.get(id).and_then(|s| s.last_timestamp), today)
@@ -719,9 +723,14 @@ mod tests {
         app.update();
         assert!(visible(app.world(), row(app.world(), 4, 3)));
         let older = app.world().resource::<State>().unwrap().sections[3].unwrap();
-        assert!(children_of(app.world(), older).into_iter().all(|e|
-            rndr_ui::identity(app.world(), e) != Some(UiId(SESSION + 3)) || !visible(app.world(), e)
-        ));
+        assert!(
+            children_of(app.world(), older)
+                .into_iter()
+                .all(
+                    |e| rndr_ui::identity(app.world(), e) != Some(UiId(SESSION + 3))
+                        || !visible(app.world(), e)
+                )
+        );
         let parent = app.world().resource::<Ui>().unwrap().sessions;
         assert_eq!(
             children_of(app.world(), parent)[0],
@@ -746,25 +755,29 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pins.json");
         let store = pin_store(path.clone());
-        assert!(store
-            .updates
-            .lock()
-            .unwrap()
-            .recv_timeout(std::time::Duration::from_secs(3))
-            .unwrap()
-            .unwrap()
-            .unwrap()
-            .is_empty());
+        assert!(
+            store
+                .updates
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap()
+                .unwrap()
+                .unwrap()
+                .is_empty()
+        );
         let pins = HashMap::from([("authority".into(), HashSet::from(["s".into()]))]);
         store.save.send(pins.clone()).unwrap();
-        assert!(store
-            .updates
-            .lock()
-            .unwrap()
-            .recv_timeout(std::time::Duration::from_secs(3))
-            .unwrap()
-            .unwrap()
-            .is_none());
+        assert!(
+            store
+                .updates
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap()
+                .unwrap()
+                .is_none()
+        );
         let reopened = pin_store(path.clone());
         assert_eq!(
             reopened
@@ -778,13 +791,15 @@ mod tests {
         );
         std::fs::write(&path, "not JSON").unwrap();
         let corrupt = pin_store(path);
-        assert!(corrupt
-            .updates
-            .lock()
-            .unwrap()
-            .recv_timeout(std::time::Duration::from_secs(3))
-            .unwrap()
-            .is_err());
+        assert!(
+            corrupt
+                .updates
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap()
+                .is_err()
+        );
     }
     #[test]
     fn row_menu_mutates_its_captured_identity_without_switching_the_composer() {
@@ -863,18 +878,20 @@ mod tests {
         let mut app = fixture();
         let document = app.world().resource::<Model>().unwrap().document;
         assert!(visible(app.world(), row(app.world(), 0, 0)));
-        assert!(!app
-            .world()
-            .resource::<State>()
-            .unwrap()
-            .collapsed
-            .contains(&0));
-        assert!(app
-            .world()
-            .resource::<State>()
-            .unwrap()
-            .collapsed
-            .contains(&3));
+        assert!(
+            !app.world()
+                .resource::<State>()
+                .unwrap()
+                .collapsed
+                .contains(&0)
+        );
+        assert!(
+            app.world()
+                .resource::<State>()
+                .unwrap()
+                .collapsed
+                .contains(&3)
+        );
         action(app.world_mut(), SECTION);
         app.update();
         assert!(!visible(app.world(), row(app.world(), 0, 0)));
@@ -886,12 +903,13 @@ mod tests {
         assert!(visible(app.world(), row(app.world(), 0, 0)));
         assert!(visible(app.world(), row(app.world(), 3, 3)));
         assert!(action(app.world_mut(), SECTION)); // disclosure is inert during search
-        assert!(app
-            .world()
-            .resource::<State>()
-            .unwrap()
-            .collapsed
-            .contains(&0));
+        assert!(
+            app.world()
+                .resource::<State>()
+                .unwrap()
+                .collapsed
+                .contains(&0)
+        );
         app.world_mut()
             .resource_mut::<Model>()
             .unwrap()
@@ -945,10 +963,12 @@ mod tests {
         let mut exporter = rndr_render::Exporter::new().unwrap();
         hydrate(&mut app, "today", "authority-a");
         set_pin(app.world_mut(), "old", true);
-        for (width, height, dark, name) in
-            [(1200, 850, true, "dark"), (760, 650, true, "dark-narrow"),
-             (1200, 850, false, "light"), (760, 650, false, "light-narrow")]
-        {
+        for (width, height, dark, name) in [
+            (1200, 850, true, "dark"),
+            (760, 650, true, "dark-narrow"),
+            (1200, 850, false, "light"),
+            (760, 650, false, "light-narrow"),
+        ] {
             publish_system_appearance(
                 app.world_mut(),
                 SystemAppearance {

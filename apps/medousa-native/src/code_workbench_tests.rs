@@ -79,7 +79,9 @@ fn paging_retains_exact_search_options_and_daemon_cursor() {
     w.get_mut::<Label>(field).unwrap().text = "needle".into();
     act(w, Action::SubmitSearch);
     let request = super::super::take_commands(w).remove(0);
-    let Operation::Workbench(command) = &request.operation else { panic!() };
+    let Operation::Workbench(command) = &request.operation else {
+        panic!()
+    };
     let command = command.clone();
     let mut c = std::mem::take(w.resource_mut::<Code>().unwrap());
     c.pending.remove(&tag(&request.operation));
@@ -456,18 +458,39 @@ fn actual_code_diff_result_owns_a_bounded_two_axis_viewport() {
     app.world_mut().insert_resource(Viewport::new(1100., 800.));
     crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Code);
     app.world_mut().resource_mut::<Code>().unwrap().selected = Some("work".into());
-    for _ in 0..4 { rndr_paint::frame(&mut app); }
+    for _ in 0..4 {
+        rndr_paint::frame(&mut app);
+    }
     let w = app.world_mut();
     let mut c = std::mem::take(w.resource_mut::<Code>().unwrap());
-    apply(w, &mut c, Command { work: "work".into(), kind: Kind::Diff("src/main.rs".into()) },
-        Ok(json!({"work_id":"work","path":"src/main.rs","hunks":[{"old_start":1,"old_count":1,"new_start":1,"new_count":1,
-            "lines":[{"kind":"addition","new_line":1,"content":format!("let value = 42; // {} END", "long_".repeat(200))}]}]})));
+    apply(
+        w,
+        &mut c,
+        Command {
+            work: "work".into(),
+            kind: Kind::Diff("src/main.rs".into()),
+        },
+        Ok(
+            json!({"work_id":"work","path":"src/main.rs","hunks":[{"old_start":1,"old_count":1,"new_start":1,"new_count":1,
+            "lines":[{"kind":"addition","new_line":1,"content":format!("let value = 42; // {} END", "long_".repeat(200))}]}]}),
+        ),
+    );
     *w.resource_mut::<Code>().unwrap() = c;
-    for _ in 0..4 { rndr_paint::frame(&mut app); }
+    for _ in 0..4 {
+        rndr_paint::frame(&mut app);
+    }
     let w = app.world();
-    let root = w.query::<Semantics>().into_iter().find(|(_, sem)| sem.name.as_deref() == Some("Changes to src/main.rs")).unwrap().0;
+    let root = w
+        .query::<Semantics>()
+        .into_iter()
+        .find(|(_, sem)| sem.name.as_deref() == Some("Changes to src/main.rs"))
+        .unwrap()
+        .0;
     let rect = w.get::<Rect>(root).unwrap();
-    assert!(rect.h > 50. && rect.h < 240., "Diff must fit its results pane: {rect:?}");
+    assert!(
+        rect.h > 50. && rect.h < 240.,
+        "Diff must fit its results pane: {rect:?}"
+    );
     assert_eq!(w.get::<Layout>(root).unwrap().height, Size::Fill);
     assert!(w.get::<Scroll>(root).unwrap().content[0] > rect.w + 500.);
 }
