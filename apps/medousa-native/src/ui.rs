@@ -199,6 +199,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Layout, crate::calendar::chrome);
     app.add_system(Schedule::Layout, timeline::chrome);
     app.add_system(Schedule::Layout, visual::document_layouts);
+    app.add_system(Schedule::Layout, bound_composer_triggers);
     app.add_system(Schedule::Layout, visual::fit_labels);
     app.add_system(Schedule::Layout, visual::path_crumbs);
     app.add_system(Schedule::Layout, chrome::polish);
@@ -244,6 +245,7 @@ fn button(
         (41, "Join") => Some((Icon::PanelLeft, "Join conversation panes")),
         (SEND, _) => Some((Icon::ArrowUp, "Send message")),
         (STOP, _) => Some((Icon::Square, "Stop response")),
+        (BEHAVIOR, _) => Some((Icon::SlidersHorizontal, "Behavior")),
         _ => None,
     };
     let h = if let Some((icon, name)) = icon {
@@ -269,7 +271,7 @@ fn button(
                     64.
                 }
             }
-            40 | 41 | NEW | TOGGLE_SEARCH => 28.,
+            40 | 41 | NEW | TOGGLE_SEARCH | BEHAVIOR => 28.,
             MODEL_PREV | MODEL_NEXT => 70.,
             MODEL_SEARCH => 150.,
             _ => 90.,
@@ -678,6 +680,22 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     );
     let attachments = attachments::setup(world, controls, attachment_tray);
     world.get_mut::<Layout>(attachments).unwrap().width = Size::Px(28.);
+    // One row of controls inside the card, as every polished composer does:
+    // attach · agent · mode · behavior ··· model · send.
+    let runtime_trigger = button(world, controls, DETAILS, "Medousa  ⌄", true);
+    fit_trigger(world, runtime_trigger);
+    let mode = SingleSelect::mount(
+        world,
+        controls,
+        UiId(11),
+        SelectionProps::new("Mode"),
+        &[],
+        None,
+    )
+    .unwrap()
+    .root;
+    // Depth and model search sit behind one quiet icon, not a third label.
+    let behavior_trigger = button(world, controls, BEHAVIOR, "Behavior", true);
     container(
         world,
         Some(controls),
@@ -713,6 +731,9 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         },
     );
     world.get_mut::<Layout>(model_caption).unwrap().padding = 0.;
+    // The model name alone identifies the choice; the provider caption stays
+    // current for the model picker but does not take a second label here.
+    world.insert(model_caption, Hidden);
     world.insert(
         model_caption,
         visual::FitLabel {
@@ -749,18 +770,11 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
             ..Default::default()
         },
     );
-    let runtime_trigger = button(world, footer, DETAILS, "Medousa  ⌄", true);
-    fit_trigger(world, runtime_trigger);
-    let mode = SingleSelect::mount(
-        world,
-        footer,
-        UiId(11),
-        SelectionProps::new("Mode"),
-        &[],
-        None,
-    )
-    .unwrap()
-    .root;
+    // The footer is now only the status sentence, read above the card.
+    if let Some(children) = world.get_mut::<Children>(composer_shell) {
+        children.list.retain(|e| *e != footer);
+        children.list.insert(0, footer);
+    }
     let status_slot = container(
         world,
         Some(footer),
@@ -777,7 +791,6 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
             ..Default::default()
         },
     );
-    let behavior_trigger = button(world, footer, BEHAVIOR, "Behavior  ⌄", true);
     // Detached native popup: opening it must not relayout the writing lane.
     let behavior = container(
         world,
@@ -850,8 +863,8 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     let model_pages = text(world, filter_row, "", Typography::Secondary).unwrap();
     world.get_mut::<Layout>(model_pages).unwrap().width = Size::Px(50.);
     button(world, filter_row, MODEL_NEXT, "Next", true);
-    // Connection state lives in the composer footer rather than as a
-    // detached line under the writing lane.
+    // Connection and turn state read as one quiet sentence above the card,
+    // not as another control row under the writing lane.
     let status = text(
         world,
         status_slot,
@@ -1059,6 +1072,75 @@ fn quiet_selector(world: &mut World, root: Entity, id: u64, title: &str, enabled
     // Selectors remain visually quiet even while disabled during a turn.
     // Keep the native outer focus ring and the popup untouched.
     // RNDR owns hover/pressed/disabled/focus layers; do not flatten them.
+}
+/// Labeled triggers share the composer's one row with attach, behavior and
+/// send. Bound them by the row each layout so a narrow window ellipsizes
+/// names instead of pushing Send out of the card.
+fn bound_composer_triggers(world: &mut World) {
+    let Some(ui) = world.resource::<Ui>().copied() else {
+        return;
+    };
+    let Some(row) = world.get::<Rect>(ui.controls).copied() else {
+        return;
+    };
+    let gap = world.get::<Layout>(ui.controls).map_or(0., |l| l.gap);
+    // What attach, behavior, stop/send and the gaps between visible controls
+    // leave over; the stretching spacer takes none of it.
+    let visible = children_of(world, ui.controls)
+        .into_iter()
+        .filter(|&e| !world.has::<Hidden>(e))
+        .collect::<Vec<_>>();
+    let fixed: f32 = visible
+        .iter()
+        .filter(|&&e| !world.has::<visual::FitLabel>(e))
+        .filter(|&&e| world.get::<Layout>(e).is_some_and(|l| l.width != Size::Fill))
+        .filter(|&&e| !descendant(world, ui.model, e))
+        .filter_map(|&e| world.get::<Rect>(e).map(|r| r.w))
+        .sum();
+    let available = (row.w - fixed - gap * visible.len().saturating_sub(1) as f32).max(0.);
+    // The model selector sits in its own stack inside the row.
+    let triggers = visible
+        .into_iter()
+        .chain(std::iter::once(ui.model))
+        .filter(|&e| world.has::<visual::FitLabel>(e))
+        .collect::<Vec<_>>();
+    // Natural width: measured label plus the trigger's own chrome.
+    const CHROME: f32 = 24.;
+    let engine = text_engine(world);
+    let theme = world.resource::<UiTheme>().cloned().unwrap_or_default();
+    let natural = triggers
+        .iter()
+        .map(|&e| {
+            let label = world.get::<visual::FitLabel>(e).unwrap().label;
+            let text = world.get::<Label>(label).map(|l| l.text.clone()).unwrap_or_default();
+            let style = world
+                .get::<TextStyle>(label)
+                .cloned()
+                .unwrap_or_else(|| theme.typography(Typography::Label));
+            engine.measure(&text, &style, &[], f32::INFINITY).width + CHROME
+        })
+        .collect::<Vec<_>>();
+    let total: f32 = natural.iter().sum();
+    // Everything fits: no trigger is capped. Otherwise each gives up space in
+    // proportion to its size, so one long name doesn't starve the others.
+    for (&e, &width) in triggers.iter().zip(&natural) {
+        let cap = if total <= available || total <= 0. {
+            260.
+        } else {
+            available * width / total
+        };
+        let fit = world.get_mut::<visual::FitLabel>(e).unwrap();
+        fit.max = cap.clamp(fit.min, 260.);
+    }
+}
+fn descendant(world: &World, mut entity: Entity, ancestor: Entity) -> bool {
+    while let Some(parent) = world.get::<Parent>(entity).map(|p| p.entity) {
+        if parent == ancestor {
+            return true;
+        }
+        entity = parent;
+    }
+    false
 }
 fn fit_trigger(world: &mut World, handle: controls::ControlHandle) {
     world.insert(
@@ -1908,7 +1990,7 @@ fn sync(world: &mut World) {
             .as_ref()
             .and_then(|mode| m.modes.iter().position(|(id, _, _)| id == mode))
             .map(|i| OptionId(i as u64));
-        SingleSelect::mount(world, ui.footer, UiId(11), props, &modes, selected).unwrap();
+        SingleSelect::mount(world, ui.controls, UiId(11), props, &modes, selected).unwrap();
         let mut props = SelectionProps::new("Depth");
         props.enabled = available;
         SingleSelect::mount(
@@ -1990,8 +2072,7 @@ fn sync(world: &mut World) {
         .and_then(|i| m.models.get(i))
         .map(|(provider, _)| provider_caption(provider))
         .unwrap_or_default();
-    let behavior_button = button(world, ui.footer, BEHAVIOR, "Behavior  ⌄", true);
-    fit_trigger(world, behavior_button);
+    let behavior_button = button(world, ui.controls, BEHAVIOR, "Behavior", true);
     let open = !world.has::<Hidden>(ui.behavior);
     world.insert(
         behavior_button.root,
@@ -2341,7 +2422,7 @@ mod tests {
         }
     }
     #[test]
-    fn composer_has_cohesive_editor_and_secondary_controls_below_card() {
+    fn composer_keeps_every_control_on_one_row_inside_the_card() {
         let (mut app, _rx) = idle_fixture();
         for width in [1200., 760.] {
             app.world_mut().resource_mut::<Viewport>().unwrap().width = width;
@@ -2352,10 +2433,19 @@ mod tests {
             let editor = w.get::<Rect>(ui.composer.editor).unwrap();
             let mode = w.get::<Rect>(ui.mode).unwrap();
             let model = w.get::<Rect>(ui.model).unwrap();
+            let row = w.get::<Rect>(ui.controls).unwrap();
+            // Mode and model share the row under the editor, inside the card.
             assert!(
-                mode.y > model.y && model.y >= editor.y + editor.h,
+                mode.y >= editor.y + editor.h && (mode.y - model.y).abs() < 4.,
                 "editor={editor:?}, model={model:?}, mode={mode:?}"
             );
+            for rect in [mode, model] {
+                assert!(
+                    rect.x >= row.x && rect.x + rect.w <= row.x + row.w + 1.,
+                    "{rect:?} escapes {row:?}"
+                );
+            }
+            assert!(mode.x < model.x, "agent controls lead, model trails");
             assert!(
                 editor.x + editor.w <= width && editor.w > 350.,
                 "{editor:?}"

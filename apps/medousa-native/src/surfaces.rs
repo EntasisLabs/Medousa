@@ -198,6 +198,10 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     });
     roots[0]
 }
+/// The destination rail, once mounted.
+pub fn rail(world: &World) -> Option<Entity> {
+    world.resource::<SurfaceHost>().map(|h| h.rail)
+}
 pub fn active(world: &World) -> SurfaceId {
     world
         .resource::<SurfaceHost>()

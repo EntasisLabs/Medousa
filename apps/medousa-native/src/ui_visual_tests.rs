@@ -88,8 +88,20 @@ fn cohesive_composer_geometry_and_header_accessibility() {
             .and_then(|e| w.get::<Rect>(e))
             .unwrap();
         assert!(
-            mode.y >= card.y + card.h,
-            "secondary controls stay outside writing card"
+            mode.y + mode.h <= card.y + card.h + 1.,
+            "agent, mode and behavior share the writing card's control row"
+        );
+        // Send must stay reachable at every width, not pushed off the card.
+        let send = w
+            .query::<Semantics>()
+            .iter()
+            .find(|(_, s)| s.name.as_deref() == Some("Send message"))
+            .and_then(|(e, _)| w.get::<Rect>(*e))
+            .copied()
+            .unwrap();
+        assert!(
+            send.x + send.w <= card.x + card.w + 1.,
+            "send {send:?} escapes card {card:?} at {width}"
         );
         assert!(card.h < 125., "idle card stays compact: {card:?}");
         assert!(shell.x + shell.w <= width);
@@ -467,6 +479,10 @@ fn assistant_image_visual_acceptance() {
 #[ignore = "Synthetic integrated Parley/GPU offscreen visual acceptance"]
 fn native_polish_visual_acceptance() {
     let (mut app, _rx) = fixture();
+    // Capture settled fills; appearance switches below would otherwise catch
+    // RNDR's 120 ms fill ease mid-way.
+    app.world_mut()
+        .insert_resource(rndr_ui::InteractionMotion::snap());
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
     app.world_mut().insert_resource(engine.clone());
     let mut exporter = rndr_render::Exporter::new().unwrap();

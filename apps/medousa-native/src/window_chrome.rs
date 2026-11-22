@@ -37,13 +37,24 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Default::default()
         },
     );
-    visual::flat(world, band, visual::navigation());
+    // The leading segment runs edge to edge so navigation reaches the top.
+    world.insert(
+        band,
+        Padding {
+            right: 6.,
+            ..Padding::default()
+        },
+    );
+    visual::flat(world, band, visual::canvas());
+    // Reserves the traffic lights and, while a sidebar shows, carries the
+    // navigation plane up through the band so rail, sidebar and window top
+    // read as one column, as in medousa-home.
     let leading = container(
         world,
         Some(band),
         Layout {
             width: Size::Px(78.),
-            height: Size::Px(1.),
+            height: Size::Fill,
             ..Layout::row()
         },
     );
@@ -170,6 +181,41 @@ fn caption_action(world: &mut World, entity: Entity) {
     };
     request_window_action(world, action);
 }
+/// Right edge of the visible navigation column: the rail plus whichever
+/// sidebar the active destination shows. Read from the last layout.
+fn navigation_edge(world: &World) -> f32 {
+    let shown = |mut entity: Entity| loop {
+        if world.has::<Hidden>(entity) {
+            return false;
+        }
+        match world.get::<Parent>(entity) {
+            Some(parent) => entity = parent.entity,
+            None => return true,
+        }
+    };
+    let sidebars = world
+        .entities_with::<visual::DocumentSidebar>()
+        .into_iter()
+        .chain(world.resource::<Ui>().map(|ui| ui.sidebar));
+    let edge = crate::surfaces::rail(world)
+        .into_iter()
+        .chain(sidebars)
+        .filter(|&e| shown(e))
+        .filter_map(|e| world.get::<Rect>(e))
+        .filter(|r| r.w > 1.)
+        .map(|r| r.x + r.w)
+        .fold(0., f32::max);
+    // A resize sash after the sidebar draws its hairline at its center; meet
+    // that line instead of leaving a sliver of canvas before it.
+    world
+        .entities_with::<Splitter>()
+        .into_iter()
+        .filter(|&e| shown(e))
+        .filter_map(|e| world.get::<Rect>(e))
+        .filter(|r| r.h > r.w && r.x >= edge - 1. && r.x <= edge + 16.)
+        .map(|r| r.x + r.w / 2.)
+        .fold(edge, f32::max)
+}
 fn show(world: &mut World, entity: Entity, visible: bool) {
     if visible {
         world.remove::<Hidden>(entity);
@@ -238,7 +284,7 @@ pub(crate) fn document_tabs(world: &mut World, strip: TabStripHandle, notes: boo
         ..Layout::row()
     };
     world.insert(bar, WindowDrag);
-    visual::flat(world, bar, visual::navigation());
+    visual::flat(world, bar, visual::canvas());
     world.get_mut::<Layout>(strip.scroll).unwrap().height = Size::Px(32.);
     world.insert(strip.scroll, Color::rgba(0., 0., 0., 0.));
     world.insert(strip.scroll, ResolvedColor);
@@ -283,7 +329,16 @@ pub fn polish(world: &mut World) {
     } else {
         frame.leading
     };
-    world.get_mut::<Layout>(leading).unwrap().width = Size::Px(native);
+    // Only extend the plane when it lines up with navigation below; a bare
+    // rail is narrower than the traffic lights and keeps the canvas band.
+    let edge = navigation_edge(world);
+    let joined = edge >= native;
+    world.get_mut::<Layout>(leading).unwrap().width = Size::Px(if joined { edge } else { native });
+    if joined {
+        visual::flat(world, leading, visual::navigation());
+    } else {
+        visual::flat(world, leading, visual::canvas());
+    }
     show(world, caption, frame.draws_controls);
     let active = crate::surfaces::active(world);
     show(world, chat, active == crate::surfaces::SurfaceId::Chat);
@@ -313,8 +368,8 @@ pub fn polish(world: &mut World) {
         _ => "Medousa",
     }
     .into();
-    // A fine boundary, not another rounded wrapper around the workspace.
-    visual::flat(world, band, visual::navigation());
+    // Content beyond the navigation plane continues the reading canvas.
+    visual::flat(world, band, visual::canvas());
     let bars: Vec<_> = [tabs, documents[0], documents[1]]
         .into_iter()
         .flat_map(|host| children_of(world, host))
@@ -372,7 +427,7 @@ pub fn polish(world: &mut World) {
             } else if hovered {
                 Token::ControlHover
             } else {
-                visual::navigation()
+                visual::canvas()
             };
             world.insert(entity, visual::color(world, token));
             world.insert(entity, Radius(visual::CONTROL_RADIUS));

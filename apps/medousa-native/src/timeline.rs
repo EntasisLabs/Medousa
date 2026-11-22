@@ -46,6 +46,9 @@ struct Row {
     parts: Vec<MountedPart>,
     copy: String,
     user: bool,
+    /// Holds the message's parts: the bubble for user turns, the reading
+    /// column for assistant turns. Rebuilt with the row when it remounts.
+    body: Option<Entity>,
 }
 struct Timeline {
     session: String,
@@ -118,7 +121,7 @@ fn turn_target(
         {
             positions.push((row.id.clone(), reachable));
         }
-        y += row.height + visual::ROW_GAP;
+        y += row.height + GAP;
     }
     if command == PREVIOUS_TURN {
         positions.pop()
@@ -206,6 +209,104 @@ fn sync_navigation(world: &mut World, root: Entity) {
 }
 struct CopyText(String);
 impl Component for CopyText {}
+struct RowBody;
+impl Component for RowBody {}
+
+/// Space between consecutive turns from the same speaker. A change of
+/// speaker adds [`SPEAKER_BREAK`] on top, so a reply reads as one group.
+const GAP: f32 = 8.;
+const SPEAKER_BREAK: f32 = 16.;
+/// User bubble insets, as medousa-home's `px-4 py-2.5`. MarkdownView
+/// already insets its text by [`MARKDOWN_INSET`], so the bubble adds the rest.
+const BUBBLE_TEXT_X: f32 = 16.;
+const MARKDOWN_INSET: f32 = 12.;
+const BUBBLE_X: f32 = BUBBLE_TEXT_X - MARKDOWN_INSET;
+const BUBBLE_Y: f32 = 10.;
+const BUBBLE_RADIUS: f32 = 16.;
+
+/// Copy stays out of the reading until the pointer is over its message or
+/// the button has keyboard focus. It keeps its slot, so nothing shifts.
+fn reveal_copy(world: &mut World, root: Entity) {
+    let Some(state) = world.get::<Timeline>(root) else {
+        return;
+    };
+    let rows = state
+        .rows
+        .iter()
+        .filter(|r| r.mounted)
+        .map(|r| r.entity)
+        .collect::<Vec<_>>();
+    let pointer = world.resource::<Input>().map(|i| i.pointer.position);
+    let focus = world.resource::<Focus>().and_then(|f| f.entity);
+    for row in rows {
+        let Some(copy) = children_of(world, row)
+            .into_iter()
+            .find(|&e| world.has::<CopyText>(e))
+        else {
+            continue;
+        };
+        let hovered = world.get::<Rect>(row).is_some_and(|r| {
+            pointer.is_some_and(|[x, y]| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+        });
+        let focused = focus.is_some_and(|f| f == copy || is_descendant(world, f, copy));
+        visual::ease(
+            world,
+            copy,
+            motion::Prop::Opacity,
+            if hovered || focused { 1. } else { 0. },
+        );
+    }
+}
+
+fn is_descendant(world: &World, mut entity: Entity, ancestor: Entity) -> bool {
+    while let Some(parent) = world.get::<Parent>(entity).map(|p| p.entity) {
+        if parent == ancestor {
+            return true;
+        }
+        entity = parent;
+    }
+    false
+}
+
+/// A user bubble hugs its text up to a readable measure; attachments, tools
+/// and receipts take the whole measure.
+fn bubble_width(world: &World, item: &ChatItem, lane: f32) -> f32 {
+    let max = (lane * 0.75).min(560.);
+    let rich = project(item)
+        .iter()
+        .any(|p| !p.images.is_empty() || !p.tools.is_empty() || p.details.is_some());
+    if rich {
+        return max;
+    }
+    let theme = world
+        .resource::<rndr_ui::UiTheme>()
+        .cloned()
+        .unwrap_or_default();
+    let style = theme.typography(rndr_ui::Typography::Reading);
+    let natural = text_engine(world)
+        .measure(item.content.trim(), &style, &[], f32::INFINITY)
+        .width;
+    // Markdown can lay a run out a few points wider than plain shaping.
+    (natural.ceil() + 2. * BUBBLE_TEXT_X + 8.).clamp(48., max)
+}
+
+fn ensure_body(world: &mut World, row: &mut Row) -> Entity {
+    if let Some(body) = row.body.filter(|&b| world.is_alive(b)) {
+        return body;
+    }
+    let body = world.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 8.,
+            ..Layout::column()
+        },
+        RowBody,
+    ));
+    set_parent(world, body, row.entity);
+    row.body = Some(body);
+    body
+}
 
 /// UiPlugin supplies passive indicators to every Scroll viewport each frame.
 /// The timeline already has an accessible, draggable Scrollbar in its navigation
@@ -214,6 +315,7 @@ pub fn chrome(world: &mut World) {
     for root in world.entities_with::<Timeline>() {
         world.remove::<ScrollIndicator>(root);
         sync_navigation(world, root);
+        reveal_copy(world, root);
     }
 }
 
@@ -238,7 +340,7 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
             width: Size::Fill,
             height: Size::Fill,
             padding: visual::INSET,
-            gap: visual::ROW_GAP,
+            gap: GAP,
             ..Layout::column()
         },
         Scroll::default(),
@@ -341,7 +443,7 @@ fn record_offset(world: &mut World, root: Entity) -> bool {
             if state.navigation_anchor.as_deref() == Some(row.id.as_str()) {
                 anchor_y = Some(y);
             }
-            y += row.height + visual::ROW_GAP;
+            y += row.height + GAP;
         }
         if let Some(anchor_y) = anchor_y {
             let height = world.get::<Rect>(root).map_or(0., |r| r.h);
@@ -461,6 +563,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
                 parts: vec![],
                 copy: String::new(),
                 user: item.role == ChatItemRole::User && !item.content.trim().is_empty(),
+                body: None,
             }
         });
         state.rows.push(row);
@@ -470,6 +573,22 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
     }
     if let Some(children) = world.get_mut::<Children>(root) {
         children.list = state.rows.iter().map(|r| r.entity).collect();
+    }
+    let mut previous = None;
+    for (row, item) in state.rows.iter().zip(&items) {
+        let top = if previous.is_some_and(|role| role != item.role) {
+            SPEAKER_BREAK
+        } else {
+            0.
+        };
+        previous = Some(item.role);
+        world.insert(
+            row.entity,
+            Padding {
+                top,
+                ..Padding::default()
+            },
+        );
     }
     // Correct the anchor when previously estimated rows above the viewport gain
     // measured heights. Following uses the layout's normal bottom clamp.
@@ -486,7 +605,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
                 }
             }
         }
-        y += row.height + visual::ROW_GAP;
+        y += row.height + GAP;
     }
     let offset = scroll.offset[1] - correction;
     let top = if state.following {
@@ -498,7 +617,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
     let mut y = visual::INSET;
     for (row, item) in state.rows.iter_mut().zip(items) {
         let visible = y + row.height >= top - overscan && y <= top + rect.h + overscan;
-        y += row.height + visual::ROW_GAP;
+        y += row.height + GAP;
         if !visible {
             if row.mounted {
                 for child in children_of(world, row.entity) {
@@ -506,6 +625,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
                 }
                 row.parts.clear();
                 row.mounted = false;
+                row.body = None;
                 row.copy.clear();
                 world.get_mut::<Layout>(row.entity).unwrap().height = Size::Px(row.height);
             }
@@ -516,26 +636,50 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
             row.mounted = true;
             world.get_mut::<Layout>(row.entity).unwrap().height = Size::Hug;
         }
-        let available = lane;
         let user = item.role == ChatItemRole::User;
-        world.get_mut::<Layout>(row.entity).unwrap().width = Size::Px(if user {
-            (available * 0.88).min(620.)
-        } else {
-            available.min(760.)
-        });
+        let body = ensure_body(world, row);
+        let transparent = rndr_ui::UiColor::Explicit(Color::rgba(0., 0., 0., 0.));
+        // User turns: [copy, bubble] packed to the trailing edge, so Copy sits
+        // beside the bubble instead of adding a line under it. Assistant
+        // turns: the reading column with Copy beneath.
+        let frame = world.get_mut::<Layout>(row.entity).unwrap();
+        frame.axis = if user { Axis::Row } else { Axis::Column };
+        frame.gap = 4.;
+        frame.width = Size::Px(if user { lane } else { lane.min(760.) });
         world.insert(
             row.entity,
-            AlignSelf(if user { Items::End } else { Items::Start }),
+            Align {
+                justify: if user { Justify::End } else { Justify::Start },
+                items: if user { Items::End } else { Items::Start },
+            },
         );
-        world.insert(row.entity, Padding::all(if user { 12. } else { 0. }));
-        world.insert(row.entity, Radius(if user { 12. } else { 0. }));
+        world.insert(row.entity, AlignSelf(Items::Start));
+        world.get_mut::<Layout>(body).unwrap().width = if user {
+            Size::Px(bubble_width(world, item, lane))
+        } else {
+            Size::Fill
+        };
         world.insert(
-            row.entity,
+            body,
+            if user {
+                Padding {
+                    top: BUBBLE_Y,
+                    bottom: BUBBLE_Y,
+                    left: BUBBLE_X,
+                    right: BUBBLE_X,
+                }
+            } else {
+                Padding::default()
+            },
+        );
+        world.insert(body, Radius(if user { BUBBLE_RADIUS } else { 0. }));
+        world.insert(
+            body,
             rndr_ui::UiStyle {
                 background: Some(if user {
                     visual::user().into()
                 } else {
-                    rndr_ui::UiColor::Explicit(Color::rgba(0., 0., 0., 0.))
+                    transparent
                 }),
                 ..Default::default()
             },
@@ -567,15 +711,22 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
 
 fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
     let mut parts = project(item);
+    // A two-party chat needs no speaker labels: alignment and the bubble say
+    // who is talking. A collaboration exchange names both sides.
     if let Some(root) = world.get::<Parent>(row.entity).map(|p| p.entity) {
         if let Some(identity) = world.get::<ReadingIdentity>(root) {
-            parts[0].text = literal(match item.role {
+            let name = literal(match item.role {
                 ChatItemRole::User => &identity.sender,
                 ChatItemRole::Assistant => &identity.recipient,
                 ChatItemRole::System => "Recorded activity",
             });
+            match parts.first_mut().filter(|p| p.id == "header") {
+                Some(header) => header.text = name,
+                None => parts.insert(0, plain("header", name)),
+            }
         }
     }
+    let body = ensure_body(world, row);
     let mut old: HashMap<_, _> = row.parts.drain(..).map(|p| (p.id.clone(), p)).collect();
     for part in parts {
         let retained = old.remove(&part.id);
@@ -589,7 +740,7 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
                     if !part.tools.is_empty() {
                         tool_activity::mount(
                             world,
-                            row.entity,
+                            body,
                             Some(mounted.entity),
                             &item.id,
                             &part,
@@ -617,9 +768,9 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
                     despawn(world, old.entity);
                 }
                 let entity = if !part.images.is_empty() {
-                    crate::media_preview::gallery(world, row.entity, session, &part.images)
+                    crate::media_preview::gallery(world, body, session, &part.images)
                 } else if !part.tools.is_empty() {
-                    tool_activity::mount(world, row.entity, None, &item.id, &part)
+                    tool_activity::mount(world, body, None, &item.id, &part)
                 } else if let Some(details) = &part.details {
                     let node = world.spawn((
                         Layout {
@@ -660,7 +811,7 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
                         .set_follow(false);
                     view
                 };
-                set_parent(world, entity, row.entity);
+                set_parent(world, entity, body);
                 MountedPart {
                     id: part.id.clone(),
                     entity,
@@ -677,7 +828,11 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
     let copy = children_of(world, row.entity)
         .into_iter()
         .find(|&e| world.has::<CopyText>(e))
-        .unwrap_or_else(|| timeline_button(world, row.entity, 2, "Copy message", COPY));
+        .unwrap_or_else(|| {
+            let copy = timeline_button(world, row.entity, 2, "Copy message", COPY);
+            world.insert(copy, Opacity(0.));
+            copy
+        });
     row.copy = row
         .parts
         .iter()
@@ -691,13 +846,15 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
         row.copy = item.content.clone();
     }
     world.insert(copy, CopyText(row.copy.clone()));
+    if let Some(children) = world.get_mut::<Children>(body) {
+        children.list = row.parts.iter().map(|p| p.entity).collect();
+    }
     if let Some(children) = world.get_mut::<Children>(row.entity) {
-        children.list = row
-            .parts
-            .iter()
-            .map(|p| p.entity)
-            .chain(std::iter::once(copy))
-            .collect();
+        children.list = if item.role == ChatItemRole::User {
+            vec![copy, body]
+        } else {
+            vec![body, copy]
+        };
     }
 }
 
@@ -1012,9 +1169,13 @@ fn project(item: &ChatItem) -> Vec<Part> {
         ChatItemRole::Assistant => "Medousa",
         ChatItemRole::System => "System",
     };
-    // Identity is useful; provider, phase and raw timestamps on every row
-    // compete with the conversation. Keep them in the session/tool inspector.
-    parts.push(plain("header", literal(role)));
+    // Provider, phase and raw timestamps on every row compete with the
+    // conversation; they stay in the session/tool inspector. Only recorded
+    // system activity is labeled here; speakers are named in sync_row when
+    // the timeline reads a collaboration.
+    if item.role == ChatItemRole::System {
+        parts.push(plain("header", literal(role)));
+    }
     if let Some(reasoning) = item.reasoning.as_ref().filter(|s| !s.trim().is_empty()) {
         parts.push(detail("reasoning", "Reasoning".into(), reasoning.clone()));
     }

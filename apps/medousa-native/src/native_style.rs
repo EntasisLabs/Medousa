@@ -4,7 +4,6 @@ use rndr_core::*;
 use rndr_ui::{Token, TypeMetrics, TypeRamp, Typography, UiColor, UiStyle, UiTheme};
 
 pub const COLUMN: f32 = 720.;
-pub const ROW_GAP: f32 = 24.;
 pub const INSET: f32 = 20.;
 pub const CONTROL_RADIUS: f32 = 6.;
 pub const ACTION_SIZE: f32 = 32.;
@@ -143,15 +142,16 @@ pub fn path_crumbs(world: &mut World) {
     }
 }
 
-/// Tracked group heading recipe on an existing row or text label. Callers
-/// supply the uppercase text: RNDR controls republish labels from props.
+/// Group heading recipe on an existing row or text label: sentence case in
+/// the third text tier, so grey carries the hierarchy rather than caps and
+/// weight. RNDR controls republish labels from props, so callers pass text.
 pub fn section_heading(world: &mut World, label: Entity) {
     // An app UiStyle outranks the control's per-frame recipe.
     world.insert(
         label,
         UiStyle {
-            foreground: Some(secondary().into()),
-            typography: Some(Typography::Overline),
+            foreground: Some(Token::Tertiary.into()),
+            typography: Some(Typography::Secondary),
             ..Default::default()
         },
     );
@@ -457,19 +457,53 @@ pub fn label_face(world: &World, root: Entity) -> Option<Entity> {
 
 /// A scrollbar appears only when its viewport overflows, or while the user
 /// operates it. The native target, focus route and drag gesture are unchanged.
+/// Last seen scroll offset of a scrollbar's target and when it last moved.
+struct ScrollWake {
+    offset: [f32; 2],
+    at: Option<std::time::Duration>,
+}
+impl Component for ScrollWake {}
+/// How long a scrollbar lingers after its content stops moving.
+const SCROLL_LINGER: std::time::Duration = std::time::Duration::from_millis(1200);
+
+/// An overflowing scrollbar shows while the pointer is over its viewport, for
+/// a moment after the content scrolls, or while focused or dragged; at rest it
+/// fades out so a long conversation doesn't carry a line down its edge.
 pub fn scrollbar_visibility(world: &mut World, bar: Entity, overflows: bool) {
     let active = world.resource::<Focus>().and_then(|f| f.entity) == Some(bar)
         || scrollbar_dragging(world, bar);
+    let target = world.get::<Scrollbar>(bar).map(|s| s.target);
+    let offset = target
+        .and_then(|t| world.get::<Scroll>(t))
+        .map_or([0., 0.], |s| s.offset);
+    let now = world.resource::<Time>().map(|t| t.now).unwrap_or_default();
+    let at = match world.get::<ScrollWake>(bar) {
+        Some(wake) if wake.offset != offset => Some(now),
+        Some(wake) => wake.at,
+        None => None,
+    };
+    world.insert(bar, ScrollWake { offset, at });
+    let recent = at.is_some_and(|at| now.saturating_sub(at) < SCROLL_LINGER);
+    let pointer = world.resource::<Input>().map(|i| i.pointer.position);
+    let hovered = [Some(bar), target].into_iter().flatten().any(|e| {
+        world.get::<Rect>(e).is_some_and(|r| {
+            pointer.is_some_and(|[x, y]| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+        })
+    });
     ease(
         world,
         bar,
         motion::Prop::Opacity,
-        if overflows || active { 1. } else { 0. },
+        if active || (overflows && (hovered || recent)) {
+            1.
+        } else {
+            0.
+        },
     );
 }
 
-/// App-wide resting chrome: split lines are hairlines and idle scrollbars
-/// without overflow disappear. Hover, focus and drag keep RNDR's own ink.
+/// App-wide resting chrome: split lines are hairlines and scrollbars rest
+/// hidden until the pointer, a scroll or focus wakes them. Hover, focus and drag keep RNDR's own ink.
 pub fn quiet_chrome(world: &mut World) {
     for bar in world.entities_with::<Scrollbar>() {
         // RNDR's shared geometry covers both Scroll viewports and editors.

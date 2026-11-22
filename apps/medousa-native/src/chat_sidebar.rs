@@ -498,7 +498,6 @@ pub(super) fn render(
         })
         .collect();
     let collapsed = s.collapsed.clone();
-    let metadata = s.summaries.clone();
     // Mount sections in canonical order even when the first catalog omits a bucket.
     for g in 0..5 {
         if world.resource::<State>().unwrap().sections[g].is_none() {
@@ -559,10 +558,8 @@ pub(super) fn render(
         };
         world.remove::<Hidden>(section);
         let hidden = !searching && collapsed.contains(&g);
-        let mut props = ButtonProps::new(
-            LABELS[g].to_uppercase(),
-            HostIntent::Command(SECTION + g as u64),
-        );
+        // Sentence case and no count: a quiet label, not a shouted header.
+        let mut props = ButtonProps::new(LABELS[g], HostIntent::Command(SECTION + g as u64));
         props.enabled = !searching;
         props.variant = controls::ButtonVariant::Quiet;
         let h = controls::NavigationRow::mount(
@@ -570,10 +567,7 @@ pub(super) fn render(
             section,
             UiId(SECTION + g as u64),
             props,
-            NavigationMeta {
-                secondary: Some(indices.len().to_string()),
-                ..Default::default()
-            },
+            NavigationMeta::default(),
         )
         .unwrap();
         *world.get_mut::<Layout>(h.root).unwrap() = Layout {
@@ -583,7 +577,6 @@ pub(super) fn render(
             ..Layout::row()
         };
         visual::section_heading(world, h.label);
-        visual::trailing_meta(world, h);
         if let Some(face) = world.get::<Parent>(h.label).map(|p| p.entity) {
             visual::disclosure(world, h.root, face, !hidden);
         }
@@ -616,10 +609,7 @@ pub(super) fn render(
                 },
                 HostIntent::Command(SESSION + i as u64),
             );
-            let meta = metadata
-                .get(id)
-                .filter(|s| s.turns > 0)
-                .map(|s| format!("{} turns", s.turns));
+            // Titles get the whole row; turn counts were noise beside them.
             let h = controls::NavigationRow::mount(
                 world,
                 section,
@@ -627,14 +617,12 @@ pub(super) fn render(
                 props,
                 NavigationMeta {
                     selected: selected == Some(id),
-                    secondary: meta,
                     ..Default::default()
                 },
             )
             .unwrap();
             world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
             world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(visual::ROW_HEIGHT);
-            visual::trailing_meta(world, h);
             world.insert(h.root, Radius(visual::CONTROL_RADIUS));
             if let Some(authority) = &authority {
                 world.insert(h.root, ContextTarget);
@@ -1032,6 +1020,9 @@ mod tests {
     #[ignore = "Synthetic history grouping GPU visual acceptance"]
     fn chat_sidebar_visual_acceptance() {
         let mut app = fixture();
+        // Capture settled fills rather than RNDR's appearance ease mid-way.
+        app.world_mut()
+            .insert_resource(rndr_ui::InteractionMotion::snap());
         let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
         app.world_mut().insert_resource(engine);
         let mut exporter = rndr_render::Exporter::new().unwrap();

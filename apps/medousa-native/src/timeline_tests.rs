@@ -486,26 +486,35 @@ fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
     let history = snapshot(vec![user, item("a", "assistant", "A quieter reply")], 1);
     sync(&mut world, root, Some(&history));
     let rows = &world.get::<Timeline>(root).unwrap().rows;
+    // User turns pack to the trailing edge; assistant turns read from the start.
     assert_eq!(
-        world.get::<AlignSelf>(rows[0].entity).unwrap().0,
-        Items::End
+        world.get::<Align>(rows[0].entity).unwrap().justify,
+        Justify::End
     );
     assert_eq!(
-        world.get::<AlignSelf>(rows[1].entity).unwrap().0,
-        Items::Start
+        world.get::<Align>(rows[1].entity).unwrap().justify,
+        Justify::Start
     );
-    assert!(world.has::<Radius>(rows[0].entity));
-    assert!(world.has::<rndr_ui::UiStyle>(rows[1].entity));
-    assert_eq!(world.get::<Padding>(rows[1].entity).unwrap().left, 0.);
-    assert_eq!(world.get::<Radius>(rows[1].entity).unwrap().0, 0.);
+    let bubble = rows[0].body.unwrap();
+    let reading = rows[1].body.unwrap();
+    assert_eq!(world.get::<Radius>(bubble).unwrap().0, BUBBLE_RADIUS);
     assert_eq!(
-        world
-            .get::<rndr_ui::UiStyle>(rows[1].entity)
-            .unwrap()
-            .background,
+        world.get::<rndr_ui::UiStyle>(bubble).unwrap().background,
+        Some(visual::user().into())
+    );
+    assert_eq!(world.get::<Padding>(reading).unwrap().left, 0.);
+    assert_eq!(world.get::<Radius>(reading).unwrap().0, 0.);
+    assert_eq!(
+        world.get::<rndr_ui::UiStyle>(reading).unwrap().background,
         Some(rndr_ui::UiColor::Explicit(Color::rgba(0., 0., 0., 0.)))
     );
-    // A quiet icon remains a real focusable, named action, not hover-only text.
+    // The speaker changes between these turns.
+    assert_eq!(world.get::<Padding>(rows[0].entity).unwrap().top, 0.);
+    assert_eq!(
+        world.get::<Padding>(rows[1].entity).unwrap().top,
+        SPEAKER_BREAK
+    );
+    // Quiet until wanted, but still a real focusable, named action.
     let copy = children_of(&world, rows[1].entity)
         .into_iter()
         .find(|e| world.has::<CopyText>(*e))
@@ -515,6 +524,7 @@ fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
         world.get::<Semantics>(copy).unwrap().name.as_deref(),
         Some("Copy message")
     );
+    assert_eq!(world.get::<Opacity>(copy).unwrap().0, 0.);
     let padding = world.get::<Padding>(root).unwrap();
     let lane = visual::column_width(828.);
     assert_eq!(padding.left, (828. - lane) / 2.);
@@ -532,15 +542,10 @@ fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
         world.get::<rndr_ui::UiStyle>(body).unwrap().typography,
         Some(rndr_ui::Typography::Reading)
     );
-    assert_eq!(
-        rows[0]
-            .parts
-            .iter()
-            .find(|p| p.id == "header")
-            .unwrap()
-            .part
-            .text,
-        "You"
+    // Two parties need no speaker labels.
+    assert!(
+        rows.iter()
+            .all(|row| row.parts.iter().all(|p| p.id != "header"))
     );
     let media = rows[0]
         .parts
@@ -557,7 +562,7 @@ fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
 }
 
 #[test]
-fn timeline_scrollbar_is_quiet_when_empty_and_visible_for_overflow_or_focus() {
+fn timeline_scrollbar_rests_hidden_and_wakes_for_pointer_scroll_or_focus() {
     let (mut world, root) = fixture();
     let navigation = world.get::<Timeline>(root).unwrap().navigation.unwrap();
     let rail = children_of(&world, navigation)
@@ -568,7 +573,25 @@ fn timeline_scrollbar_is_quiet_when_empty_and_visible_for_overflow_or_focus() {
     assert_eq!(world.get::<Scrollbar>(rail).unwrap().target, root);
     sync_navigation(&mut world, root);
     assert_eq!(world.get::<Opacity>(rail).unwrap().0, 0.);
+    // Overflow alone does not paint a line down the conversation.
     world.get_mut::<Scroll>(root).unwrap().content[1] = 1200.;
+    world.insert(root, Rect { x: 0., y: 0., w: 600., h: 400. });
+    let mut input = world.resource::<Input>().cloned().unwrap_or_default();
+    input.pointer.position = [-10., -10.];
+    world.insert_resource(input.clone());
+    sync_navigation(&mut world, root);
+    assert_eq!(world.get::<Opacity>(rail).unwrap().0, 0.);
+    // The pointer over the conversation wakes it.
+    input.pointer.position = [300., 200.];
+    world.insert_resource(input.clone());
+    sync_navigation(&mut world, root);
+    assert_eq!(world.get::<Opacity>(rail).unwrap().0, 1.);
+    // So does scrolling, without the pointer there.
+    input.pointer.position = [-10., -10.];
+    world.insert_resource(input);
+    sync_navigation(&mut world, root);
+    assert_eq!(world.get::<Opacity>(rail).unwrap().0, 0.);
+    world.get_mut::<Scroll>(root).unwrap().offset[1] = -120.;
     sync_navigation(&mut world, root);
     assert_eq!(world.get::<Opacity>(rail).unwrap().0, 1.);
     world.get_mut::<Scroll>(root).unwrap().content[1] = 0.;
@@ -655,4 +678,71 @@ fn detail_disclosure_turns_one_chevron_and_keeps_a_plain_name() {
     assert!((rotate(&world) - std::f32::consts::FRAC_PI_2).abs() < 1e-4);
     assert!(activate(&mut world, button));
     assert_eq!(rotate(&world), 0.);
+}
+
+#[test]
+fn short_user_turns_hug_their_text_and_long_ones_wrap_at_a_measure() {
+    let (mut world, root) = fixture();
+    let long = "a considerably longer question that keeps going ".repeat(8);
+    let history = snapshot(
+        vec![
+            item("short", "user", "ok"),
+            item("long", "user", &long),
+            item("a", "assistant", "reply"),
+        ],
+        1,
+    );
+    sync(&mut world, root, Some(&history));
+    let rows = &world.get::<Timeline>(root).unwrap().rows;
+    let width = |row: &Row| match world.get::<Layout>(row.body.unwrap()).unwrap().width {
+        Size::Px(w) => w,
+        other => panic!("bubble width {other:?}"),
+    };
+    let lane = visual::column_width(828.);
+    assert!(width(&rows[0]) < 120., "{}", width(&rows[0]));
+    assert_eq!(width(&rows[1]), (lane * 0.75).min(560.));
+    // Same speaker twice: no extra break between them.
+    assert_eq!(world.get::<Padding>(rows[1].entity).unwrap().top, 0.);
+}
+
+#[test]
+fn copy_appears_for_the_hovered_or_focused_message_only() {
+    let (mut world, root) = fixture();
+    let history = snapshot(
+        vec![item("u", "user", "question"), item("a", "assistant", "answer")],
+        1,
+    );
+    sync(&mut world, root, Some(&history));
+    let rows = world
+        .get::<Timeline>(root)
+        .unwrap()
+        .rows
+        .iter()
+        .map(|r| r.entity)
+        .collect::<Vec<_>>();
+    let copy = |world: &World, row: Entity| {
+        children_of(world, row)
+            .into_iter()
+            .find(|e| world.has::<CopyText>(*e))
+            .unwrap()
+    };
+    world.insert(rows[0], Rect { x: 0., y: 0., w: 400., h: 60. });
+    world.insert(rows[1], Rect { x: 0., y: 80., w: 400., h: 60. });
+    let mut input = world.resource::<Input>().cloned().unwrap_or_default();
+    input.pointer.position = [20., 100.];
+    world.insert_resource(input);
+    chrome(&mut world);
+    let opacity = |world: &World, row| world.get::<Opacity>(copy(world, row)).unwrap().0;
+    assert_eq!((opacity(&world, rows[0]), opacity(&world, rows[1])), (0., 1.));
+    // Keyboard focus reveals it without a pointer.
+    let mut input = world.resource::<Input>().cloned().unwrap();
+    input.pointer.position = [-10., -10.];
+    world.insert_resource(input);
+    let target = copy(&world, rows[0]);
+    world.insert_resource(Focus {
+        entity: Some(target),
+        ..Default::default()
+    });
+    chrome(&mut world);
+    assert_eq!((opacity(&world, rows[0]), opacity(&world, rows[1])), (1., 0.));
 }
