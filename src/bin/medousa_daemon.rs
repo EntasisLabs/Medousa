@@ -583,6 +583,9 @@ async fn start_daemon() -> Result<()> {
             .await
         {
             Ok(report) => {
+                for (work_id, error) in &report.item_errors {
+                    tracing::warn!(%work_id, %error, "forge could not reconcile undertaking at startup");
+                }
                 if !report.interrupted_attempts.is_empty()
                     || !report.rolled_forward.is_empty()
                     || !report.environment_failures.is_empty()

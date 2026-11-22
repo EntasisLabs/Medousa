@@ -30,6 +30,10 @@ pub trait LivenessProbe {
 /// interruption — environments and dirty work are preserved untouched.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReconcileReport {
+    /// Items that could not be reconciled. Ownership is incomplete on this
+    /// boot, so the orphan scan is skipped if this list is nonempty.
+    #[serde(default)]
+    pub item_errors: Vec<(WorkId, String)>,
     /// Operations completed (rolled forward) from their journal records.
     pub rolled_forward: Vec<RolledForward>,
     /// Running attempts whose lease belonged to a prior boot: interrupted,
@@ -72,20 +76,33 @@ impl Forge {
     pub fn reconcile_on_boot(&self, probe: &dyn LivenessProbe) -> Result<ReconcileReport> {
         let mut report = ReconcileReport::default();
         for work_id in self.store.list_item_ids()? {
-            let events = self.store.replay(&work_id)?;
-            if events.is_empty() {
-                continue;
+            if let Err(err) = self.reconcile_stored_item(&work_id, probe, &mut report) {
+                report.item_errors.push((work_id, err.to_string()));
             }
-            // Clear the snapshot cache so every fold below starts from the
-            // authoritative log.
-            let snapshot = self.store.snapshot_path(&work_id);
-            if snapshot.exists() {
-                std::fs::remove_file(&snapshot)?;
-            }
-            self.reconcile_item(&work_id, &events, probe, &mut report)?;
         }
-        report.orphaned_worktrees = self.scan_orphaned_worktrees()?;
+        if report.item_errors.is_empty() {
+            report.orphaned_worktrees = self.scan_orphaned_worktrees()?;
+        }
         Ok(report)
+    }
+
+    fn reconcile_stored_item(
+        &self,
+        work_id: &WorkId,
+        probe: &dyn LivenessProbe,
+        report: &mut ReconcileReport,
+    ) -> Result<()> {
+        let events = self.store.replay(work_id)?;
+        if events.is_empty() {
+            return Ok(());
+        }
+        // Clear the snapshot cache so recovery folds the authoritative log.
+        match std::fs::remove_file(self.store.snapshot_path(work_id)) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+        self.reconcile_item(work_id, &events, probe, report)
     }
 
     fn reconcile_item(
@@ -820,6 +837,37 @@ mod tests {
             instance: "boot-new".into(),
             alive_pids: Vec::new(),
         }
+    }
+
+    #[test]
+    fn unreadable_snapshot_does_not_block_recovery_of_later_items() {
+        let fx = fixture();
+        let forge = reopened(&fx.forge_root);
+        let mut items = ["one", "two"].map(|title| {
+            forge
+                .register(title, "b", &fx.repo, "main", "user-1", &actor())
+                .unwrap()
+        });
+        items.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
+        let [broken, healthy] = items;
+        forge.provision(&healthy.id, &actor()).unwrap();
+        forge
+            .begin_attempt(&healthy.id, executor(), Some(u32::MAX), &actor())
+            .unwrap();
+        // A directory in place of the cache makes removal fail even as root.
+        let snapshot = forge.store.snapshot_path(&broken.id);
+        fs::remove_file(&snapshot).unwrap();
+        fs::create_dir(&snapshot).unwrap();
+        let report = forge.reconcile_on_boot(&probe()).unwrap();
+        assert_eq!(report.item_errors.len(), 1);
+        assert_eq!(report.item_errors[0].0, broken.id);
+        assert_eq!(report.interrupted_attempts.len(), 1);
+        assert_eq!(forge.load(&healthy.id).unwrap().state, WorkState::Ready);
+
+        fs::remove_dir(snapshot).unwrap();
+        let retry = forge.reconcile_on_boot(&probe()).unwrap();
+        assert!(retry.item_errors.is_empty());
+        assert!(retry.interrupted_attempts.is_empty());
     }
 
     #[test]

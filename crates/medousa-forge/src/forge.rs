@@ -1111,8 +1111,8 @@ impl Forge {
             };
             if existing_root == root {
                 return Err(ForgeError::EnvironmentDrift(format!(
-                    "current checkout is already attached to {}",
-                    existing.id
+                    "current checkout is already attached to “{}” ({}). Open that undertaking to continue it, or close it to release this checkout. Closing keeps the files in place.",
+                    existing.title, existing.id
                 )));
             }
         }
@@ -4456,7 +4456,9 @@ mod tests {
             .unwrap();
         assert!(matches!(
             forge.provision(&second.id, &actor()),
-            Err(ForgeError::EnvironmentDrift(message)) if message.contains("already attached")
+            Err(ForgeError::EnvironmentDrift(message))
+                if message.contains("already attached to “First attached”")
+                    && message.contains(first.id.as_str())
         ));
 
         fs::write(fx.repo.join("staged-after-attach.txt"), "staged\n").unwrap();
