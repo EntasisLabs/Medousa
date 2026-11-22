@@ -542,6 +542,7 @@ fn shared_library_tree_preserves_nested_disclosure_through_search() {
         summary("work/b.md", "Beta"),
         summary("b.md", "Root"),
     ];
+    n.browse = Browse::Folders;
     n.expanded.insert("work".into());
     let (nodes, expanded) = library_model(&mut n);
     assert_eq!(nodes.len(), 5);
@@ -855,6 +856,16 @@ fn notes_visual_acceptance() {
         for _ in 0..4 {
             rndr_paint::frame(&mut app);
         }
+        if suffix == "narrow" {
+            // Exercise the breadcrumb focus chrome, not just its idle paint.
+            let group = app.world().resource::<Notes>().unwrap().actions.values()
+                .find_map(|a| match a {
+                    Action::Picker(Picker::Group, anchor) => Some(*anchor),
+                    _ => None,
+                }).unwrap();
+            assert!(request_focus(app.world_mut(), group));
+            rndr_paint::frame(&mut app);
+        }
         let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
             exporter
                 .render_frame(Some(world), frame, width, height, 1.)
@@ -1153,6 +1164,22 @@ fn summary(path: &str, title: &str, date: &str) -> VaultNoteSummary {
 }
 
 #[test]
+fn default_sidebar_lists_loaded_notes_by_date_without_opening_folders() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    let mut n = std::mem::take(w.resource_mut::<Notes>().unwrap());
+    assert_eq!(n.browse, Browse::Recent);
+    assert!(w.get::<Hidden>(n.search.unwrap()).is_some());
+    n.list = vec![summary("a/archive.md", "Archived", "2021-03-04T00:00:00Z"), summary("b/design.md", "Design", "2022-04-02T00:00:00Z")];
+    n.list[1].kind = "Project".into();
+    let (nodes, _) = library_model(&mut n);
+    assert!(nodes.iter().all(|node| node.parent.is_none()));
+    assert_eq!(nodes[0].label, "Design");
+    assert_eq!(nodes[0].secondary, "Apr 2 · Project");
+    assert_eq!(nodes[1].secondary, "Mar 4 · Note");
+}
+
+#[test]
 fn recent_browse_matches_visit_then_modified_contract_without_duplicate_paths() {
     let mut app = fixture();
     let w = app.world_mut();
@@ -1176,7 +1203,7 @@ fn recent_browse_matches_visit_then_modified_contract_without_duplicate_paths() 
     assert_eq!(
         nodes
             .iter()
-            .map(|v| v.secondary.as_str())
+            .map(|v| n.tree_paths[&v.id].as_str())
             .collect::<Vec<_>>(),
         vec!["folder/old.md", "new.md", "middle.md"]
     );
@@ -1186,13 +1213,14 @@ fn recent_browse_matches_visit_then_modified_contract_without_duplicate_paths() 
         "retained draft"
     );
     assert_eq!(n.views["folder/old.md"].document, source);
+    w.get_mut::<Label>(n.search.unwrap()).unwrap().text = "same TITLE".into();
     n.filter = "same TITLE".into();
     assert_eq!(library_model(&mut n).0.len(), 2);
     w.insert_resource(n);
     click(w, Action::Browse(Browse::Folders));
     let mut n = std::mem::take(w.resource_mut::<Notes>().unwrap());
-    assert!(n.filter.is_empty());
-    assert_eq!(library_model(&mut n).0.len(), 4);
+    assert_eq!(n.filter, "same TITLE");
+    assert_eq!(library_model(&mut n).0.len(), 3);
     w.insert_resource(n);
     assert!(drain_commands(w).is_empty());
 }
@@ -1401,5 +1429,33 @@ fn find_shortcut_routes_only_owned_loaded_documents_and_rejects_composition() {
         .unwrap();
     assert!(!shortcut(w, "find"));
     assert!(w.resource::<Notes>().unwrap().live);
+    assert!(drain_commands(w).is_empty());
+}
+
+#[test]
+fn group_popup_keeps_library_in_place_and_search_preserves_scope() {
+    let mut app = fixture();
+    app.update();
+    let w = app.world_mut();
+    let n = w.resource::<Notes>().unwrap();
+    let tree = n.tree.unwrap().root;
+    let trigger = n.actions.values().find(|a| matches!(a, Action::Picker(Picker::Group, _))).unwrap().clone();
+    click(w, trigger);
+    let n = w.resource::<Notes>().unwrap();
+    assert_eq!(n.tree.unwrap().root, tree);
+    let (menu, items) = n.menu.as_ref().unwrap();
+    let id = *items.iter().find(|(_,a)| matches!(a, Action::Group(Some("projects/")))).unwrap().0;
+    let picked = rndr_ui::menu::MenuPicked { menu: menu.root, item: id };
+    send(w, picked);
+    app.update();
+    let w = app.world_mut();
+    tick(w);
+    assert_eq!(w.resource::<Notes>().unwrap().group, Some("projects/"));
+    click(w, Action::SearchList);
+    let n = w.resource::<Notes>().unwrap();
+    assert_eq!(w.resource::<Focus>().unwrap().entity, n.search);
+    assert!(w.has::<Hidden>(n.header.unwrap()));
+    click(w, Action::SearchList);
+    assert_eq!(w.resource::<Notes>().unwrap().group, Some("projects/"));
     assert!(drain_commands(w).is_empty());
 }

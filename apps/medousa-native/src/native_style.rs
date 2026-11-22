@@ -113,7 +113,11 @@ pub fn path_crumbs(world: &mut World) {
         let available = rect.w - inset;
         let join = |from: usize| {
             let tail = parts[from..].join("  ›  ");
-            if from > 0 { format!("…  ›  {tail}") } else { tail }
+            if from > 0 {
+                format!("…  ›  {tail}")
+            } else {
+                tail
+            }
         };
         let mut text = join(parts.len().saturating_sub(1));
         for from in 0..parts.len() {
@@ -328,6 +332,8 @@ pub fn flat(world: &mut World, entity: Entity, color: Token) {
 }
 
 pub struct DocumentSidebar;
+pub struct LibraryBreadcrumbs;
+impl Component for LibraryBreadcrumbs {}
 impl Component for DocumentSidebar {}
 pub struct ReadingDocument;
 impl Component for ReadingDocument {}
@@ -340,8 +346,15 @@ pub fn document_layouts(world: &mut World) {
         .map(|(e, _)| *e)
         .collect::<Vec<_>>()
     {
-        world.get_mut::<Layout>(entity).unwrap().width =
-            Size::Px(if width < 960. { 232. } else { 288. });
+        // The notes rail fits three independently actionable labels plus two icons.
+        let rail = if world.has::<LibraryBreadcrumbs>(entity) {
+            (width * 0.37).clamp(232., 344.)
+        } else if width < 960. {
+            232.
+        } else {
+            288.
+        };
+        world.get_mut::<Layout>(entity).unwrap().width = Size::Px(rail);
     }
     for entity in world
         .query::<ReadingDocument>()

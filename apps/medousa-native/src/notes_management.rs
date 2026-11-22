@@ -133,52 +133,16 @@ fn enqueue(n: &mut Notes, command: Command) {
         n.redraw = true;
     }
 }
-fn idle(n: &Notes) -> bool {
+pub(super) fn idle(n: &Notes) -> bool {
     n.management.pending.is_none()
         && n.loads.is_empty()
         && n.saves.is_empty()
         && n.list_pending.is_none()
 }
-fn clean(n: &Notes, path: &str) -> bool {
+pub(super) fn clean(n: &Notes, path: &str) -> bool {
     n.core.get(path).is_some_and(|b| !b.dirty && !b.conflict)
         && !n.uncertain.contains(path)
         && !n.remote.contains_key(path)
-}
-pub(super) fn navigation(w: &mut World, p: Entity, n: &mut Notes) {
-    for (label, a) in [
-        ("New note", Action::New),
-        ("Search vault", Action::Search),
-        ("Trash", Action::Trash),
-        ("Vaults", Action::Roots),
-    ] {
-        super::button(w, p, n, label, super::Action::Manage(a), idle(n));
-    }
-    if let Some(path) = n.selected.clone() {
-        super::button(
-            w,
-            p,
-            n,
-            "Rename / move…",
-            super::Action::Manage(Action::Move),
-            idle(n) && clean(n, &path),
-        );
-        super::button(
-            w,
-            p,
-            n,
-            "Move to trash…",
-            super::Action::Manage(Action::Delete),
-            idle(n) && clean(n, &path),
-        );
-        super::button(
-            w,
-            p,
-            n,
-            "Close note",
-            super::Action::Manage(Action::CloseNote),
-            idle(n) && clean(n, &path),
-        );
-    }
 }
 fn forget(w: &mut World, n: &mut Notes, path: &str) {
     n.tab_order.retain(|p| p != path);
@@ -442,6 +406,7 @@ pub(super) fn apply(
     match c {
         Command::Identity => match serde_json::from_value::<VaultRootsResponse>(value) {
             Ok(r) if n.views.is_empty() => {
+                n.roots = r.roots;
                 n.core = VaultBufferCore::new(r.active_root_id);
                 n.list_page(false);
             }
@@ -563,7 +528,10 @@ pub(super) fn apply(
         Command::Roots | Command::Switch(_) | Command::AddRoot { .. } => {
             match serde_json::from_value::<VaultRootsResponse>(value) {
                 Ok(r) => {
+                    n.roots = r.roots.clone();
                     if matches!(c, Command::Switch(_)) {
+                        n.group = None;
+                        n.searching = false;
                         n.core = VaultBufferCore::new(r.active_root_id.clone());
                         n.list.clear();
                         n.tree_ids.clear();
@@ -577,6 +545,10 @@ pub(super) fn apply(
                         n.cursor = None;
                         n.generation = None;
                         n.list_page(false);
+                        if let Some(p) = n.management.panel {
+                            w.insert(p, Hidden);
+                        }
+                        return;
                     }
                     if let Some(p) = panel(w, n, "Vault directories on the workshop") {
                         for root in r.roots {

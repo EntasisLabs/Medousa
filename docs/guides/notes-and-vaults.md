@@ -5,6 +5,15 @@ Use the vault picker in **Notes** to choose where you read and create notes.
 when Medousa and the workshop share the same disk. Files stay in their original
 folder. A remote workshop uses its own configured folders.
 
+In native Notes, the sidebar header shows the active vault, note group, and
+browse mode. Each opens its own menu over the list. For example, choose
+**Projects** under **All notes**, then change **Recent** to **Folders** without
+losing that group. **+** creates a note. The magnifying glass replaces the
+header with a filter for loaded titles and paths; close it to return to the
+same group and mode. For content search, use **Vault tools → Search whole
+vault…** in the vault menu. **Load more notes** appears below the list when
+another page is available.
+
 Changing vaults saves pending note edits first. If saving fails, your draft stays
 open and the vault does not change. The list, editor buffers, recent notes, and
 last-opened note belong to that vault. Root-relative note tabs are closed after

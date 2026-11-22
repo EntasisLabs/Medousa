@@ -81,13 +81,20 @@ enum Action {
     Format(MarkdownCommand),
     Find,
     Browse(Browse),
+    Picker(Picker, Entity),
+    Group(Option<&'static str>),
+    SearchList,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Browse {
-    #[default]
+    All,
     Folders,
+    #[default]
     Recent,
 }
+#[path = "notes_sidebar.rs"]
+mod sidebar;
+use sidebar::{Picker, open_picker, sidebar_header};
 struct View {
     document: DocumentId,
     captured_revision: Option<Revision>,
@@ -107,6 +114,12 @@ struct Notes {
     formatting: Option<Entity>,
     find_tools: Option<Entity>,
     browse: Browse,
+    group: Option<&'static str>,
+    roots: Vec<medousa_types::VaultRootView>,
+    menu: Option<(rndr_ui::menu::MenuHandle, HashMap<u64, Action>)>,
+    searching: bool,
+    search_row: Option<Entity>,
+    header: Option<Entity>,
     recent: Vec<String>,
     status: Option<Entity>,
     live: bool,
@@ -249,9 +262,20 @@ pub fn mount(world: &mut World, parent: Entity) {
     set_parent(world, root, parent);
     let sidebar = column(world, root, Size::Px(288.), Size::Fill);
     visual::navigation_frame(world, sidebar);
-    let heading = column(world, sidebar, Size::Fill, Size::Px(40.));
-    world.get_mut::<Layout>(heading).unwrap().padding = 10.;
-    text(world, heading, "Notes", Typography::Emphasis).expect("notes title");
+    world.insert(sidebar, visual::LibraryBreadcrumbs);
+    let header = world.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Hug,
+        ..Layout::row()
+    },));
+    world.insert(header, Align { items: Items::Center, justify: Justify::Start });
+    set_parent(world, header, sidebar);
+    let search_row = world.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Px(36.),
+        ..Layout::row()
+    },));
+    set_parent(world, search_row, sidebar);
     let search = world.spawn((
         Layout {
             width: Size::Fill,
@@ -270,7 +294,7 @@ pub fn mount(world: &mut World, parent: Entity) {
             ..Default::default()
         },
     ));
-    set_parent(world, search, sidebar);
+    set_parent(world, search, search_row);
     visual::plane(world, search, visual::rail());
     world.get_mut::<UiStyle>(search).unwrap().typography = Some(Typography::Label);
     world.insert(search, visual::SemanticBorder(visual::stroke()));
@@ -282,10 +306,11 @@ pub fn mount(world: &mut World, parent: Entity) {
             width: 1.,
         },
     );
+
     let manager = column(world, sidebar, Size::Fill, Size::Hug);
     world.insert(manager, Hidden);
-    let rows = column(world, sidebar, Size::Fill, Size::Hug);
     let library = column(world, sidebar, Size::Fill, Size::Fill);
+    let rows = column(world, sidebar, Size::Fill, Size::Hug);
     let content = column(world, root, Size::Fill, Size::Fill);
     visual::flat(world, content, visual::canvas());
     world.insert(content, ResolvedColor);
@@ -337,6 +362,8 @@ pub fn mount(world: &mut World, parent: Entity) {
         editors: Some(editors),
         search: Some(search),
         rows: Some(rows),
+        header: Some(header),
+        search_row: Some(search_row),
         library: Some(library),
         core: VaultBufferCore::new("connected-workshop"),
         redraw: true,
@@ -515,7 +542,9 @@ fn library_model(n: &mut Notes) -> (Vec<TreeNode>, Vec<NodeId>) {
     // shared tree, including malformed/repeated pages or fixture input.
     let mut seen = std::collections::HashSet::new();
     for item in &n.list {
-        if !seen.insert(item.path.clone()) {
+        if n.group.is_some_and(|group| !item.path.starts_with(group))
+            || !seen.insert(item.path.clone())
+        {
             continue;
         }
         if !format!("{} {}", item.title, item.path)
@@ -568,9 +597,16 @@ fn library_model(n: &mut Notes) -> (Vec<TreeNode>, Vec<NodeId>) {
                 .then_with(|| a.path.cmp(&b.path))
         });
         matches.truncate(40);
+    } else if n.browse == Browse::All {
+        matches.sort_by(|a, b| {
+            b.modified_at_utc
+                .cmp(&a.modified_at_utc)
+                .then_with(|| a.path.cmp(&b.path))
+        });
     } else {
         matches.sort_by(|a, b| a.path.cmp(&b.path));
     }
+    let now = chrono::Utc::now();
     for item in matches {
         let id = *n
             .tree_ids
@@ -596,7 +632,24 @@ fn library_model(n: &mut Notes) -> (Vec<TreeNode>, Vec<NodeId>) {
         if n.core.get(&item.path).is_some_and(|b| b.dirty) {
             node.badge = "●".into();
         }
-        node.secondary = item.path.clone();
+        if n.browse == Browse::Folders {
+            node.secondary = item.path.clone();
+        } else {
+            let age = now - item.modified_at_utc;
+            node.secondary = match age.num_minutes() {
+                0 => "now".into(),
+                m @ 1..=59 => format!("{m}m ago"),
+                60..=1439 => format!("{}h ago", age.num_hours()),
+                1440..=10079 => format!("{}d ago", age.num_days()),
+                _ => item.modified_at_utc.format("%b %-d").to_string(),
+            };
+            node.secondary.push_str(" · ");
+            node.secondary.push_str(if item.kind.trim().is_empty() {
+                "Note"
+            } else {
+                item.kind.trim()
+            });
+        }
         n.tree_paths.insert(id, item.path);
         nodes.push(node);
     }
@@ -611,38 +664,14 @@ fn render(world: &mut World, n: &mut Notes) {
     let tabs = n.tabs.unwrap();
     let formatting = n.formatting.unwrap();
     let status = n.status.unwrap();
-    for parent in [rows, toolbar, notice, formatting, status] {
+    let header = n.header.unwrap();
+    for parent in [header, rows, toolbar, notice, formatting, status] {
         for c in children_of(world, parent) {
             despawn(world, c);
         }
     }
     n.actions.clear();
-    button(
-        world,
-        rows,
-        n,
-        "Refresh",
-        Action::Refresh,
-        n.list_pending.is_none(),
-    );
-    management::navigation(world, rows, n);
-    for (label, mode) in [("Folders", Browse::Folders), ("Recent", Browse::Recent)] {
-        button(
-            world,
-            rows,
-            n,
-            label,
-            Action::Browse(mode),
-            n.browse != mode,
-        );
-    }
-    if n.browse == Browse::Recent {
-        caption(
-            world,
-            rows,
-            "Recent · this window, then modified · up to 40 loaded notes",
-        );
-    }
+    sidebar_header(world, n, header);
     if n.list_pending.is_some() {
         caption(world, rows, "Loading vault notes…");
     }
@@ -711,11 +740,7 @@ fn render(world: &mut World, n: &mut Notes) {
         );
     }
     if n.truncated {
-        caption(
-            world,
-            rows,
-            "The daemon returned a bounded listing; not all notes may be shown.",
-        );
+        caption(world, rows, "Showing loaded notes only.");
     }
     if n.live && n.selected.is_some() {
         world.remove::<Hidden>(formatting);
@@ -966,6 +991,17 @@ pub fn tick(world: &mut World) {
     if world.resource::<Notes>().is_none() {
         return;
     }
+    for ev in events::<rndr_ui::menu::MenuPicked>(world).to_vec() {
+        let n = world.resource_mut::<Notes>().unwrap();
+        if n.menu.as_ref().is_some_and(|(m, _)| m.root == ev.menu) {
+            let (_, mut actions) = n.menu.take().unwrap();
+            if let Some(choice) = actions.remove(&ev.item) {
+                n.actions.insert(ev.item, choice);
+                action(world, &HostIntent::Command(ev.item));
+                return;
+            }
+        }
+    }
     let mut n = std::mem::take(world.resource_mut::<Notes>().unwrap());
     capture(world, &mut n);
     capture_rich(world, &mut n);
@@ -1074,20 +1110,29 @@ pub fn tick(world: &mut World) {
 pub fn keyboard(world: &mut World) {
     if crate::surfaces::active(world) != crate::surfaces::SurfaceId::Notes
         || !can_deactivate(world)
-        || world.resource::<Input>().is_some_and(|i| {
-            !i.ime_preedit.is_empty() || !i.ime_commit.is_empty()
-        })
+        || world
+            .resource::<Input>()
+            .is_some_and(|i| !i.ime_preedit.is_empty() || !i.ime_commit.is_empty())
     {
         return;
     }
-    let platform = world.resource::<Platform>().copied().unwrap_or_else(Platform::host);
-    let keys = world.resource_mut::<Input>()
-        .map(|i| std::mem::take(&mut i.keys)).unwrap_or_default();
+    let platform = world
+        .resource::<Platform>()
+        .copied()
+        .unwrap_or_else(Platform::host);
+    let keys = world
+        .resource_mut::<Input>()
+        .map(|i| std::mem::take(&mut i.keys))
+        .unwrap_or_default();
     let mut kept = Vec::with_capacity(keys.len());
     let mut consumed = false;
     for event in keys {
-        if !event.released && !event.repeat && !event.synthetic
-            && Keystroke::character('f').primary().matches(&event, platform)
+        if !event.released
+            && !event.repeat
+            && !event.synthetic
+            && Keystroke::character('f')
+                .primary()
+                .matches(&event, platform)
             && shortcut(world, "find")
         {
             consumed = true;
@@ -1100,7 +1145,9 @@ pub fn keyboard(world: &mut World) {
         // the first mappable press. Reconstruct only after actual consumption;
         // legacy-only input and rejected events must remain untouched.
         if consumed {
-            input.key = kept.iter().find(|e| !e.released)
+            input.key = kept
+                .iter()
+                .find(|e| !e.released)
                 .and_then(|e| rndr_core::legacy_key(e, platform));
         }
         input.keys = kept;
@@ -1147,13 +1194,32 @@ pub fn action(world: &mut World, host: &HostIntent) -> bool {
         return true;
     }
     match a {
-        Action::Manage(a) => management::action(world, &mut n, a),
+        Action::Manage(a) => {
+            management::action(world, &mut n, a);
+            n.redraw = true;
+        }
+        Action::Picker(which, anchor) => open_picker(world, &mut n, which, anchor),
+        Action::Group(group) => {
+            n.group = group;
+            n.redraw = true;
+        }
+        Action::SearchList if can_deactivate_views(world, &n) => {
+            n.searching = !n.searching;
+            if !n.searching {
+                world
+                    .get_mut::<Label>(n.search.unwrap())
+                    .unwrap()
+                    .text
+                    .clear();
+            }
+            if let Some(f) = world.resource_mut::<Focus>() {
+                f.entity = if n.searching { n.search } else { None };
+            }
+            n.redraw = true;
+        }
+        Action::SearchList => (),
         Action::Browse(mode) => {
             n.browse = mode;
-            n.filter.clear();
-            if let Some(search) = n.search.and_then(|e| world.get_mut::<Label>(e)) {
-                search.text.clear();
-            }
             n.redraw = true;
         }
         Action::Find => {
