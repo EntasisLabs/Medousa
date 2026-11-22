@@ -2795,6 +2795,12 @@ mod tests {
     }
 }
 
+/// Shows conversation `session` in Chat, as from another surface.
+pub(crate) fn open_conversation(world: &mut World, session: String) {
+    crate::surfaces::select(world, crate::surfaces::SurfaceId::Chat);
+    conversations::open(world, Some(session));
+}
+
 pub fn external_admitted(world: &mut World, session: &str) {
     conversations::with_session(world, session, |world| {
         external_admitted_current(world, session)

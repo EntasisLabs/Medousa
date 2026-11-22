@@ -53,6 +53,15 @@ fit and **Style** at the top right (medousa-home's nine colors, S–XL sizes,
 and None, Soft or Solid fill), zoom at the bottom left, and **Details** for the
 layers list with show and lock toggles.
 
+**Add image** uploads a PNG, JPEG or WebP (up to 25 MiB) to the project and
+places it centered in the selected or first frame. **Ask Medousa** sends a
+request about the selection to the project's own conversation; the proposal
+previews over the canvas (Original or Preview) until you **Use this** or
+dismiss it, and proposals Medousa makes from a chat land the same way. A lost
+request or decision is retried with the same id. An open project re-reads
+itself every few seconds while nothing is unsaved, so edits from medousa-home
+or an accepted proposal appear without reopening it.
+
 The Chat surface contains a left conversation sidebar and native chat workspace.
 Session search/paging and mutations, model/mode/depth controls, source-document
 composition, typed history/stream rendering, attachments, runtime controls,

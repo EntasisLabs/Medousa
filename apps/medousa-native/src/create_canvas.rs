@@ -3,6 +3,7 @@
 //! it, history, fit and the style palette at the top right, zoom at the
 //! bottom left, and the layers inspector behind "Details". The canvas stays
 //! full-bleed; RNDR's canvas view leaves presses on these controls to them.
+use super::ask::Source;
 use super::*;
 use crate::native_style as visual;
 use rndr_canvas::{Alignment, Axis, ShapeKind};
@@ -92,6 +93,14 @@ pub(crate) enum Do {
     Layer(String),
     Visible(String),
     Lock(String),
+    Image,
+    Ask,
+    AskSend,
+    AskPreview(bool),
+    AskUse,
+    AskDismiss,
+    AskRetry,
+    AskConversation,
 }
 
 pub(crate) struct Chrome {
@@ -586,7 +595,11 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         c.shapes_open,
         c.details_open,
         if c.details_open { &n.layers[..] } else { &[] },
-    );
+    ) + if s.importing.is_some() {
+        "|importing"
+    } else {
+        ""
+    } + &s.ask.signature();
     if signature == s.chrome.signature {
         return;
     }
@@ -610,6 +623,10 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         w.resource_mut::<Focus>().unwrap().entity = None;
     }
     let details = s.chrome.details;
+    // Typing in the Ask prompt survives a rebuild.
+    let typing =
+        s.ask.field.is_some() && w.resource::<Focus>().and_then(|f| f.entity) == s.ask.field;
+    s.ask.field = None;
     for root in [top_left, top_right, bottom, zoom, palette, details] {
         for e in children_of(w, root) {
             despawn(w, e);
@@ -860,7 +877,9 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     }
 
     // Selection actions, the shape picker, then the tool strip.
-    if n.tool == Tool::Select && !n.selection.is_empty() && !n.editing {
+    if s.ask.open {
+        ask_panel(w, s, bottom, &n, typing);
+    } else if n.tool == Tool::Select && !n.selection.is_empty() && !n.editing {
         let bar = floating(w, bottom, Axis2::Row, Absolute::default(), 9.);
         w.remove::<Absolute>(bar);
         panel(
@@ -985,6 +1004,30 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         n.tool == Tool::Text,
         true,
     );
+    divider(w, strip);
+    let importing = s.importing.is_some();
+    icon(
+        w,
+        strip,
+        s,
+        Icon::ImagePlus,
+        "Add image",
+        Do::Image,
+        false,
+        !importing,
+    );
+    // Lit while open, or while a proposal waits for a decision.
+    let waiting = s.ask.view.as_ref().is_some_and(|v| v.ready());
+    icon(
+        w,
+        strip,
+        s,
+        Icon::Sparkles,
+        "Ask Medousa",
+        Do::Ask,
+        s.ask.open || waiting,
+        true,
+    );
 
     // Zoom.
     icon(
@@ -999,6 +1042,287 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     );
     word(w, zoom, s, &format!("{}%", n.zoom), Do::Fit, false, true);
     icon(w, zoom, s, Icon::Plus, "Zoom in", Do::ZoomIn, false, true);
+}
+
+/// The Ask popover: what is selected, the prompt, and the latest request.
+fn ask_panel(w: &mut World, s: &mut State, bottom: Entity, n: &Snapshot, typing: bool) {
+    let panel_root = floating(w, bottom, Axis2::Column, Absolute::default(), 11.);
+    w.remove::<Absolute>(panel_root);
+    {
+        let l = w.get_mut::<Layout>(panel_root).unwrap();
+        l.width = Size::Px(440.);
+        l.padding = 10.;
+        l.gap = 8.;
+    }
+    w.insert(
+        panel_root,
+        Align {
+            items: Items::Stretch,
+            justify: Justify::Start,
+        },
+    );
+    let header = panel(
+        w,
+        panel_root,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        header,
+        Align {
+            items: Items::Center,
+            justify: Justify::SpaceBetween,
+        },
+    );
+    caption(
+        w,
+        header,
+        &match n.selection.len() {
+            0 => "Select an object or frame to work with Medousa".to_string(),
+            1 => "1 object selected".into(),
+            k => format!("{k} objects selected"),
+        },
+    );
+    icon(
+        w,
+        header,
+        s,
+        Icon::X,
+        "Close Ask Medousa",
+        Do::Ask,
+        false,
+        true,
+    );
+
+    let ask = &s.ask;
+    let executing = ask.executing();
+    let busy = ask.sending() || ask.pending.is_some() || executing;
+    let row = panel(
+        w,
+        panel_root,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        row,
+        Align {
+            items: Items::Center,
+            justify: Justify::Start,
+        },
+    );
+    let field = w.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(36.),
+            padding: 8.,
+            ..Layout::column()
+        },
+        Label::new(ask.draft.clone()),
+        Semantics {
+            name: Some("Ask about selected work".into()),
+            ..Default::default()
+        },
+    ));
+    if !busy {
+        w.insert(field, Focusable);
+        w.insert(
+            field,
+            Prompt {
+                submit_on_enter: true,
+                max_lines: 1,
+                ..Default::default()
+            },
+        );
+        let hint = if ask.view.as_ref().is_some_and(|v| v.source == Source::Job) {
+            "Keep refining this direction…"
+        } else {
+            "Make this feel a little more playful…"
+        };
+        w.insert(field, Placeholder::new(hint));
+    }
+    set_parent(w, field, row);
+    visual::plane(w, field, visual::rail());
+    w.insert(field, Radius(8.));
+    if executing {
+        icon(
+            w,
+            row,
+            s,
+            Icon::Square,
+            "Cancel creative request",
+            Do::AskDismiss,
+            false,
+            !s.ask.sending(),
+        );
+    } else {
+        let ready = !busy && !n.selection.is_empty() && !s.ask.draft.trim().is_empty();
+        icon(
+            w,
+            row,
+            s,
+            Icon::ArrowUp,
+            "Create a proposal",
+            Do::AskSend,
+            false,
+            ready,
+        );
+    }
+    s.ask.field = Some(field);
+    if typing && !busy {
+        w.resource_mut::<Focus>().unwrap().entity = Some(field);
+    }
+
+    // The latest request, as medousa-home words it.
+    let ask = &s.ask;
+    let view = ask.view.clone();
+    let line = |w: &mut World, text: &str| {
+        let e = rndr_ui::text(w, panel_root, text, Typography::Secondary).unwrap();
+        w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Wrap;
+        w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+    };
+    if ask.sending() && ask.pending.is_some() {
+        line(w, "Sending request…");
+    } else if ask.pending.is_some() {
+        line(
+            w,
+            "Your request is saved here. Retry to confirm it was received.",
+        );
+        word(w, panel_root, s, "Retry request", Do::AskRetry, false, true);
+    } else if let Some(v) = &view {
+        use medousa_types::CreativeJobStatus as S;
+        match v.status {
+            S::Queued | S::Dispatching | S::Running => line(w, "Working on your selection…"),
+            S::Ready | S::Stale if v.ready() => {
+                let revision = w
+                    .resource::<CanvasView>()
+                    .map_or(0, |c| c.editor.mutation().document.revision);
+                let stale = v.status == S::Stale || v.base.is_some_and(|b| b != revision);
+                let head = panel(
+                    w,
+                    panel_root,
+                    Layout {
+                        width: Size::Fill,
+                        height: Size::Hug,
+                        gap: 6.,
+                        ..Layout::row()
+                    },
+                );
+                w.insert(
+                    head,
+                    Align {
+                        items: Items::Center,
+                        justify: Justify::SpaceBetween,
+                    },
+                );
+                caption(
+                    w,
+                    head,
+                    if stale {
+                        "Medousa · Canvas updated"
+                    } else {
+                        "Medousa · Preview"
+                    },
+                );
+                icon(
+                    w,
+                    head,
+                    s,
+                    Icon::X,
+                    "Dismiss proposal",
+                    Do::AskDismiss,
+                    false,
+                    !s.ask.sending(),
+                );
+                line(w, v.label.as_deref().unwrap_or("Proposal"));
+                if stale {
+                    line(
+                        w,
+                        "Keeps your latest canvas edits. Applying checks for conflicts again.",
+                    );
+                }
+                let choices = panel(
+                    w,
+                    panel_root,
+                    Layout {
+                        width: Size::Fill,
+                        height: Size::Hug,
+                        gap: 4.,
+                        ..Layout::row()
+                    },
+                );
+                let preview = s.ask.preview;
+                word(
+                    w,
+                    choices,
+                    s,
+                    "Original",
+                    Do::AskPreview(false),
+                    !preview,
+                    true,
+                );
+                word(
+                    w,
+                    choices,
+                    s,
+                    "Preview",
+                    Do::AskPreview(true),
+                    preview,
+                    true,
+                );
+                word(
+                    w,
+                    choices,
+                    s,
+                    "Use this",
+                    Do::AskUse,
+                    false,
+                    !s.ask.sending(),
+                );
+            }
+            S::Accepted => line(w, "Applied to the canvas. You can undo this change."),
+            S::Cancelled => line(w, "Request cancelled. Your original is still here."),
+            S::Failed | S::Interrupted => line(
+                w,
+                v.error
+                    .as_deref()
+                    .unwrap_or("This request couldn’t finish. Your original is still here."),
+            ),
+            _ => {}
+        }
+        if !v.session.is_empty() {
+            word(
+                w,
+                panel_root,
+                s,
+                "Open conversation",
+                Do::AskConversation,
+                false,
+                true,
+            );
+        }
+    }
+    if let Some(error) = s.ask.error.clone() {
+        line(w, &error);
+        if s.ask.decision.is_some() {
+            word(
+                w,
+                panel_root,
+                s,
+                "Retry decision",
+                Do::AskRetry,
+                false,
+                !s.ask.sending(),
+            );
+        }
+    }
 }
 
 /// Center the bottom group and size the details panel to the canvas.
@@ -1086,6 +1410,35 @@ pub(super) fn run(w: &mut World, s: &mut State, a: Do) {
             }
         }
         Do::Palette => c.palette_open = !c.palette_open,
+        Do::Ask => {
+            s.ask.open = !s.ask.open;
+            if s.ask.open {
+                ask::refresh(w, s);
+            }
+        }
+        Do::AskSend => ask::start(w, s),
+        Do::AskPreview(on) => s.ask.preview = on,
+        Do::AskUse => ask::decide(w, s, true),
+        Do::AskDismiss => ask::decide(w, s, false),
+        Do::AskRetry => ask::retry(w, s),
+        Do::AskConversation => {
+            if let Some(session) = s.ask.view.as_ref().map(|v| v.session.clone())
+                && !session.is_empty()
+            {
+                crate::ui::open_conversation(w, session);
+            }
+        }
+        Do::Image => {
+            if s.importing.is_none()
+                && let Some(id) = w
+                    .resource::<CanvasView>()
+                    .map(|v| v.editor.document_id().to_string())
+            {
+                s.importing = Some(s.enqueue(Kind::Import(id)));
+                s.message.clear();
+                s.redraw = true;
+            }
+        }
         Do::Details => c.details_open = !c.details_open,
         Do::AlignMenu => {
             if let Some(anchor) = anchors[0] {

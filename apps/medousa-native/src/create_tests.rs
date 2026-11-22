@@ -462,6 +462,49 @@ fn create_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "-palette");
+        // Ask Medousa with a proposal previewing over the canvas.
+        with_state(app.world_mut(), |w, s| {
+            canvas::run(w, s, canvas::Do::Palette);
+            canvas::run(w, s, canvas::Do::Details);
+            canvas::run(w, s, canvas::Do::Shapes);
+            canvas::run(w, s, canvas::Do::Tool(Tool::Select));
+            canvas::run(w, s, canvas::Do::Ask);
+            s.ask.list = None;
+            let recolor = {
+                let mut n = w
+                    .resource::<CanvasView>()
+                    .unwrap()
+                    .editor
+                    .nodes()
+                    .into_iter()
+                    .find(|n| n.id == "plan")
+                    .unwrap();
+                if let Content::Shape { fill, .. } = &mut n.content {
+                    *fill = "#9474dc".into();
+                }
+                Operation::put(n)
+            };
+            s.ask.view = Some(ask::View {
+                id: "job-1".into(),
+                source: ask::Source::Job,
+                status: medousa_types::CreativeJobStatus::Ready,
+                session: "session-1".into(),
+                label: Some("Make the plan step stand out in violet".into()),
+                operations: vec![recolor],
+                base: Some(document.document.revision),
+                error: None,
+            });
+            s.ask.preview = true;
+        });
+        app.world_mut()
+            .resource_mut::<CanvasView>()
+            .unwrap()
+            .editor
+            .select(&["plan".into()]);
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "-ask");
     }
 }
 
@@ -636,4 +679,338 @@ fn selection_actions_and_layers_act_on_the_canvas() {
     run(w, canvas::Do::Visible("r".into()));
     run(w, canvas::Do::Layer("r".into()));
     assert_eq!(editor(w).selection(), ["r".to_string()]);
+}
+
+#[test]
+fn imported_images_land_centered_in_the_selected_or_first_frame() {
+    let frame = Starter::Diagram.scene().nodes.remove(0);
+    let nodes = vec![frame.clone()];
+    // Larger than the frame: scaled to fit, centered, parented.
+    let (parent, t) = placement(&nodes, &[], 2400, 920);
+    assert_eq!(parent.as_deref(), Some(frame.id.as_str()));
+    assert_eq!((t.width, t.height), (1200., 460.));
+    assert_eq!((t.x, t.y), (0., 230.));
+    // Small images keep their size.
+    let (_, t) = placement(&nodes, &[], 100, 50);
+    assert_eq!((t.width, t.height, t.x, t.y), (100., 50., 550., 435.));
+    // No frame: a 1200 × 920 area at the origin.
+    let (parent, _) = placement(&[], &[], 10, 10);
+    assert!(parent.is_none());
+}
+
+#[test]
+fn an_idle_project_is_reread_and_edits_made_elsewhere_appear() {
+    let mut app = opened();
+    let w = app.world_mut();
+    take_commands(w);
+    state_mut(w).unwrap().polled = std::time::Instant::now() - POLL;
+    sync(w);
+    let commands = take_commands(w);
+    let poll = commands
+        .iter()
+        .find(|c| matches!(c.kind, Kind::Get(_)))
+        .expect("idle re-read");
+    sync(w);
+    assert!(
+        !take_commands(w)
+            .iter()
+            .any(|c| matches!(c.kind, Kind::Get(_))),
+        "one read at a time"
+    );
+    let mut newer = document("doc", "Board");
+    newer.document =
+        rndr_canvas::apply_operations(&newer.document, &[rectangle("theirs")]).unwrap();
+    newer.document.revision = 3;
+    reply(w, poll, Ok(Response::Document(Box::new(newer))));
+    assert!(editor(w).nodes().iter().any(|n| n.id == "theirs"));
+    // Not while an edit of ours is unsaved.
+    w.resource_mut::<CanvasView>()
+        .unwrap()
+        .editor
+        .commit("Add mine", vec![rectangle("mine")]);
+    state_mut(w).unwrap().polled = std::time::Instant::now() - POLL;
+    sync(w);
+    assert!(
+        !take_commands(w)
+            .iter()
+            .any(|c| matches!(c.kind, Kind::Get(_)))
+    );
+}
+
+#[test]
+fn an_imported_image_joins_the_canvas_as_one_undoable_edit() {
+    // Asset ids are `a_` and the content's SHA-256, as the daemon names them.
+    const ASSET: &str = "a_0000000000000000000000000000000000000000000000000000000000000000";
+    let mut app = opened();
+    let w = app.world_mut();
+    take_commands(w);
+    run(w, canvas::Do::Image);
+    let commands = take_commands(w);
+    let import = commands
+        .iter()
+        .find(|c| matches!(c.kind, Kind::Import(_)))
+        .expect("picker and upload run on the worker");
+    run(w, canvas::Do::Image);
+    assert!(
+        !take_commands(w)
+            .iter()
+            .any(|c| matches!(c.kind, Kind::Import(_))),
+        "one import at a time"
+    );
+    let mut after = document("doc", "Board");
+    after.document.assets.insert(
+        ASSET.into(),
+        rndr_canvas::Asset {
+            id: ASSET.into(),
+            mime: "image/png".into(),
+            byte_size: 4,
+            sha256: "0".repeat(64),
+        },
+    );
+    after.document.revision = 1;
+    reply(
+        w,
+        import,
+        Ok(Response::Imported(Box::new(Imported {
+            asset: ASSET.into(),
+            width: 2,
+            height: 1,
+            rgba: vec![255; 8],
+            document: after,
+        }))),
+    );
+    let e = editor(w);
+    let image = e
+        .nodes()
+        .into_iter()
+        .find(|n| matches!(&n.content, Content::Image { asset_id, .. } if asset_id == ASSET))
+        .expect("image node");
+    assert_eq!(e.selection(), std::slice::from_ref(&image.id));
+    assert!(e.is_saving(), "saved through the worker like any edit");
+    assert_eq!(
+        w.resource::<CanvasView>()
+            .unwrap()
+            .images
+            .get(ASSET)
+            .copied(),
+        Some(texture_id("doc", ASSET))
+    );
+}
+
+fn ask_view(id: &str, status: medousa_types::CreativeJobStatus, ops: Vec<Operation>) -> ask::View {
+    ask::View {
+        id: id.into(),
+        source: ask::Source::Job,
+        status,
+        session: "session-1".into(),
+        label: (!ops.is_empty()).then(|| "Softer palette".into()),
+        operations: ops,
+        base: Some(0),
+        error: None,
+    }
+}
+
+fn ask_command(commands: &[Command], f: impl Fn(&ask::AskKind) -> bool) -> Command {
+    commands
+        .iter()
+        .find(|c| matches!(&c.kind, Kind::Ask(_, k) if f(k)))
+        .cloned()
+        .expect("ask command")
+}
+
+#[test]
+fn asking_medousa_previews_the_proposal_and_using_it_reloads_the_canvas() {
+    use medousa_types::CreativeJobStatus as S;
+    let mut app = opened();
+    let w = app.world_mut();
+    // Opening the project read its latest request.
+    let latest = latest_read(w);
+    reply(w, &latest, Ok(Response::Ask(ask::AskReply::Latest(None))));
+
+    run(w, canvas::Do::Ask);
+    take_commands(w);
+    // Nothing selected: refused with medousa-home's words, nothing sent.
+    state_mut(w).unwrap().ask.draft = "Make it playful".into();
+    run(w, canvas::Do::AskSend);
+    assert!(
+        take_commands(w)
+            .iter()
+            .all(|c| !matches!(c.kind, Kind::Ask(..)))
+    );
+    assert!(
+        state(w)
+            .unwrap()
+            .ask
+            .error
+            .as_deref()
+            .unwrap()
+            .starts_with("Select something")
+    );
+
+    let frame = editor(w).nodes()[0].id.clone();
+    w.resource_mut::<CanvasView>()
+        .unwrap()
+        .editor
+        .select(std::slice::from_ref(&frame));
+    state_mut(w).unwrap().ask.draft = "Make it playful".into();
+    run(w, canvas::Do::AskSend);
+    let start = ask_command(&take_commands(w), |k| matches!(k, ask::AskKind::Start(_)));
+    let Kind::Ask(_, ask::AskKind::Start(request)) = &start.kind else {
+        unreachable!()
+    };
+    assert_eq!(request.selected_ids, std::slice::from_ref(&frame));
+    assert_eq!(request.prompt, "Make it playful");
+    assert_eq!(request.expected_revision, 0);
+    assert!(names_contains(w, "Sending request…") || state(w).unwrap().ask.sending());
+
+    reply(
+        w,
+        &start,
+        Ok(Response::Ask(ask::AskReply::Job(ask_view(
+            &request.id,
+            S::Running,
+            vec![],
+        )))),
+    );
+    assert!(state(w).unwrap().ask.draft.is_empty());
+    assert!(shown(w).iter().any(|n| n == "Cancel creative request"));
+    // A running request is checked again after a moment.
+    state_mut(w).unwrap().ask.polled =
+        Some(std::time::Instant::now() - std::time::Duration::from_secs(3));
+    sync(w);
+    let check = ask_command(&take_commands(w), |k| matches!(k, ask::AskKind::Job(_)));
+    reply(
+        w,
+        &check,
+        Ok(Response::Ask(ask::AskReply::Job(ask_view(
+            &request.id,
+            S::Ready,
+            vec![rectangle("proposed")],
+        )))),
+    );
+    // A fresh proposal opens on its preview without saving anything.
+    let e = editor(w);
+    assert!(e.previewing());
+    assert!(e.nodes().iter().any(|n| n.id == "proposed"));
+    assert!(
+        !e.mutation()
+            .document
+            .scene
+            .nodes
+            .iter()
+            .any(|n| n.id == "proposed")
+    );
+    run(w, canvas::Do::AskPreview(false));
+    assert!(
+        !editor(w).previewing(),
+        "Original shows the canvas as saved"
+    );
+
+    run(w, canvas::Do::AskUse);
+    let decide = ask_command(&take_commands(w), |k| matches!(k, ask::AskKind::Decide(..)));
+    reply(
+        w,
+        &decide,
+        Ok(Response::Ask(ask::AskReply::Decided(
+            Some(ask_view(
+                &request.id,
+                S::Accepted,
+                vec![rectangle("proposed")],
+            )),
+            true,
+        ))),
+    );
+    // The daemon applied it; the canvas reads the document it produced.
+    assert!(
+        take_commands(w)
+            .iter()
+            .any(|c| matches!(c.kind, Kind::Get(_)))
+    );
+    assert!(shown(w).iter().any(|n| n == "Open conversation"));
+}
+
+/// The latest-request read a project issues on open. The app's own update
+/// dispatches it, so it is rebuilt from the serial the surface waits on.
+fn latest_read(w: &mut World) -> Command {
+    take_commands(w);
+    Command {
+        serial: state(w).unwrap().ask.list.expect("read on open"),
+        kind: Kind::Ask("doc".into(), ask::AskKind::Latest),
+    }
+}
+
+fn names_contains(w: &World, text: &str) -> bool {
+    w.entities_with::<Label>()
+        .into_iter()
+        .any(|e| w.get::<Label>(e).is_some_and(|l| l.text == text))
+}
+
+#[test]
+fn a_lost_request_is_retried_with_the_same_id_and_a_refusal_is_not() {
+    let mut app = opened();
+    let w = app.world_mut();
+    take_commands(w);
+    run(w, canvas::Do::Ask);
+    let frame = editor(w).nodes()[0].id.clone();
+    w.resource_mut::<CanvasView>()
+        .unwrap()
+        .editor
+        .select(&[frame]);
+    state_mut(w).unwrap().ask.draft = "Tighten the spacing".into();
+    run(w, canvas::Do::AskSend);
+    let start = ask_command(&take_commands(w), |k| matches!(k, ask::AskKind::Start(_)));
+    reply(
+        w,
+        &start,
+        Err(CanvasError::Storage("connection reset".into())),
+    );
+    assert!(
+        state(w).unwrap().ask.pending.is_some(),
+        "kept for an exact retry"
+    );
+    assert!(shown(w).iter().any(|n| n == "Retry request"));
+    run(w, canvas::Do::AskRetry);
+    let again = ask_command(&take_commands(w), |k| matches!(k, ask::AskKind::Start(_)));
+    let (Kind::Ask(_, ask::AskKind::Start(a)), Kind::Ask(_, ask::AskKind::Start(b))) =
+        (&start.kind, &again.kind)
+    else {
+        unreachable!()
+    };
+    assert_eq!(a.id, b.id);
+    reply(w, &again, Err(CanvasError::Invalid("too large".into())));
+    assert!(
+        state(w).unwrap().ask.pending.is_none(),
+        "a refusal never admitted work"
+    );
+}
+
+#[test]
+fn a_proposal_from_a_conversation_waits_on_the_canvas() {
+    let mut app = opened();
+    let w = app.world_mut();
+    let latest = latest_read(w);
+    let mut view = ask_view(
+        "p1",
+        medousa_types::CreativeJobStatus::Ready,
+        vec![rectangle("chat")],
+    );
+    view.source = ask::Source::Proposal;
+    view.session.clear();
+    reply(
+        w,
+        &latest,
+        Ok(Response::Ask(ask::AskReply::Latest(Some(view)))),
+    );
+    run(w, canvas::Do::Ask);
+    take_commands(w);
+    assert!(shown(w).iter().any(|n| n == "Dismiss proposal"));
+    run(w, canvas::Do::AskDismiss);
+    let decide = ask_command(&take_commands(w), |k| matches!(k, ask::AskKind::Decide(..)));
+    let Kind::Ask(_, ask::AskKind::Decide(source, id, decision)) = &decide.kind else {
+        unreachable!()
+    };
+    assert_eq!(
+        (*source, id.as_str(), decision.accept),
+        (ask::Source::Proposal, "p1", false)
+    );
 }

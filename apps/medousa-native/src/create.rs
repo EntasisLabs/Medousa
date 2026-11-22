@@ -17,6 +17,8 @@ use rndr_ui::controls::HostIntent;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[path = "create_ask.rs"]
+mod ask;
 #[path = "create_canvas.rs"]
 mod canvas;
 #[path = "create_view.rs"]
@@ -24,6 +26,11 @@ mod view;
 
 /// The canvas paints into this surface slot.
 const SLOT: u64 = 0x4352_0001;
+/// How often an idle open project is re-read for edits made elsewhere
+/// (medousa-home, another window, or Medousa accepting a proposal).
+const POLL: std::time::Duration = std::time::Duration::from_secs(4);
+/// medousa-home's import limit.
+const MAX_IMAGE: u64 = 25 * 1024 * 1024;
 static NEXT: AtomicU64 = AtomicU64::new(0x4352_1000);
 fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
@@ -139,6 +146,10 @@ enum Kind {
     Transact(String, Transaction),
     History(String, HistoryRequest),
     Asset(String, String),
+    /// Pick an image, add it to project `0`, and read the project again.
+    Import(String),
+    /// Ask Medousa about project `0`.
+    Ask(String, ask::AskKind),
 }
 pub struct Update {
     command: Command,
@@ -153,6 +164,17 @@ enum Response {
         height: u32,
         rgba: Vec<u8>,
     },
+    Imported(Box<Imported>),
+    Ask(ask::AskReply),
+    /// The picker was dismissed.
+    Cancelled,
+}
+pub struct Imported {
+    asset: String,
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+    document: Mutation,
 }
 
 #[derive(Clone, Debug)]
@@ -187,6 +209,11 @@ pub(crate) struct State {
     redraw: bool,
     /// Save status last drawn, so the sidebar redraws when it changes.
     status: (bool, bool),
+    /// The last idle re-read of the open project, and the one in flight.
+    polled: std::time::Instant,
+    poll: Option<u64>,
+    importing: Option<u64>,
+    ask: ask::Ask,
 }
 
 /// The surface state. Taken out while a system builds UI against the world.
@@ -226,13 +253,19 @@ pub fn mount(w: &mut World, parent: Entity) {
         started: false,
         redraw: true,
         status: (false, false),
+        polled: std::time::Instant::now(),
+        poll: None,
+        importing: None,
+        ask: ask::Ask::default(),
     })));
 }
 
 pub fn activate(w: &mut World) {
     if let Some(s) = state_mut(w) {
-        if !s.started {
-            s.started = true;
+        // Every return re-lists: projects may have been made or renamed in
+        // medousa-home meanwhile.
+        s.started = true;
+        if s.list.is_none() {
             s.refresh();
         }
         s.redraw = true;
@@ -375,6 +408,17 @@ pub fn sync(w: &mut World) {
                 .filter(|a| !s.assets.contains(*a))
                 .cloned()
                 .collect();
+            // Pick up edits made elsewhere while this one has nothing unsaved;
+            // RNDR keeps a newer read under any edit made meanwhile.
+            if active
+                && !v.editor.is_saving()
+                && v.editor.editing_text().is_none()
+                && s.poll.is_none()
+                && s.polled.elapsed() >= POLL
+            {
+                s.polled = std::time::Instant::now();
+                s.poll = Some(s.enqueue(Kind::Get(id.clone())));
+            }
             let status = (v.editor.is_saving(), v.editor.is_stalled());
             if status != s.status {
                 s.status = status;
@@ -390,6 +434,20 @@ pub fn sync(w: &mut World) {
             s.redraw = false;
         }
         if active {
+            // The Ask prompt's text, kept across rebuilds; Enter sends it.
+            if let Some(field) = s.ask.field
+                && let Some(label) = w.get::<Label>(field)
+            {
+                s.ask.draft = label.text.clone();
+            }
+            let sent = events::<Submitted>(w)
+                .iter()
+                .any(|e| Some(e.entity) == s.ask.field);
+            if sent {
+                ask::start(w, s);
+            }
+            ask::tick(w, s);
+            ask::sync_preview(w, s);
             canvas::picks(w, s);
             canvas::render(w, s);
             canvas::place(w, s);
@@ -481,8 +539,113 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
             Ok(data) => decode(&data),
             Err(e) => Err(canvas_error(e)),
         },
+        Kind::Import(id) => import(client, id).await,
+        Kind::Ask(project, kind) => ask::execute(client, project, kind).await.map(Response::Ask),
     };
     Update { command, result }
+}
+
+/// medousa-home's import: a PNG, JPEG or WebP under 25 MiB, uploaded, then the
+/// project read again so the new asset is in the document the image joins.
+async fn import(client: &MedousaClient, id: &str) -> Result<Response, CanvasError> {
+    use base64::Engine;
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_title("Add an image to the canvas")
+        .add_filter("Images", &["png", "jpg", "jpeg", "webp"])
+        .pick_file()
+        .await
+    else {
+        return Ok(Response::Cancelled);
+    };
+    let path = file.path().to_path_buf();
+    let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let len = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+        if len > MAX_IMAGE {
+            return Err("Choose an image under 25 MiB".into());
+        }
+        std::fs::read(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| CanvasError::Storage(e.to_string()))?
+    .map_err(CanvasError::Invalid)?;
+    let format = image::guess_format(&bytes)
+        .map_err(|_| CanvasError::Invalid("Choose a PNG, JPEG, or WebP image".into()))?;
+    if !matches!(
+        format,
+        image::ImageFormat::Png | image::ImageFormat::Jpeg | image::ImageFormat::WebP
+    ) {
+        return Err(CanvasError::Invalid(
+            "Choose a PNG, JPEG, or WebP image".into(),
+        ));
+    }
+    let pixels = image::load_from_memory(&bytes)
+        .map_err(|e| CanvasError::Invalid(e.to_string()))?
+        .to_rgba8();
+    let api = client.creative();
+    let asset = api
+        .import_asset(
+            id,
+            &medousa_types::CreativeAssetImportRequest {
+                data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+                context: None,
+            },
+        )
+        .await
+        .map_err(canvas_error)?;
+    let document = convert::<_, Mutation>(&api.get(id).await.map_err(canvas_error)?)?;
+    Ok(Response::Imported(Box::new(Imported {
+        asset: asset.id,
+        width: pixels.width(),
+        height: pixels.height(),
+        rgba: pixels.into_raw(),
+        document,
+    })))
+}
+
+/// Where an imported image goes: centered in the selected frame or group,
+/// else the first unlocked frame, else a 1200 × 920 area at the origin,
+/// scaled down to fit, as medousa-home places it.
+fn placement(
+    nodes: &[Node],
+    selection: &[String],
+    width: u32,
+    height: u32,
+) -> (Option<String>, Transform) {
+    let container =
+        |n: &&Node| matches!(n.content, Content::Frame { .. } | Content::Group) && !n.locked;
+    let parent = nodes
+        .iter()
+        .filter(|n| selection.contains(&n.id))
+        .find(container)
+        .or_else(|| {
+            nodes
+                .iter()
+                .filter(|n| matches!(n.content, Content::Frame { .. }))
+                .find(container)
+        });
+    let area = parent.map_or(
+        Transform {
+            x: 0.,
+            y: 0.,
+            width: 1200.,
+            height: 920.,
+            rotation: 0.,
+        },
+        |p| p.transform,
+    );
+    let (w, h) = (f64::from(width.max(1)), f64::from(height.max(1)));
+    let scale = (area.width / w).min(area.height / h).min(1.);
+    let (w, h) = (w * scale, h * scale);
+    (
+        parent.map(|p| p.id.clone()),
+        Transform {
+            x: area.x + (area.width - w) / 2.,
+            y: area.y + (area.height - h) / 2.,
+            width: w,
+            height: h,
+            rotation: 0.,
+        },
+    )
 }
 
 fn decode(data: &CreativeAssetData) -> Result<Response, CanvasError> {
@@ -519,6 +682,12 @@ fn install(w: &mut World, s: &mut State, document: Mutation) {
     }
     canvas_view::install(w, view);
     s.assets.clear();
+    // A new project starts with its own requests and proposals.
+    s.ask = ask::Ask {
+        open: s.ask.open,
+        ..Default::default()
+    };
+    ask::refresh(w, s);
 }
 
 pub fn apply(w: &mut World, u: Update) {
@@ -563,6 +732,14 @@ fn apply_update(w: &mut World, s: &mut State, u: Update) {
             }
         }
         Kind::Get(id) => {
+            if s.poll == Some(command.serial) {
+                s.poll = None;
+                // A failed background read is not worth a message; the
+                // next one tries again.
+                if result.is_err() {
+                    return;
+                }
+            }
             if s.open.as_deref() != Some(id.as_str()) {
                 return;
             }
@@ -611,6 +788,66 @@ fn apply_update(w: &mut World, s: &mut State, u: Update) {
                     v.editor.fail(&request, e);
                 }
                 _ => {}
+            }
+        }
+        Kind::Ask(project, kind) => {
+            let result = match result {
+                Ok(Response::Ask(reply)) => Ok(reply),
+                Err(e) => Err(e),
+                Ok(_) => return,
+            };
+            ask::apply(w, s, command.serial, &project, kind, result);
+        }
+        Kind::Import(id) => {
+            if s.importing != Some(command.serial) {
+                return;
+            }
+            s.importing = None;
+            let imported = match result {
+                Ok(Response::Imported(imported)) => *imported,
+                Ok(_) => return,
+                Err(e) => {
+                    s.message = format!("The image was not added: {e}");
+                    s.redraw = true;
+                    return;
+                }
+            };
+            let Imported {
+                asset,
+                width,
+                height,
+                rgba,
+                document,
+            } = imported;
+            let texture = texture_id(&id, &asset);
+            let loaded = rndr_render::load_rgba(w, texture, width, height, rgba).is_ok();
+            let Some(v) = w.resource_mut::<CanvasView>() else {
+                return;
+            };
+            if v.editor.document_id() != id {
+                return;
+            }
+            v.editor.replace(document);
+            if loaded {
+                v.images.insert(asset.clone(), texture);
+            }
+            s.assets.insert(asset.clone());
+            let nodes = v.editor.nodes();
+            let (parent, transform) = placement(&nodes, v.editor.selection(), width, height);
+            let node_id = v.editor.new_id("image");
+            let mut node = Node::new(
+                node_id.clone(),
+                Content::Image {
+                    asset_id: asset,
+                    crop: None,
+                },
+                transform,
+            );
+            node.parent_id = parent;
+            if v.editor
+                .commit("Import image", vec![rndr_canvas::Operation::put(node)])
+            {
+                v.editor.select(&[node_id]);
             }
         }
         Kind::Asset(id, asset) => {
