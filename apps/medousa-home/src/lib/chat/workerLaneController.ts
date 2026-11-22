@@ -2,7 +2,6 @@
  * Worker-lane bubbles: handoff ack, live status, and synthesis delivery.
  */
 
-import { getSessionHistory } from "$lib/daemon";
 import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkCard } from "$lib/types/workspace";
@@ -10,13 +9,11 @@ import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob
 import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
 import type { WorkerLink } from "$lib/chat/chatSessionRuntime";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
-import { TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
+import { awaitingWorkerResultDelivery } from "$lib/utils/workerSynthesisRecovery";
 import {
   deliverChatWorkerSynthesis,
   ensureChatWorkerFollowUp,
-  finalizeChatWorkerHandoff,
   linkChatWorker,
-  markChatWorkerSynthesisDelivered,
 } from "$lib/appChat/client";
 import { paintHostFromSnapshot } from "$lib/appChat/paintFromSnapshot";
 
@@ -29,7 +26,7 @@ function syncHostFromSnapshot(
   host: ChatStoreHost,
   snapshot: import("$lib/types/generated/app_api").ChatSnapshot,
 ) {
-  paintHostFromSnapshot(host, host.sessionId, snapshot);
+  host.withSessionFields(snapshot.sessionId, () => paintHostFromSnapshot(host, snapshot.sessionId, snapshot));
 }
 
 export function workerLinkForTurn(
@@ -40,6 +37,14 @@ export function workerLinkForTurn(
     if (link.parentTurnId === turnId) return link;
   }
   return undefined;
+}
+
+export function workerHandoffLink(host: ChatStoreHost, turnId: string): WorkerLink | undefined {
+  const turn = host.turns.get(turnId);
+  if (turn?.phase !== "worker_handoff" && turn?.phase !== "workshop_handoff") return undefined;
+  return turn.workspaceCardId
+    ? host.workers.get(turn.workspaceCardId)
+    : workerLinkForTurn(host.workers, turnId);
 }
 
 export function isRelevantSession(host: ChatStoreHost, sessionId: string | null | undefined): boolean {
@@ -195,7 +200,7 @@ export function onWorkerCardDetail(
   const isTerminal = column === "done" || (column === "blocked" && detail.terminal);
   const link = host.workers.get(workId);
   if (isTerminal && (previousColumn !== column || !link?.synthesisDelivered)) {
-    void deliverWorkerSynthesis(host, workId, detail);
+    return deliverWorkerSynthesis(host, workId, detail);
   }
 }
 
@@ -211,13 +216,7 @@ export async function recoverPendingWorkerSyntheses(
     if (!isRelevantWorkerDetail(host, detail, workId)) continue;
     const { workerTranscripts } = await import("$lib/work/workerTranscripts.svelte");
     workerTranscripts.ingestDetail(detail, card.column);
-    onWorkerCardDetail(host, detail, card.column, undefined);
-    const link = host.workers.get(workId);
-    const isTerminal =
-      card.column === "done" || (card.column === "blocked" && detail.terminal);
-    if (link && !link.synthesisDelivered && isTerminal) {
-      await deliverWorkerSynthesis(host, workId, detail);
-    }
+    await onWorkerCardDetail(host, detail, card.column, undefined);
   }
 }
 
@@ -285,8 +284,7 @@ export async function retryWorkerSynthesis(host: ChatStoreHost, workId: string) 
     return;
   }
 
-  onWorkerCardDetail(host, detail, card.column, undefined);
-  await deliverWorkerSynthesis(host, trimmed, detail);
+  await onWorkerCardDetail(host, detail, card.column, undefined);
 }
 
 export function syncWorkerLaneFromCards(
@@ -345,15 +343,6 @@ function noteWorkerSynthesizing(host: ChatStoreHost, workId: string) {
     .catch(() => {});
 }
 
-export function finalizeWorkerHandoffBubble(host: ChatStoreHost, messageId: string | null) {
-  if (!messageId) return;
-  void finalizeChatWorkerHandoff(host.sessionId, messageId)
-    .then((snapshot) => {
-      syncHostFromSnapshot(host, snapshot);
-    })
-    .catch(() => {});
-}
-
 export function ensureWorkerFollowUpBubble(
   host: ChatStoreHost,
   workId: string,
@@ -388,136 +377,41 @@ export function ensureWorkerFollowUpBubble(
   return id;
 }
 
-function hasFollowUpSynthesis(
-  host: ChatStoreHost,
-  handoffMessageId: string | null,
-  content: string,
-): boolean {
-  if (!handoffMessageId) return false;
-  const handoffIdx = host.messages.findIndex((m) => m.id === handoffMessageId);
-  if (handoffIdx < 0) return false;
-  const target = content.trim();
-  return host.messages
-    .slice(handoffIdx + 1)
-    .some((message) => message.role === "assistant" && message.content.trim() === target);
-}
-
-async function resolveWorkerSynthesisContent(
-  host: ChatStoreHost,
-  link: WorkerLink,
-  detail?: WorkCardDetail,
-): Promise<string | null> {
-  const handoffMessage = link.messageId
-    ? host.messages.find((message) => message.id === link.messageId)
-    : null;
-  const handoffContent = handoffMessage?.stageWhisper?.trim() || handoffMessage?.content || null;
-
-  const sessionIds = [link.sessionId];
-  const workerSession = detail?.session_id?.trim();
-  if (workerSession && !sessionIds.includes(workerSession)) {
-    sessionIds.push(workerSession);
-  }
-  for (const sessionId of sessionIds) {
-    const fromHistory = await fetchLatestAssistantTurn(sessionId, handoffContent);
-    if (fromHistory) return fromHistory;
-  }
-
-  const excerpt = detail?.result_excerpt?.trim();
-  if (excerpt) return excerpt;
-
-  return detail?.error?.trim() || null;
-}
-
-export async function deliverWorkerSynthesis(
+async function deliverWorkerSynthesis(
   host: ChatStoreHost,
   workId: string,
-  detail?: WorkCardDetail,
+  detail: WorkCardDetail,
 ) {
   const link = host.workers.get(workId);
-  if (!link || link.synthesisDelivered) return;
+  if (!link || link.synthesisDelivered || awaitingWorkerResultDelivery(detail)) return;
 
-  const content = await resolveWorkerSynthesisContent(host, link, detail);
-  const isTerminal =
-    detail?.card?.column === "done" ||
-    (detail?.card?.column === "blocked" && detail.terminal === true);
+  // A cancelled worker can legitimately return an empty result.
+  const cancelled = detail.card.status_label === "cancelled" || detail.card.status_label === "canceled";
+  const content = detail.worker_transcript?.result_text?.trim() || detail.result_excerpt?.trim()
+    || detail.error?.trim() || (cancelled ? "Worker cancelled." : "");
   if (!content) {
-    if (isTerminal) {
-      noteWorkerSynthesisFailure(host, workId, "Worker finished, but the result didn't load.");
-    }
-    return;
-  }
-
-  if (hasFollowUpSynthesis(host, link.messageId, content)) {
-    finalizeWorkerHandoffBubble(host, link.messageId);
-    markWorkerSynthesisDelivered(host, workId);
-    settleParentAfterWorkerSynthesis(host, link.parentTurnId);
+    noteWorkerSynthesisFailure(host, workId, "Worker finished, but the result didn't load.");
     return;
   }
 
   try {
     const snapshot = await deliverChatWorkerSynthesis(link.sessionId, workId, content, {
-      tools: detail?.tool_names?.length ? [...detail.tool_names] : null,
+      tools: detail.tool_names?.length ? [...detail.tool_names] : null,
     });
     syncHostFromSnapshot(host, snapshot);
-    settleParentAfterWorkerSynthesis(host, link.parentTurnId);
+    host.withSessionFields(snapshot.sessionId, () => settleWorkerHandoff(host, link));
   } catch {
     // Core owns synthesis body — surface retry chrome when IPC is unavailable.
     noteWorkerSynthesisFailure(host, workId, "Couldn't load worker result. Tap to retry.");
   }
 }
 
-function settleParentAfterWorkerSynthesis(host: ChatStoreHost, parentTurnId: string | null) {
-  if (!parentTurnId) {
-    host.noteBackgroundSettled();
-    return;
-  }
-  const turn = host.turns.get(parentTurnId);
-  if (!turn) {
-    host.noteBackgroundSettled();
-    return;
-  }
-  if (
-    turn.mode === "background" ||
-    turn.phase === "worker_handoff" ||
-    turn.phase === "workshop_handoff"
-  ) {
-    host.settleTurn(parentTurnId);
-    return;
-  }
-  host.noteBackgroundSettled();
-}
-
-export function markWorkerSynthesisDelivered(host: ChatStoreHost, workId: string) {
-  const link = host.workers.get(workId);
-  if (!link || link.synthesisDelivered) return;
-  const nextWorkers = new Map(host.workers);
-  nextWorkers.set(workId, { ...link, synthesisDelivered: true });
-  host.workers = nextWorkers;
-  void markChatWorkerSynthesisDelivered(link.sessionId || host.sessionId, workId).catch(() => {});
-}
-
-async function fetchLatestAssistantTurn(
-  sessionId: string,
-  skipContentMatching?: string | null,
-): Promise<string | null> {
-  try {
-    const history = await getSessionHistory(sessionId, { limit: TRANSCRIPT_PAGE_SIZE });
-    const assistants = [...history.turns].reverse().filter((turn) => turn.role === "assistant");
-    const skip = skipContentMatching?.trim();
-    if (skip) {
-      const handoffTurn = assistants.find((turn) => turn.content.trim() === skip);
-      if (handoffTurn) {
-        const handoffIdx = history.turns.indexOf(handoffTurn);
-        const after = history.turns
-          .slice(handoffIdx + 1)
-          .reverse()
-          .find((turn) => turn.role === "assistant");
-        return after?.content?.trim() || null;
-      }
-    }
-    return assistants[0]?.content?.trim() || null;
-  } catch {
-    return null;
+function settleWorkerHandoff(host: ChatStoreHost, link: WorkerLink) {
+  if (!link.parentTurnId) return;
+  const turn = host.turns.get(link.parentTurnId);
+  if (turn?.workspaceCardId === link.workId &&
+      (turn.phase === "worker_handoff" || turn.phase === "workshop_handoff")) {
+    host.settleTurn(link.parentTurnId);
   }
 }
 
@@ -526,53 +420,8 @@ export function handleWorkerSynthesisStreamEvent(
   event: InteractiveTurnStreamEvent,
 ) {
   const workId = event.work_id?.trim();
-  const content = event.final_text?.trim();
-  if (!workId || !content) return;
-
-  if (!host.workers.has(workId)) {
-    const handoffMessageId = host.messageIdForTurn(event.turn_id);
-    if (handoffMessageId) {
-      linkWorker(host, {
-        workId,
-        parentTurnId: event.turn_id,
-        messageId: handoffMessageId,
-        sessionId: resolveTurnSessionId(host, event.turn_id),
-      });
-      ensureWorkerFollowUpBubble(host, workId, event.turn_id, { streaming: false });
-    }
-  }
-
-  // Live V3 pump projects worker_synthesis through ChatCore before this handler.
-  // If the bubble is still missing, deliver via the dedicated core command.
-  const messageId = host.messageIdForTurn(event.turn_id);
-  const alreadyProjected =
-    Boolean(messageId) &&
-    host.messages.some(
-      (message) =>
-        message.id === messageId &&
-        message.lane === "worker" &&
-        message.content.trim() === content,
-    );
-  if (!alreadyProjected) {
-    void deliverChatWorkerSynthesis(host.sessionId, workId, content)
-      .then((snapshot) => {
-        syncHostFromSnapshot(host, snapshot);
-      })
-      .catch(() => {});
-  }
-
-  const link = host.workers.get(workId);
-  if (link && !link.synthesisDelivered) {
-    finalizeWorkerHandoffBubble(host, link.messageId);
-    markWorkerSynthesisDelivered(host, workId);
-  }
-
-  host.syncTurnFromEvent(event);
-  host.noteBackgroundSettled();
-  if (host.shouldSettleTurnFromStream(event.turn_id)) {
-    host.settleTurn(event.turn_id);
-    host.scheduleSessionsRefresh();
-  } else {
-    void host.detachStreamOwner(event.turn_id);
-  }
+  const worker = workId ? host.workers.get(workId) : undefined;
+  // ChatCore applies the receipt before this callback. Reconnect uses the
+  // persisted result if the live receipt could not be applied.
+  if (worker?.synthesisDelivered) settleWorkerHandoff(host, worker);
 }

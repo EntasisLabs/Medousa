@@ -119,6 +119,11 @@ async fn project_stasis_job_card(
     runtime: &RuntimeComposition,
     job_id: &str,
 ) -> Option<(String, Option<ProjectedWorkItem>)> {
+    // The initial execution job shares the worker's card ID. Its notification
+    // can arrive after the worker update, including in the same unordered batch.
+    if turn_worker_store().get(job_id).is_some() {
+        return project_turn_worker_card(runtime, job_id).await;
+    }
     let Some(job) = get_stasis_job(runtime, job_id).await else {
         return Some((job_id.to_string(), None));
     };

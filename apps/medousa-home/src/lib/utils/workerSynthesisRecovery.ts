@@ -1,5 +1,12 @@
 import { isAskJobId } from "$lib/types/askJob";
+import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkCard } from "$lib/types/workspace";
+
+export function awaitingWorkerResultDelivery(detail: WorkCardDetail): boolean {
+  return detail.wrapping_up_reasons.some(
+    reason => reason === "delivery_pending" || reason === "delivery_delayed",
+  );
+}
 
 /** Terminal worker cards that need a detail fetch before chat synthesis can land. */
 export function terminalWorkerCardsNeedingRecovery(

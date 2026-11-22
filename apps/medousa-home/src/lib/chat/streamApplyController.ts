@@ -30,7 +30,7 @@ import {
 } from "$lib/utils/streamEvents";
 import { budgetRequestIdFromStreamEvent, notifySpotlightTurnCompletion, registerSpotlightWorker } from "$lib/notifications";
 import { randomUuid } from "$lib/utils/randomUuid";
-import { handleWorkerSynthesisStreamEvent, workerLinkForTurn } from "$lib/chat/workerLaneController";
+import { handleWorkerSynthesisStreamEvent, workerHandoffLink, workerLinkForTurn } from "$lib/chat/workerLaneController";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import { narration } from "$lib/stores/narration.svelte";
 import { turnCompletionLedger } from "$lib/chat/turnCompletionLedger";
@@ -102,7 +102,8 @@ async function applyPumpedStreamEventAsync(host: ChatStoreHost, target: StreamEv
       event.type === "tool_started" || event.type === "tool_finished"
         ? host.messageIdForToolStream(envelope.turn_id)
         : host.messageIdForTurn(envelope.turn_id);
-    shouldProject = Boolean(messageId || v3EventPromotesChatMessage(event));
+    shouldProject = Boolean(messageId || v3EventPromotesChatMessage(event) ||
+      (event.type === "worker_synthesis" && event.work_id));
   });
 
   if (!accepted) return;
@@ -630,7 +631,7 @@ export function syncTurnFromEvent(host: ChatStoreHost, event: InteractiveTurnStr
   const existing = host.turns.get(event.turn_id);
   if (!existing) return;
 
-  const workerLink = workerLinkForTurn(host.workers, event.turn_id);
+  const workerLink = workerHandoffLink(host, event.turn_id);
   const preserveHandoff =
     workerLink != null &&
     !workerLink.synthesisDelivered &&
@@ -663,7 +664,7 @@ export function syncTurnFromEvent(host: ChatStoreHost, event: InteractiveTurnStr
   } else {
     next.set(event.turn_id, {
       ...existing,
-      phase: preserveHandoff ? "worker_handoff" : phaseFromEvent(event),
+      phase: preserveHandoff ? preservedPhase : phaseFromEvent(event),
       streamAttached: true,
       terminal: false,
     });

@@ -25,7 +25,7 @@ import { friendlyUserError } from "$lib/utils/normieErrors";
 import { randomUuid } from "$lib/utils/randomUuid";
 import { turnStateFromTicket } from "$lib/chat/turnController";
 import { TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
-import { workerLinkForTurn } from "$lib/chat/workerLaneController";
+import { workerHandoffLink, workerLinkForTurn } from "$lib/chat/workerLaneController";
 import { narration } from "$lib/stores/narration.svelte";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import {
@@ -614,7 +614,7 @@ export function noteAskTurnSettled(host: ChatStoreHost, jobId: string) {
 export function shouldSettleTurnFromStream(host: ChatStoreHost, turnId: string): boolean {
   const turn = host.turns.get(turnId);
   if (turn?.mode === "background") return false;
-  const workerLink = workerLinkForTurn(host.workers, turnId);
+  const workerLink = workerHandoffLink(host, turnId);
   if (workerLink && !workerLink.synthesisDelivered) return false;
   return true;
 }

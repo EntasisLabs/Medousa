@@ -51,3 +51,22 @@ it("does not bind a newly created shell after the checkout changes", async () =>
   resolve({ session_id: "late" });
   expect(await pending).toBeNull(); expect(api.bind).not.toHaveBeenCalled();
 });
+
+it("shares one shell when the dock and tab open the same project concurrently", async () => {
+  const item = { id: "work" } as ItemProjection;
+  const ids = await Promise.all([
+    openProjectTerminal(item, { activate: false }),
+    openProjectTerminal(item, { activate: true }),
+  ]);
+  expect(ids).toEqual(["shell", "shell"]);
+  expect(api.sessions).toHaveBeenCalledOnce();
+  expect(api.create).toHaveBeenCalledOnce();
+});
+it("replaces an exited project shell and retries a failed open", async () => {
+  api.sessions.mockResolvedValue([{ session_id: "old", work_id: "work", root_kind: "workspace", workspace_context: {}, exited: true }]);
+  api.create.mockRejectedValueOnce(new Error("workshop offline"));
+  const item = { id: "work" } as ItemProjection;
+  await expect(openProjectTerminal(item)).rejects.toThrow("workshop offline");
+  expect(await openProjectTerminal(item)).toBe("shell");
+  expect(api.create).toHaveBeenCalledTimes(2);
+});

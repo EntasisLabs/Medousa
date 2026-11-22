@@ -294,15 +294,11 @@ fn blocked_count(snapshot: &WorkspaceReadSnapshot) -> u32 {
     snapshot
         .cards
         .iter()
-        .filter(|card| card.column == WorkBoardColumn::Blocked && !is_terminal_status(card))
+        .filter(|card| {
+            card.column == WorkBoardColumn::Blocked
+                && matches!(card.status_label.as_str(), "needs approval" | "needs input")
+        })
         .count() as u32
-}
-
-fn is_terminal_status(card: &WorkCard) -> bool {
-    matches!(
-        card.status_label.as_str(),
-        "failed" | "canceled" | "dead_letter"
-    )
 }
 
 fn primary_in_motion_card(snapshot: &WorkspaceReadSnapshot) -> Option<&WorkCard> {
@@ -393,6 +389,32 @@ mod tests {
         assert_eq!(state.mood, "working");
         assert_eq!(state.headline, "Fix deploy script");
         assert_eq!(state.primary_card_id.as_deref(), Some("card-1"));
+    }
+
+    #[test]
+    fn only_outstanding_decisions_count_as_blocked() {
+        let cards = [
+            "failed",
+            "cancelled",
+            "canceled",
+            "denied",
+            "expired",
+            "needs approval",
+            "needs input",
+        ]
+        .into_iter()
+        .map(|status| WorkCard {
+            status_label: status.to_owned(),
+            ..sample_card(WorkBoardColumn::Blocked, status)
+        })
+        .collect();
+        let snapshot = WorkspaceReadSnapshot {
+            revision: 1,
+            items: Arc::new(HashMap::new()),
+            cards: Arc::new(cards),
+            counts_by_column: HashMap::new(),
+        };
+        assert_eq!(blocked_count(&snapshot), 2);
     }
 
     #[test]

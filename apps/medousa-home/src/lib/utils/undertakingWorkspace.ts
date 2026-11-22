@@ -100,6 +100,8 @@ export function activeCodeContext(sessionId: string): CodeIntentContext | null {
   };
 }
 
+const openingProjectTerminals = new Map<string, Promise<string | null>>();
+
 export async function openProjectTerminal(
   item: ItemProjection,
   options?: { activate?: boolean; create?: boolean },
@@ -114,45 +116,41 @@ export async function openProjectTerminal(
   const current = captureCodeScope(terminalScope);
   const executionRuntimeId = undertakings.active?.executionRuntimeId ?? null;
 
-  const sessions = await terminalSessions(executionRuntimeId);
-  if (!current()) return null;
-  // Opening a human shell must not attach input to an agent/task process.
-  const existing = sessions.find((session) =>
-    session.work_id === item.id && session.root_kind === "workspace" && session.workspace_context
-  )?.session_id;
-
-  const openShellTab = options?.activate !== false;
-
-  if (existing) {
-    undertakings.bindTerminal(existing);
-    if (openShellTab) {
-      shellTabs.openTerminal(existing, {
-        activate: true,
-        title: `Terminal · ${item.title}`,
-        workId: item.id,
-        executionRuntimeId: undertakings.active?.executionRuntimeId ?? null,
-      });
-    }
-    return existing;
+  async function findOrCreate(): Promise<string | null> {
+    const sessions = await terminalSessions(executionRuntimeId);
+    if (!current()) return null;
+    const existing = sessions.find((session) =>
+      session.work_id === item.id && session.root_kind === "workspace" &&
+      session.workspace_context && !session.exited
+    );
+    if (existing) return existing.session_id;
+    if (options?.create === false) return null;
+    const created = await terminalCreate(
+      { work_id: item.id, workspace_shell: true },
+      executionRuntimeId,
+    );
+    return terminalSessionId(created) || null;
   }
 
-  if (options?.create === false) return null;
-
-  const created = await terminalCreate(
-    { work_id: item.id, workspace_shell: true },
-    executionRuntimeId,
-  );
-  if (!current()) return null;
-  const sessionId = terminalSessionId(created);
-  if (!sessionId) return null;
-
+  // The dock and a tab can both finish discovery before either shell exists.
+  const scope = terminalScope();
+  let opening = openingProjectTerminals.get(scope);
+  if (!opening) {
+    opening = findOrCreate();
+    if (options?.create !== false) {
+      opening = opening.finally(() => openingProjectTerminals.delete(scope));
+      openingProjectTerminals.set(scope, opening);
+    }
+  }
+  const sessionId = await opening;
+  if (!current() || !sessionId) return null;
   undertakings.bindTerminal(sessionId);
-  if (openShellTab) {
+  if (options?.activate !== false) {
     shellTabs.openTerminal(sessionId, {
       activate: true,
       title: `Terminal · ${item.title}`,
       workId: item.id,
-      executionRuntimeId: undertakings.active?.executionRuntimeId ?? null,
+      executionRuntimeId,
     });
   }
   return sessionId;

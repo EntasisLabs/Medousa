@@ -4,7 +4,7 @@ import { flushSync, mount, unmount } from "svelte";
 const fixture = vi.hoisted(() => ({ liveOutput: "## Full worker result\n\n" + "Evidence paragraph. ".repeat(100) + "\n\nEND_OF_FULL_WORKER_RESULT" }));
 vi.mock("$lib/stores/workspace.svelte", () => ({ workspace: {
   selectedCardId: "worker", cardDetailError: null, cardActionMessage: null, feed: [], cards: [],
-  selectedCardDetail: { card: { id: "worker", title: "Research", column: "done", status_label: "completed", created_at_utc: "", updated_at_utc: "" }, kind: "turn_worker", terminal: true, wrapping_up_reasons: [], associations: { artifact_ids: [], vault_paths: [], locus_node_ids: [] }, result_excerpt: "Short excerpt", get live_output() { return fixture.liveOutput; } },
+  selectedCardDetail: { card: { id: "worker", title: "Research", column: "done", status_label: "completed", created_at_utc: "", updated_at_utc: "" }, kind: "turn_worker", terminal: true, wrapping_up_reasons: ["delivery_delayed"], associations: { artifact_ids: [], vault_paths: [], locus_node_ids: [] }, result_excerpt: "Short excerpt", worker_transcript: { get result_text() { return fixture.liveOutput; } }, live_output: "Rolling preview" },
 } }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: { sessionId: "session" } }));
 vi.mock("$lib/stores/vault.svelte", () => ({ vault: {} }));
@@ -22,5 +22,7 @@ describe("shared task result", () => {
     component = mount(TaskDetails, { target: document.body, props: { popover, onOpenNote: vi.fn(), onOpenChat: vi.fn() } }); flushSync();
     expect(document.body.textContent).toContain("END_OF_FULL_WORKER_RESULT");
     expect(document.body.textContent).not.toContain("Short excerpt");
+    expect(document.body.textContent).toContain("Result delivery");
+    expect(document.body.textContent).toContain("Delayed");
   });
 });

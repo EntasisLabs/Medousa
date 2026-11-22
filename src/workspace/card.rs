@@ -17,7 +17,7 @@ use crate::workspace::ask_job_store::{AskJobRecord, AskJobStatus, ask_job_store}
 use crate::workspace::retention::{self, WorkspaceRetentionConfig};
 use crate::workspace::store::workspace_store;
 
-const WRAPPING_UP_STALE: Duration = Duration::hours(2);
+const RESULT_DELIVERY_DELAYED_AFTER: Duration = Duration::hours(2);
 
 #[derive(Debug, Clone)]
 pub struct ProjectedWorkItem {
@@ -51,7 +51,7 @@ pub async fn project_workspace_items(
         JobState::Canceled,
     ];
     let jobs = list_jobs_by_states(runtime, &states).await?;
-    let workers = turn_worker_store().list_all(200);
+    let workers = turn_worker_store().list_all_unbounded();
     let worker_ids = workers
         .iter()
         .map(|record| record.work_id.clone())
@@ -381,6 +381,11 @@ pub fn project_job(
     include_terminal: bool,
     hide_ttl: Duration,
 ) -> Option<ProjectedWorkItem> {
+    // Execution and result-return jobs both belong to the worker's one card.
+    // Restart recovery may assign a fresh job/correlation ID on every attempt.
+    if job.job_type == crate::agent_runtime::turn_worker_job::TURN_WORKER_JOB_TYPE {
+        return None;
+    }
     let (column, status_label, wrapping_up_reasons, terminal) =
         column_for_job(job, include_terminal, hide_ttl)?;
 
@@ -493,39 +498,17 @@ fn effective_turn_worker_status(
     record: &TurnWorkRecord,
     stasis_job: Option<&Job>,
 ) -> TurnWorkStatus {
-    if record.synthesis_delivered {
-        return TurnWorkStatus::Completed;
-    }
-    if let Some(job) = stasis_job {
-        match job.state {
-            JobState::Succeeded => {
-                if matches!(
-                    record.status,
-                    TurnWorkStatus::Pending | TurnWorkStatus::Running | TurnWorkStatus::Completed
-                ) {
-                    return TurnWorkStatus::Completed;
-                }
+    match record.status {
+        TurnWorkStatus::Pending | TurnWorkStatus::Running => {
+            match stasis_job.map(|job| job.state) {
+                Some(JobState::Succeeded) => TurnWorkStatus::Completed,
+                Some(JobState::Failed | JobState::DeadLetter) => TurnWorkStatus::Failed,
+                Some(JobState::Canceled) => TurnWorkStatus::Cancelled,
+                _ => record.status,
             }
-            JobState::Failed | JobState::DeadLetter => {
-                if matches!(
-                    record.status,
-                    TurnWorkStatus::Pending | TurnWorkStatus::Running
-                ) {
-                    return TurnWorkStatus::Failed;
-                }
-            }
-            JobState::Canceled => {
-                if matches!(
-                    record.status,
-                    TurnWorkStatus::Pending | TurnWorkStatus::Running
-                ) {
-                    return TurnWorkStatus::Cancelled;
-                }
-            }
-            _ => {}
         }
+        outcome => outcome,
     }
-    record.status
 }
 
 fn column_for_turn_worker_status(
@@ -534,62 +517,42 @@ fn column_for_turn_worker_status(
     include_terminal: bool,
     hide_ttl: Duration,
 ) -> Option<(WorkBoardColumn, &'static str, Vec<String>, bool)> {
-    match status {
-        TurnWorkStatus::Pending => Some((WorkBoardColumn::Backlog, "pending", Vec::new(), false)),
-        TurnWorkStatus::Running => Some((WorkBoardColumn::InFlight, "running", Vec::new(), false)),
-        TurnWorkStatus::Completed => {
-            if record.synthesis_delivered
-                || record.disposition
-                    == crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
-            {
-                if !include_terminal && terminal_turn_worker_stale(record.updated_at, hide_ttl) {
-                    return None;
-                }
-                return Some((WorkBoardColumn::Done, "completed", Vec::new(), true));
-            }
-            if wrapping_up_stale(record.updated_at) {
-                return Some((
-                    WorkBoardColumn::Blocked,
-                    "synthesis delayed",
-                    vec![
-                        "synthesis_pending".to_string(),
-                        "synthesis_delayed".to_string(),
-                    ],
-                    false,
-                ));
-            }
-            Some((
-                WorkBoardColumn::WrappingUp,
-                "synthesis pending",
-                vec!["synthesis_pending".to_string()],
-                false,
-            ))
+    let (column, label) = match status {
+        TurnWorkStatus::Pending => {
+            return Some((WorkBoardColumn::Backlog, "pending", Vec::new(), false));
         }
-        TurnWorkStatus::Failed => {
-            if !include_terminal && terminal_turn_worker_stale(record.updated_at, hide_ttl) {
-                return None;
-            }
-            Some((WorkBoardColumn::Blocked, "failed", Vec::new(), true))
+        TurnWorkStatus::Running => {
+            return Some((WorkBoardColumn::InFlight, "running", Vec::new(), false));
         }
-        TurnWorkStatus::Cancelled => {
-            if !include_terminal && terminal_turn_worker_stale(record.updated_at, hide_ttl) {
-                return None;
-            }
-            Some((WorkBoardColumn::Blocked, "cancelled", Vec::new(), true))
-        }
+        TurnWorkStatus::Completed => (WorkBoardColumn::Done, "completed"),
+        TurnWorkStatus::Failed => (WorkBoardColumn::Blocked, "failed"),
+        TurnWorkStatus::Cancelled => (WorkBoardColumn::Blocked, "cancelled"),
+    };
+    if !include_terminal && retention::terminal_card_stale(record.updated_at, hide_ttl) {
+        return None;
     }
+    // The originating session receives the correlated outcome asynchronously.
+    // Delivery is an independent detail for all three terminal outcomes.
+    let mut reasons = Vec::new();
+    if !record.synthesis_delivered
+        && record.disposition != crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
+    {
+        let delayed =
+            Utc::now().signed_duration_since(record.updated_at) > RESULT_DELIVERY_DELAYED_AFTER;
+        reasons.push(
+            if delayed {
+                "delivery_delayed"
+            } else {
+                "delivery_pending"
+            }
+            .into(),
+        );
+    }
+    Some((column, label, reasons, true))
 }
 
 fn terminal_job_stale(finished_at: Option<DateTime<Utc>>, hide_ttl: Duration) -> bool {
     finished_at.is_some_and(|at| retention::terminal_card_stale(at, hide_ttl))
-}
-
-fn terminal_turn_worker_stale(updated_at: DateTime<Utc>, hide_ttl: Duration) -> bool {
-    retention::terminal_card_stale(updated_at, hide_ttl)
-}
-
-fn wrapping_up_stale(updated_at: DateTime<Utc>) -> bool {
-    Utc::now().signed_duration_since(updated_at) > WRAPPING_UP_STALE
 }
 
 fn parse_payload(payload_ref: &str) -> Value {
@@ -770,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn turn_worker_completed_maps_to_wrapping_up() {
+    fn completed_worker_retains_pending_delivery_detail() {
         let record = TurnWorkRecord {
             work_id: "work-1".to_string(),
             session_id: "sess".to_string(),
@@ -830,10 +793,10 @@ mod tests {
         let hide_ttl = Duration::hours(24);
         let (column, status, reasons, terminal) =
             column_for_turn_worker(&record, true, hide_ttl).expect("column");
-        assert_eq!(column, WorkBoardColumn::WrappingUp);
-        assert_eq!(status, "synthesis pending");
-        assert_eq!(reasons, vec!["synthesis_pending"]);
-        assert!(!terminal);
+        assert_eq!(column, WorkBoardColumn::Done);
+        assert_eq!(status, "completed");
+        assert_eq!(reasons, vec!["delivery_pending"]);
+        assert!(terminal);
     }
 
     #[test]
@@ -1087,41 +1050,33 @@ mod tests {
         }
     }
     #[test]
-    fn completed_workers_need_delivery_not_an_age_based_false_success() {
-        let mut record: crate::agent_runtime::turn_worker::TurnWorkRecord =
-            serde_json::from_value(serde_json::json!({
-                "work_id":"worker-test", "session_id":"session-test", "intent":"coder",
-                "task_prompt":"Review", "status":"completed", "tool_names":[],
-                "user_ack":"reviewing", "provider":"test", "model":"test",
-                "response_depth_mode":"standard", "created_at":"2026-01-01T00:00:00Z",
-                "updated_at":"2026-01-01T00:00:00Z"
-            }))
-            .unwrap();
+    fn delivery_jobs_and_receipts_do_not_change_worker_outcomes() {
+        let job = sample_job(
+            JobState::Succeeded,
+            crate::agent_runtime::turn_worker_job::TURN_WORKER_JOB_TYPE,
+            r#"{"work_id":"worker","stream_turn_id":1}"#,
+        );
         let ttl = Duration::hours(24);
-        let pending = column_for_turn_worker_status(&record, record.status, true, ttl).unwrap();
-        assert_eq!(pending.0, WorkBoardColumn::Blocked);
-        assert_eq!(pending.1, "synthesis delayed");
-        record.updated_at = Utc::now();
-        assert_eq!(
-            column_for_turn_worker_status(&record, record.status, false, ttl)
+        assert!(project_job(&job, true, ttl).is_none());
+        for (status, label) in [
+            (TurnWorkStatus::Completed, "completed"),
+            (TurnWorkStatus::Failed, "failed"),
+            (TurnWorkStatus::Cancelled, "cancelled"),
+        ] {
+            let mut record = live_record(status);
+            record.updated_at = Utc::now() - Duration::hours(3);
+            let detail = project_turn_worker(&record, Some(&job), true, ttl)
                 .unwrap()
-                .0,
-            WorkBoardColumn::WrappingUp
-        );
-        record.disposition = crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated;
-        assert_eq!(
-            column_for_turn_worker_status(&record, record.status, false, ttl)
+                .detail;
+            assert_eq!(detail.card.status_label, label);
+            assert!(detail.terminal);
+            assert_eq!(detail.wrapping_up_reasons, ["delivery_delayed"]);
+            record.synthesis_delivered = true;
+            let delivered = project_turn_worker(&record, Some(&job), true, ttl)
                 .unwrap()
-                .0,
-            WorkBoardColumn::Done
-        );
-        record.disposition = crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel;
-        record.synthesis_delivered = true;
-        assert_eq!(
-            column_for_turn_worker_status(&record, record.status, false, ttl)
-                .unwrap()
-                .0,
-            WorkBoardColumn::Done
-        );
+                .detail;
+            assert_eq!(delivered.card.status_label, label);
+            assert!(delivered.wrapping_up_reasons.is_empty());
+        }
     }
 }

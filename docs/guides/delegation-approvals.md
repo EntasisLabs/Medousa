@@ -55,6 +55,12 @@ groups visible workshop work into **Needs your decision**, **In progress**, and
 only waiting or finished work remains. This is separate from the composer line,
 which stays scoped to this chat.
 
+Each workshop worker contributes one task. Its tool calls and attempts to
+return its result to the originating chat are part of that task. A worker moves
+to **Recently finished** as soon as it completes, fails, or is cancelled. If
+its result is still on the way, open the task details to see **Result delivery**.
+Only outstanding requests for input or approval count toward **Needs your decision**.
+
 Local sender-controlled handoffs can start directly when your request authorizes
 the work. Only proposals needing your decision show **Approve & start** (or
 **Approve & adopt**). By default the sender retains responsibility, receives

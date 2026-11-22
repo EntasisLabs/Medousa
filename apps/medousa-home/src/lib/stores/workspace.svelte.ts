@@ -1,3 +1,4 @@
+import { isActionableBlockedCard } from "$lib/utils/formatWork";
 import { ensureReferenceSupport } from "$lib/context/referenceSupport";
 import {
   archiveAskJob,
@@ -21,11 +22,9 @@ import type { EnqueueAskJobRequest } from "$lib/utils/askPrompt";
 import { collectActivityCardIds } from "$lib/utils/activityEnrichment";
 import { friendlyUserError } from "$lib/utils/normieErrors";
 import { hubCardsForPrefetch } from "$lib/utils/workHub";
+import { visibleWorkCards } from "$lib/utils/workCardRetention";
 import {
-  isActionableBlockedCard,
-  visibleWorkCards,
-} from "$lib/utils/workCardRetention";
-import {
+  awaitingWorkerResultDelivery,
   terminalWorkerCardsNeedingRecovery,
   WORKER_RECOVERY_FETCH_CONCURRENCY,
 } from "$lib/utils/workerSynthesisRecovery";
@@ -201,7 +200,7 @@ export class WorkspaceStore {
       workspaceChatPort().noteAskTurnSettled(card.id);
     }
     if (
-      previous === "blocked" &&
+      this.cards.find(item => item.id === card.id)?.status_label === "needs approval" &&
       card.status_label !== "needs approval"
     ) {
       workspaceChatPort().noteBackgroundSettled();
@@ -462,8 +461,11 @@ export class WorkspaceStore {
 
   /** Re-fetch card detail when a card reaches a terminal column (synthesis may be ready). */
   private shouldRefreshCardDetail(card: WorkCard, previous?: string): boolean {
-    if (previous === card.column) return false;
-    return card.column === "done" || card.column === "blocked";
+    if (card.column !== "done" && card.column !== "blocked") return false;
+    if (previous !== card.column) return true;
+    const cached = this.cardDetailsCache.get(card.id);
+    return !!cached && cached.card.updated_at_utc !== card.updated_at_utc &&
+      awaitingWorkerResultDelivery(cached);
   }
 
   private async cacheCardDetail(

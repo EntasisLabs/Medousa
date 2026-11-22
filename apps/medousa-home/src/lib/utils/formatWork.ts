@@ -1,6 +1,11 @@
 import type { WorkCard } from "$lib/types/workspace";
 import { columnLabel } from "$lib/types/workspace";
 
+export function isActionableBlockedCard(card: WorkCard): boolean {
+  return card.column === "blocked" &&
+    (card.status_label === "needs approval" || card.status_label === "needs input");
+}
+
 /** Operator-facing card labels — not raw job status strings. */
 export function formatCardTitle(card: WorkCard): string {
   const title = (card.title ?? "").trim();
@@ -14,7 +19,7 @@ export function formatCardTitle(card: WorkCard): string {
   if (card.status_label === "failed") {
     return "Didn't finish";
   }
-  if (card.status_label === "canceled") {
+  if (card.status_label === "canceled" || card.status_label === "cancelled") {
     return "Stopped";
   }
 
@@ -24,7 +29,7 @@ export function formatCardTitle(card: WorkCard): string {
     case "wrapping_up":
       return "Pulling it together";
     case "blocked":
-      return "Waiting on you";
+      return isActionableBlockedCard(card) ? "Waiting on you" : "Work item";
     case "backlog":
       return "Queued up";
     default:
@@ -38,7 +43,7 @@ export function formatCardSubtitle(card: WorkCard): string {
 
   switch (card.column) {
     case "blocked":
-      return `Needs you · ${status}`;
+      return isActionableBlockedCard(card) ? `Needs you · ${status}` : status;
     case "wrapping_up":
       return `Almost done · ${status}`;
     case "in_flight":

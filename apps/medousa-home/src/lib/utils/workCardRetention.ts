@@ -21,9 +21,3 @@ export function visibleWorkCards(
 ): WorkCard[] {
   return cards.filter((card) => !shouldHideTerminalWorkCard(card, hideAfterHours));
 }
-
-export function isActionableBlockedCard(card: WorkCard): boolean {
-  if (card.column !== "blocked") return false;
-  const layer = workHubLayer(card);
-  return layer !== "failed" && layer !== "stopped";
-}

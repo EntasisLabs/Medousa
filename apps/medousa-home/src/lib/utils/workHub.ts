@@ -1,6 +1,6 @@
 import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkCard } from "$lib/types/workspace";
-import { formatCardTitle } from "$lib/utils/formatWork";
+import { formatCardTitle, isActionableBlockedCard } from "$lib/utils/formatWork";
 import { vaultDisplayTitle } from "$lib/utils/formatVault";
 
 export type WorkHubLayer = "living" | "settled" | "failed" | "stopped" | "stuck";
@@ -75,8 +75,8 @@ export function workHubLayer(card: WorkCard): WorkHubLayer {
   if (card.column === "done") return "settled";
 
   if (card.column === "blocked") {
-    if (card.status_label === "needs approval") return "living";
-    if (card.status_label === "canceled") return "stopped";
+    if (isActionableBlockedCard(card)) return "living";
+    if (["canceled", "cancelled", "denied", "expired"].includes(card.status_label)) return "stopped";
     if (card.status_label === "failed" || card.status_label === "dead_letter") {
       return "failed";
     }
@@ -96,7 +96,7 @@ export function formatManifestStatusChip(card: WorkCard): WorkHubStatusChip {
   }
 
   if (card.column === "blocked") {
-    if (card.status_label === "needs approval") {
+    if (isActionableBlockedCard(card)) {
       return { label: "Needs you", tone: "warning" };
     }
     if (card.status_label === "failed") {
@@ -105,7 +105,7 @@ export function formatManifestStatusChip(card: WorkCard): WorkHubStatusChip {
     if (card.status_label === "dead_letter") {
       return { label: "Stuck", tone: "danger" };
     }
-    if (card.status_label === "canceled") {
+    if (["canceled", "cancelled", "denied", "expired"].includes(card.status_label)) {
       return { label: "Stopped", tone: "muted" };
     }
     return { label: "Stuck", tone: "danger" };

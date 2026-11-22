@@ -105,6 +105,7 @@
   }
 
   const detail = $derived(workspace.selectedCardDetail);
+  const workerOutput = $derived(detail?.worker_transcript?.result_text || detail?.live_output);
   const isAskCard = $derived(
     detail ? isAskJobId(detail.job_id ?? detail.card.id) : false,
   );
@@ -524,9 +525,9 @@
         </div>
       {/if}
 
-      {#if !detail.job_id && (detail.live_output || manifestation.resultPreview)}
+      {#if !detail.job_id && (workerOutput || manifestation.resultPreview)}
         <div class="manifest-result mt-4">
-          <MarkdownContent content={detail.live_output || manifestation.resultPreview || ""} />
+          <MarkdownContent content={workerOutput || manifestation.resultPreview || ""} />
         </div>
       {/if}
 
@@ -536,10 +537,10 @@
             ? 'border-warning-500/30 bg-warning-500/10 animate-pulse'
             : 'border-surface-600/30 bg-surface-800/30'}"
         >
-          <p class="text-[11px] font-medium text-content-warning">Finishing up</p>
+          <p class="text-[11px] font-medium text-content-warning">{detail.terminal ? "Result delivery" : "Finishing up"}</p>
           <ul class="mt-2 space-y-1 text-sm text-surface-200">
             {#each detail.wrapping_up_reasons as reason (reason)}
-              <li>{reason}</li>
+              <li>{reason === "delivery_delayed" ? "Delayed" : reason === "delivery_pending" ? "Pending" : reason}</li>
             {/each}
           </ul>
         </div>
@@ -644,11 +645,11 @@
             : ''}"
         >
           <p class="text-xs font-semibold uppercase tracking-wide text-content-warning">
-            Wrapping up
+            {detail.terminal ? "Result delivery" : "Wrapping up"}
           </p>
           <ul class="mt-2 list-disc space-y-1 pl-4 text-content-warning">
             {#each detail.wrapping_up_reasons as reason (reason)}
-              <li>{reason}</li>
+              <li>{reason === "delivery_delayed" ? "Delayed" : reason === "delivery_pending" ? "Pending" : reason}</li>
             {/each}
           </ul>
         </div>
@@ -726,10 +727,10 @@
             </p>
           {/if}
         </div>
-      {:else if detail.live_output || detail.result_excerpt}
+      {:else if workerOutput || detail.result_excerpt}
         <div class="workshop-inset min-w-0 p-4">
           <p class="workshop-label">Result</p>
-          <MarkdownContent content={detail.live_output || detail.result_excerpt || ""} />
+          <MarkdownContent content={workerOutput || detail.result_excerpt || ""} />
         </div>
       {/if}
 

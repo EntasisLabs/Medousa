@@ -125,6 +125,82 @@ struct SessionState {
 }
 
 impl SessionState {
+    fn ensure_worker_follow_up_item(
+        &mut self,
+        work_id: String,
+        turn_id: Option<String>,
+        item_id: Option<String>,
+        status_line: Option<String>,
+        streaming: bool,
+    ) -> &mut ChatItem {
+        if !self.workers.contains_key(&work_id) {
+            self.worker_order.push(work_id.clone());
+            self.workers.insert(
+                work_id.clone(),
+                WorkerLink {
+                    work_id: work_id.clone(),
+                    parent_turn_id: turn_id.clone(),
+                    parent_item_id: None,
+                    reply_to_work_id: None,
+                    synthesis_item_id: None,
+                    synthesis_delivered: false,
+                    session_id: None,
+                },
+            );
+        }
+
+        let existing_id = self
+            .workers
+            .get(&work_id)
+            .and_then(|link| link.synthesis_item_id.clone());
+        let synthesis_id = existing_id
+            .or(item_id)
+            .unwrap_or_else(|| synthesis_item_id_for(&work_id));
+        let turn = turn_id
+            .or_else(|| {
+                self.workers
+                    .get(&work_id)
+                    .and_then(|link| link.parent_turn_id.clone())
+            })
+            .unwrap_or_default();
+
+        let index = if let Some(index) = self.items.iter().position(|item| item.id == synthesis_id) {
+            let item = &mut self.items[index];
+            item.streaming = Some(streaming);
+            if status_line.is_some() {
+                item.status_line = status_line;
+            }
+            item.lane = Some(ChatLane::Worker);
+            item.work_id = Some(work_id.clone());
+            if !turn.is_empty() {
+                item.turn_id = Some(turn);
+            }
+            index
+        } else {
+            self.items.push(ChatItem {
+                id: synthesis_id.clone(),
+                role: ChatItemRole::Assistant,
+                content: String::new(),
+                streaming: Some(streaming),
+                turn_id: if turn.is_empty() { None } else { Some(turn) },
+                lane: Some(ChatLane::Worker),
+                work_id: Some(work_id.clone()),
+                status_line,
+                segments: Some(Vec::new()),
+                ..empty_item()
+            });
+            self.items.len() - 1
+        };
+
+        if let Some(link) = self.workers.get_mut(&work_id)
+            && link.synthesis_item_id.is_none()
+        {
+            link.synthesis_item_id = Some(synthesis_id);
+        }
+
+        &mut self.items[index]
+    }
+
     fn worker_facts(&self) -> Vec<WorkerPlacementFact> {
         self.worker_order
             .iter()
@@ -610,6 +686,31 @@ impl ChatCore {
             .last_seq_by_turn
             .insert(turn_id.clone(), envelope.seq);
 
+        // A correlated result belongs to one child. Siblings can finish in any
+        // order, including after the parent has settled or started other work.
+        if let medousa_types::TurnStreamEventV3::WorkerSynthesis {
+            work_id: Some(work_id),
+            ..
+        } = &envelope.event
+        {
+            let item = session.ensure_worker_follow_up_item(
+                work_id.clone(),
+                Some(turn_id.clone()),
+                None,
+                None,
+                false,
+            );
+            *item = apply_v3_envelope_to_item(item.clone(), &envelope);
+            if let Some(link) = session.workers.get_mut(work_id) {
+                link.parent_turn_id.get_or_insert(turn_id);
+                link.synthesis_delivered = true;
+            }
+            session.bump();
+            return Ok(ChatUpdate::Snapshot {
+                snapshot: session.snapshot(),
+            });
+        }
+
         let index = resolve_stream_target_index(session, &turn_id, &envelope.event);
 
         let target_item_id = if let Some(index) = index {
@@ -885,75 +986,13 @@ impl ChatCore {
             .ok_or_else(|| ChatCoreError::SessionNotOpen(session_id.to_string()))?;
         Self::ensure_revision(session, expected_revision)?;
 
-        if !session.workers.contains_key(&work_id) {
-            session.worker_order.push(work_id.clone());
-            session.workers.insert(
-                work_id.clone(),
-                WorkerLink {
-                    work_id: work_id.clone(),
-                    parent_turn_id: turn_id.clone(),
-                    parent_item_id: None,
-                    reply_to_work_id: None,
-                    synthesis_item_id: None,
-                    synthesis_delivered: false,
-                    session_id: None,
-                },
-            );
-        }
-
-        let existing_id = session
-            .workers
-            .get(&work_id)
-            .and_then(|link| link.synthesis_item_id.clone());
-        let synthesis_id = existing_id
-            .or(item_id)
-            .unwrap_or_else(|| synthesis_item_id_for(&work_id));
-        let turn = turn_id
-            .or_else(|| {
-                session
-                    .workers
-                    .get(&work_id)
-                    .and_then(|link| link.parent_turn_id.clone())
-            })
-            .unwrap_or_default();
-        let streaming = streaming.unwrap_or(true);
-
-        if let Some(index) = session
-            .items
-            .iter()
-            .position(|item| item.id == synthesis_id)
-        {
-            let item = &mut session.items[index];
-            item.streaming = Some(streaming);
-            if status_line.is_some() {
-                item.status_line = status_line;
-            }
-            item.lane = Some(ChatLane::Worker);
-            item.work_id = Some(work_id.clone());
-            if !turn.is_empty() {
-                item.turn_id = Some(turn);
-            }
-        } else {
-            session.items.push(ChatItem {
-                id: synthesis_id.clone(),
-                role: ChatItemRole::Assistant,
-                content: String::new(),
-                streaming: Some(streaming),
-                turn_id: if turn.is_empty() { None } else { Some(turn) },
-                lane: Some(ChatLane::Worker),
-                work_id: Some(work_id.clone()),
-                status_line,
-                segments: Some(Vec::new()),
-                ..empty_item()
-            });
-        }
-
-        if let Some(link) = session.workers.get_mut(&work_id)
-            && link.synthesis_item_id.is_none()
-        {
-            link.synthesis_item_id = Some(synthesis_id);
-        }
-
+        session.ensure_worker_follow_up_item(
+            work_id,
+            turn_id,
+            item_id,
+            status_line,
+            streaming.unwrap_or(true),
+        );
         session.bump();
         Ok(ChatUpdate::Snapshot {
             snapshot: session.snapshot(),
@@ -1394,15 +1433,21 @@ fn resolve_stream_target_index(
 ) -> Option<usize> {
     use medousa_types::TurnStreamEventV3;
 
-    let worker_for_turn = session.workers.values().find(|link| {
-        link.parent_turn_id.as_deref() == Some(turn_id) || {
-            link.synthesis_item_id.as_ref().is_some_and(|id| {
-                session
-                    .items
-                    .iter()
-                    .any(|item| item.id == *id && item.turn_id.as_deref() == Some(turn_id))
-            })
-        }
+    let handoff = session.turns.get(turn_id).filter(|turn| {
+        matches!(turn.phase.as_str(), "worker_handoff" | "workshop_handoff")
+    });
+    let handoff_worker = handoff
+        .and_then(|turn| turn.workspace_card_id.as_ref())
+        .and_then(|id| session.workers.get(id));
+    let worker_for_turn = handoff_worker.or_else(|| {
+        session.workers.values().find(|link| {
+            link.parent_turn_id.as_deref() == Some(turn_id)
+                || link.synthesis_item_id.as_ref().is_some_and(|id| {
+                    session.items.iter().any(|item| {
+                        item.id == *id && item.turn_id.as_deref() == Some(turn_id)
+                    })
+                })
+        })
     });
 
     let prefers_synthesis = matches!(event, TurnStreamEventV3::WorkerSynthesis { .. })
@@ -1412,7 +1457,7 @@ fn resolve_stream_target_index(
                 | TurnStreamEventV3::AssistantTextStarted { .. }
                 | TurnStreamEventV3::AssistantTextCommitted { .. }
                 | TurnStreamEventV3::TurnCompleted { .. }
-        ) && worker_for_turn.is_some_and(|link| {
+        ) && handoff.is_some() && worker_for_turn.is_some_and(|link| {
             !link.synthesis_delivered && link.synthesis_item_id.is_some()
         }));
 

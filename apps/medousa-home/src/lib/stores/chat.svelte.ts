@@ -106,7 +106,7 @@ import {
   resolveTurnSessionId,
   retryWorkerSynthesis,
   syncWorkerLaneFromCards,
-  workerLinkForTurn,
+  workerHandoffLink,
 } from "$lib/chat/workerLaneController";
 import {
   clearBrowserChallenge,
@@ -754,10 +754,6 @@ export class ChatStore implements ChatStoreHost {
     syncWorkerLaneFromCards(this, cards, details);
   }
 
-  workerLinkForTurn(turnId: string): WorkerLink | undefined {
-    return workerLinkForTurn(this.workers, turnId);
-  }
-
   ensureWorkerFollowUpBubble(
     workId: string,
     turnId: string | null,
@@ -854,7 +850,7 @@ export class ChatStore implements ChatStoreHost {
 
   messageIdForTurn(turnId: string): string | null {
     const turn = this.turns.get(turnId);
-    const workerLink = this.workerLinkForTurn(turnId);
+    const workerLink = workerHandoffLink(this, turnId);
     if (workerLink && !workerLink.synthesisDelivered) {
       if (workerLink.synthesisMessageId) return workerLink.synthesisMessageId;
       if (workerLink.messageId) return workerLink.messageId;
@@ -865,7 +861,7 @@ export class ChatStore implements ChatStoreHost {
   }
 
   messageIdForToolStream(turnId: string): string | null {
-    const workerLink = this.workerLinkForTurn(turnId);
+    const workerLink = workerHandoffLink(this, turnId);
     if (workerLink && !workerLink.synthesisDelivered) {
       if (workerLink.messageId) return workerLink.messageId;
       return this.ensureWorkerFollowUpBubble(workerLink.workId, turnId, {

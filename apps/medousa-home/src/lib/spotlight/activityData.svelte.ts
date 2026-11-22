@@ -3,7 +3,7 @@ import type { WorkCard } from "$lib/types/workspace";
 import type { ItemProjection, ProjectTaskRunSummary } from "$lib/forge";
 import type { RecurringDefinitionEntry, RecurringRunEntry } from "$lib/types/recurring";
 import { activityDetailSummary } from "./activity";
-import { isActionableBlockedCard } from "$lib/utils/workCardRetention";
+import { isActionableBlockedCard } from "$lib/utils/formatWork";
 
 import type { ToolHistoryRunEntry } from "$lib/types/toolHistory";
 

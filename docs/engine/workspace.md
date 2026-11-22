@@ -25,6 +25,15 @@ The workspace projector surfaces agent work as **cards** on a kanban-style board
 
 ## Worker reading detail
 
+A native worker has one card keyed by its work ID. The board omits the internal
+Stasis jobs that execute it and retry result delivery. A completed worker is
+terminal in `done`. Failed and cancelled workers are terminal in `blocked`
+and retain that outcome after result delivery. While a result is awaiting
+delivery to the originating session, the card detail's `wrapping_up_reasons`
+contains `delivery_pending`, or `delivery_delayed` after two hours since the
+last worker update. A decision count includes only blocked cards with a status
+of `needs approval` or `needs input`.
+
 For a retained `turn_worker` card, the explicit card-detail read can additionally
 return `worker_transcript`. It contains `work_id`, parent `session_id`,
 `parent_runtime_id`, `execution_runtime_id`, the complete persisted `task_prompt`

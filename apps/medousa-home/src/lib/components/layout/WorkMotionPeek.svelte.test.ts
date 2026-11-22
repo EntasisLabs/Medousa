@@ -22,7 +22,8 @@ it("groups real states without treating failures or cancellations as decisions",
     cards: [card("approval", "blocked", "needs approval"), card("waiting", "blocked", "needs input"),
       card("working", "in_flight"), card("queued", "backlog", "queued"),
       card("finished", "done", "completed"), card("failed", "blocked", "failed"),
-      card("stopped", "blocked", "canceled", "2026-10-28T01:00:00Z")],
+      card("cancelled worker", "blocked", "cancelled"), card("expired request", "blocked", "expired"),
+      card("declined request", "blocked", "denied"), card("stopped", "blocked", "canceled", "2026-10-28T01:00:00Z")],
     selectedId: "approval", onSelect: select,
   } });
   flushSync();
@@ -32,7 +33,7 @@ it("groups real states without treating failures or cancellations as decisions",
   expect(decision.textContent).not.toContain("failed");
   expect(document.querySelector('ul[aria-label="In progress"]')?.querySelectorAll("button")).toHaveLength(2);
   const finished = document.querySelector('ul[aria-label="Recently finished"]')!;
-  expect(finished.querySelectorAll("button")).toHaveLength(3);
+  expect(finished.querySelectorAll("button")).toHaveLength(6);
   expect(finished.querySelector("button")?.textContent).toContain("stopped");
   (decision.querySelector('[aria-current="true"]') as HTMLButtonElement).click();
   expect(select).toHaveBeenCalledExactlyOnceWith("approval");

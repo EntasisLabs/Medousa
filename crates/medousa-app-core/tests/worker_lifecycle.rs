@@ -266,6 +266,42 @@ fn worker_synthesis_stream_targets_follow_up_not_handoff() {
 }
 
 #[test]
+fn sibling_results_keep_their_work_ids_and_leave_the_parent_turn_alone() {
+    let mut core = ChatCore::new();
+    open(&mut core);
+    begin(&mut core);
+    let parent = core.snapshot("ses").unwrap();
+    for (seq, work_id) in [(1, "second"), (2, "first")] {
+        core.dispatch(ChatCommand::ApplyStreamEvent {
+            session_id: "ses".into(),
+            envelope: TurnStreamEnvelopeV3 {
+                schema_version: TURN_STREAM_V3_SCHEMA_VERSION,
+                turn_id: "parent".into(),
+                seq,
+                emitted_at_utc: Utc::now(),
+                event: TurnStreamEventV3::WorkerSynthesis {
+                    text: format!("Result from {work_id}"),
+                    tool_names: vec![],
+                    work_id: Some(work_id.into()),
+                },
+            },
+            expected_revision: None,
+            promote_item_id: None,
+        }).unwrap();
+    }
+    let snapshot = core.snapshot("ses").unwrap();
+    assert_eq!(snapshot.turns, parent.turns);
+    assert_eq!(snapshot.active_turn_id, parent.active_turn_id);
+    assert_eq!(snapshot.items[..2], parent.items[..]);
+    assert_eq!(snapshot.workers.len(), 2);
+    for worker in snapshot.workers {
+        let item = snapshot.items.iter().find(|item| Some(&item.id) == worker.synthesis_item_id.as_ref()).unwrap();
+        assert_eq!(item.content, format!("Result from {}", worker.work_id));
+        assert!(worker.synthesis_delivered);
+    }
+}
+
+#[test]
 fn settle_turn_clears_all_assistants_for_turn() {
     let mut core = ChatCore::new();
     open(&mut core);

@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { WorkCard } from "$lib/types/workspace";
-  import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
+  import { formatCardTitle, formatStatusLabel, isActionableBlockedCard } from "$lib/utils/formatWork";
   import { columnAccentBorder } from "$lib/utils/kanban";
-  import { isActionableBlockedCard } from "$lib/utils/workCardRetention";
   import { workHubLayer } from "$lib/utils/workHub";
 
   interface Props {

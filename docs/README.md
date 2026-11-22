@@ -45,7 +45,7 @@ Assistant runtime: [Batch-stop workers, jobs and follow-ups](engine/agent-tools.
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Notes and vaults](guides/notes-and-vaults.md) | Switch linked vaults, search across them, and discuss notes with separate context |
 | [Files](guides/files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
-| [Context](guides/context.md) | Browse saved session memory, sources, and context during long runs |
+| [Context](guides/context.md) | Browse saved session memory and see how long runs continue under context pressure |
 | [Chat sticky notes](guides/chat-sticky-notes.md) | Keep corrections, exact details, and follow-ups hot across turns |
 | [Agent work in chat](guides/agent-work-in-chat.md) | Follow agent exchanges from the composer or inline handoffs, with explicit approval boundaries |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
@@ -67,7 +67,7 @@ Assistant runtime: [Batch-stop workers, jobs and follow-ups](engine/agent-tools.
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Saved artifacts](guides/artifacts.md) | Find and show earlier HTML artifacts in chat |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
-| [Delegation approvals](guides/delegation-approvals.md) | Follow in-chat task receipts, the slim work/decision line, workshop activity, and explicit delegation approvals |
+| [Delegation approvals](guides/delegation-approvals.md) | Follow in-chat task receipts, the slim work/decision line, workshop activity counts, worker result delivery, and explicit delegation approvals |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---

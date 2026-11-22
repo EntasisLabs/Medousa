@@ -109,7 +109,6 @@ export type ChatStoreHost = {
   handleBrowserNavigated(event: InteractiveTurnStreamEvent): void;
   clearPermissionAlert(): void;
   clearSecretAlert(): void;
-  workerLinkForTurn(turnId: string): WorkerLink | undefined;
   isRelevantSession(sessionId: string | null | undefined): boolean;
   isDetachedWorkerTurnRecord(record: TurnTicketRecord): boolean;
   isComposerOpenDuringHandoff(turnId: string, phase: string): boolean;
