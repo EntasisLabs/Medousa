@@ -46,6 +46,13 @@ screen and **Retry** resends the same request; if another window saved first,
 the canvas reloads the daemon's copy. Tool letters reach the canvas only while
 no other control has focus.
 
+The canvas is full-bleed, with controls floating over it as in medousa-home: a
+tool strip (Select, Move, Draw, Erase, Shapes, Text) with a shape picker and a
+selection bar above it (group, align, arrange, duplicate, delete), history,
+fit and **Style** at the top right (medousa-home's nine colors, S–XL sizes,
+and None, Soft or Solid fill), zoom at the bottom left, and **Details** for the
+layers list with show and lock toggles.
+
 The Chat surface contains a left conversation sidebar and native chat workspace.
 Session search/paging and mutations, model/mode/depth controls, source-document
 composition, typed history/stream rendering, attachments, runtime controls,

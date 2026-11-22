@@ -1,5 +1,6 @@
 use super::*;
 use rndr_canvas::{Operation, ShapeKind};
+use rndr_canvas_ui::editor::Tool;
 use std::sync::Arc;
 
 fn app() -> App {
@@ -435,18 +436,204 @@ fn create_visual_acceptance() {
         for _ in 0..4 {
             rndr_paint::frame(&mut app);
         }
-        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
-            exporter
-                .render_frame(Some(world), frame, 1400, 900, 1.)
-                .unwrap()
+        let mut shoot = |app: &mut App, name: &str| {
+            let (_, image) = rndr_paint::frame_with_snapshot_frame(app, |world, frame| {
+                exporter
+                    .render_frame(Some(world), frame, 1400, 900, 1.)
+                    .unwrap()
+            });
+            image::save_buffer(
+                format!("verification/native-create{name}-{suffix}.png"),
+                &image.rgba,
+                image.width,
+                image.height,
+                image::ColorType::Rgba8,
+            )
+            .unwrap();
+        };
+        shoot(&mut app, "");
+        // Style palette, shape picker and details open together.
+        with_state(app.world_mut(), |w, s| {
+            canvas::run(w, s, canvas::Do::Palette);
+            canvas::run(w, s, canvas::Do::Details);
+            canvas::run(w, s, canvas::Do::Shapes);
         });
-        image::save_buffer(
-            format!("verification/native-create-{suffix}.png"),
-            &image.rgba,
-            image.width,
-            image.height,
-            image::ColorType::Rgba8,
-        )
-        .unwrap();
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "-palette");
     }
+}
+
+fn opened() -> App {
+    let mut app = app();
+    take_commands(app.world_mut());
+    act(app.world_mut(), Action::Open("doc".into()));
+    let get = take_commands(app.world_mut())
+        .into_iter()
+        .find(|c| matches!(c.kind, Kind::Get(_)))
+        .unwrap();
+    reply(
+        app.world_mut(),
+        &get,
+        Ok(Response::Document(Box::new(document("doc", "Board")))),
+    );
+    app.update();
+    app
+}
+
+fn run(w: &mut World, a: canvas::Do) {
+    with_state(w, |w, s| canvas::run(w, s, a));
+    sync(w);
+}
+
+fn editor(w: &World) -> &CanvasEditor {
+    &w.resource::<CanvasView>().unwrap().editor
+}
+
+/// Names of the controls under the floating chrome, for asserting what shows.
+fn shown(w: &World) -> Vec<String> {
+    let mut out = vec![];
+    let mut stack: Vec<Entity> = w
+        .entities_with::<Semantics>()
+        .into_iter()
+        .filter(|e| {
+            let body = state(w).unwrap().slot;
+            let body = w.get::<Parent>(body).unwrap().entity;
+            crate::surfaces::descendant(w, *e, body) && !hidden(w, *e)
+        })
+        .collect();
+    for e in stack.drain(..) {
+        if let Some(name) = w.get::<Semantics>(e).and_then(|s| s.name.clone()) {
+            out.push(name);
+        }
+    }
+    out
+}
+fn hidden(w: &World, mut e: Entity) -> bool {
+    loop {
+        if w.has::<Hidden>(e) {
+            return true;
+        }
+        match w.get::<Parent>(e) {
+            Some(p) => e = p.entity,
+            None => return false,
+        }
+    }
+}
+
+#[test]
+fn the_tool_strip_picks_tools_and_the_shape_picker_follows_it() {
+    let mut app = opened();
+    let w = app.world_mut();
+    let names = shown(w);
+    for name in [
+        "Select (V)",
+        "Draw (P)",
+        "Shapes (R)",
+        "Text (T)",
+        "Undo",
+        "Style",
+        "Zoom in",
+    ] {
+        assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
+    }
+    assert!(
+        !names.iter().any(|n| n == "Ellipse"),
+        "picker starts closed"
+    );
+    run(w, canvas::Do::Shapes);
+    assert_eq!(editor(w).tool(), Tool::Rectangle);
+    assert!(shown(w).iter().any(|n| n == "Ellipse"));
+    run(w, canvas::Do::Tool(Tool::Ellipse));
+    assert_eq!(editor(w).tool(), Tool::Ellipse);
+    assert!(
+        !shown(w).iter().any(|n| n == "Ellipse"),
+        "picking closes it"
+    );
+    run(w, canvas::Do::Tool(Tool::Pen));
+    assert_eq!(editor(w).tool(), Tool::Pen);
+}
+
+#[test]
+fn style_palette_changes_the_selection_and_the_next_object() {
+    let mut app = opened();
+    let w = app.world_mut();
+    w.resource_mut::<CanvasView>()
+        .unwrap()
+        .editor
+        .commit("Add rectangle", vec![rectangle("r")]);
+    w.resource_mut::<CanvasView>()
+        .unwrap()
+        .editor
+        .select(&["r".into()]);
+    run(w, canvas::Do::Palette);
+    assert!(shown(w).iter().any(|n| n == "Blue"));
+    run(w, canvas::Do::Color("#4e75d9"));
+    run(w, canvas::Do::Fill(canvas::Fill::Soft));
+    run(w, canvas::Do::Size(3));
+    let node = editor(w).nodes().into_iter().find(|n| n.id == "r").unwrap();
+    let Content::Shape {
+        stroke,
+        fill,
+        stroke_width,
+        ..
+    } = node.content
+    else {
+        panic!("shape")
+    };
+    assert_eq!(stroke, "#4e75d9");
+    assert_eq!(fill, "#4e75d924", "medousa-home's soft wash");
+    assert_eq!(stroke_width, 12.);
+    // Text sizes follow medousa-home's scale.
+    run(w, canvas::Do::Tool(Tool::Text));
+    run(w, canvas::Do::Size(1));
+    assert_eq!(editor(w).style.font_size, 32.);
+}
+
+#[test]
+fn selection_actions_and_layers_act_on_the_canvas() {
+    let mut app = opened();
+    let w = app.world_mut();
+    w.resource_mut::<CanvasView>()
+        .unwrap()
+        .editor
+        .commit("Add rectangle", vec![rectangle("r")]);
+    w.resource_mut::<CanvasView>()
+        .unwrap()
+        .editor
+        .select(&["r".into()]);
+    sync(w);
+    let names = shown(w);
+    for name in [
+        "Align",
+        "Arrange",
+        "Duplicate selection",
+        "Delete selection",
+    ] {
+        assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
+    }
+    run(w, canvas::Do::Duplicate);
+    assert_eq!(editor(w).nodes().len(), 3);
+    run(w, canvas::Do::Details);
+    let names = shown(w);
+    assert!(
+        names.iter().filter(|n| *n == "Hide layer").count() >= 3,
+        "{names:?}"
+    );
+    run(w, canvas::Do::Visible("r".into()));
+    assert!(
+        !editor(w)
+            .nodes()
+            .into_iter()
+            .find(|n| n.id == "r")
+            .unwrap()
+            .visible
+    );
+    // Hidden layers are not selectable; showing it again makes it pickable.
+    run(w, canvas::Do::Layer("r".into()));
+    assert!(editor(w).selection().is_empty());
+    run(w, canvas::Do::Visible("r".into()));
+    run(w, canvas::Do::Layer("r".into()));
+    assert_eq!(editor(w).selection(), ["r".to_string()]);
 }

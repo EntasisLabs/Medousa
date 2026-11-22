@@ -17,6 +17,8 @@ use rndr_ui::controls::HostIntent;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[path = "create_canvas.rs"]
+mod canvas;
 #[path = "create_view.rs"]
 mod view;
 
@@ -159,6 +161,7 @@ enum Action {
     New(Starter),
     Refresh,
     Retry,
+    Canvas(canvas::Do),
 }
 
 pub(crate) struct State {
@@ -167,6 +170,9 @@ pub(crate) struct State {
     editor: Entity,
     empty: Entity,
     slot: Entity,
+    chrome: canvas::Chrome,
+    /// The open Align or Arrange menu and what its items do.
+    menu: Option<(rndr_ui::menu::MenuHandle, HashMap<u64, Action>)>,
     projects: Vec<CreativeProjectSummary>,
     open: Option<String>,
     queue: Vec<Command>,
@@ -206,6 +212,8 @@ pub fn mount(w: &mut World, parent: Entity) {
         editor: parts.editor,
         empty: parts.empty,
         slot: parts.slot,
+        chrome: parts.chrome,
+        menu: None,
         projects: vec![],
         open: None,
         queue: vec![],
@@ -289,6 +297,10 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 }
             }
             Action::Refresh => s.refresh(),
+            Action::Canvas(a) => {
+                canvas::run(w, s, a);
+                return;
+            }
             Action::Retry => {
                 if let Some(v) = w.resource_mut::<CanvasView>() {
                     v.editor.retry();
@@ -342,7 +354,6 @@ pub fn sync(w: &mut World) {
             i.keys = keys;
             i.chars = chars;
         }
-        rndr_canvas_ui::panels::refresh(w);
     }
     with_state(w, |w, s| {
         if let Some(v) = w.resource_mut::<CanvasView>() {
@@ -377,6 +388,11 @@ pub fn sync(w: &mut World) {
         if s.redraw && active {
             view::render(w, s);
             s.redraw = false;
+        }
+        if active {
+            canvas::picks(w, s);
+            canvas::render(w, s);
+            canvas::place(w, s);
         }
     });
 }
@@ -493,8 +509,14 @@ fn texture_id(project: &str, asset: &str) -> u64 {
 }
 
 fn install(w: &mut World, s: &mut State, document: Mutation) {
-    let mut view = CanvasView::new(CanvasEditor::remote(document), SLOT);
+    let mut editor = CanvasEditor::remote(document);
+    // medousa-home's default ink, legible on the workspace and on artboards.
+    editor.style.stroke = canvas::COLORS[0].1.into();
+    let mut view = CanvasView::new(editor, SLOT);
     view.backdrop = crate::native_style::color(w, crate::native_style::canvas());
+    if let Some(theme) = w.resource::<rndr_ui::UiTheme>() {
+        view.overlay = rndr_canvas_ui::overlay::OverlayTheme::from_theme(theme);
+    }
     canvas_view::install(w, view);
     s.assets.clear();
 }

@@ -1340,9 +1340,7 @@ fn update(world: &mut World) {
                 continue;
             }
             crate::surfaces::SurfaceId::Create => {
-                if !rndr_canvas_ui::panels::dispatch(world, &intent)
-                    && let Some(host) = host
-                {
+                if let Some(host) = host {
                     crate::create::action(world, &host);
                 }
                 continue;

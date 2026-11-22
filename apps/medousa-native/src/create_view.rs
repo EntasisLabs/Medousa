@@ -9,6 +9,7 @@ pub(super) struct Parts {
     pub editor: Entity,
     pub empty: Entity,
     pub slot: Entity,
+    pub chrome: super::canvas::Chrome,
 }
 
 fn panel(w: &mut World, parent: Entity, layout: Layout) -> Entity {
@@ -16,10 +17,6 @@ fn panel(w: &mut World, parent: Entity, layout: Layout) -> Entity {
     set_parent(w, e, parent);
     e
 }
-
-const SIDE: f32 = 264.;
-/// Width the canvas toolbar may lay its row out in.
-const STRIP: f32 = 2400.;
 
 pub(super) fn mount(w: &mut World, root: Entity, slot_id: u64) -> Parts {
     let sidebar = panel(
@@ -56,22 +53,8 @@ pub(super) fn mount(w: &mut World, root: Entity, slot_id: u64) -> Parts {
         },
     );
     w.insert(editor, Hidden);
-    // One strip that scrolls sideways when the window is narrow. RNDR's
-    // toolbar keeps a row only if every label fits its width, so it is told
-    // the strip is wide enough and the strip does the clipping.
-    let toolbar = panel(
-        w,
-        editor,
-        Layout {
-            width: Size::Fill,
-            height: Size::Hug,
-            padding: 8.,
-            min_width: 0.,
-            ..Layout::row()
-        },
-    );
-    w.insert(toolbar, Scroll::default());
-    visual::rule(w, editor);
+    // The canvas fills the editor; tools, style, zoom and details float
+    // over it, as in medousa-home's editor.
     let body = panel(
         w,
         editor,
@@ -80,7 +63,7 @@ pub(super) fn mount(w: &mut World, root: Entity, slot_id: u64) -> Parts {
             height: Size::Fill,
             min_width: 0.,
             min_height: 0.,
-            ..Layout::row()
+            ..Layout::column()
         },
     );
     let slot = w.spawn((
@@ -98,20 +81,7 @@ pub(super) fn mount(w: &mut World, root: Entity, slot_id: u64) -> Parts {
         },
     ));
     set_parent(w, slot, body);
-    let side = panel(
-        w,
-        body,
-        Layout {
-            width: Size::Px(SIDE),
-            height: Size::Fill,
-            padding: 8.,
-            gap: 8.,
-            ..Layout::column()
-        },
-    );
-    visual::flat(w, side, visual::navigation());
-    w.insert(side, Scroll::default());
-    rndr_canvas_ui::panels::mount(w, toolbar, side, [STRIP, SIDE - 16.]);
+    let chrome = super::canvas::mount(w, body);
     let empty = panel(
         w,
         main,
@@ -135,6 +105,7 @@ pub(super) fn mount(w: &mut World, root: Entity, slot_id: u64) -> Parts {
         editor,
         empty,
         slot,
+        chrome,
     }
 }
 
