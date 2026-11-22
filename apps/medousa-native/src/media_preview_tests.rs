@@ -282,14 +282,20 @@ fn zoom_controls_fit_bounds_close_and_detail_cache_are_bounded() {
             ready(&mut world, key);
         }
         tick(&mut world);
-        let sheet = world
-            .resource::<Option<Viewer>>()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .sheet;
-        let bar = children_of(&world, sheet)[0];
-        let controls = children_of(&world, bar);
+        let controls = [
+            "Zoom out",
+            "Zoom in",
+            "Fit image to window",
+            "Close image preview",
+        ]
+        .map(|name| {
+            world
+                .query::<Semantics>()
+                .iter()
+                .find(|(e, s)| world.has::<Button>(*e) && s.name.as_deref() == Some(name))
+                .map(|(e, _)| *e)
+                .unwrap()
+        });
         for _ in 0..10 {
             assert_eq!(
                 try_activate(&mut world, controls[1]),
@@ -348,4 +354,37 @@ fn zoom_controls_fit_bounds_close_and_detail_cache_are_bounded() {
         );
         despawn(&mut world, root);
     }
+}
+
+#[test]
+fn overflow_opens_first_hidden_image_and_browses_whole_set() {
+    let (mut world, parent) = fixture();
+    let images: Vec<_> = (0..5)
+        .map(|i| (format!("m{i}"), format!("{i}.png")))
+        .collect();
+    let row = gallery(&mut world, parent, "s", &images);
+    tick(&mut world);
+    assert_eq!(drain_commands(&mut world).len(), 2);
+    let more = children_of(&world, row)
+        .into_iter()
+        .find(|e| world.has::<OpenImage>(*e))
+        .unwrap();
+    open_image(&mut world, more);
+    for index in [2, 3, 4, 0, 1] {
+        let v = world
+            .resource::<Option<Viewer>>()
+            .unwrap()
+            .as_ref()
+            .unwrap();
+        assert_eq!(v.source.key.media, images[index].0);
+        assert_eq!(v.focus, more);
+        let mut input = Input::default();
+        input
+            .keys
+            .push(KeyEvent::named(NamedKey::ArrowRight, Modifiers::default()));
+        world.insert_resource(input);
+        sync_viewer(&mut world);
+    }
+    close_viewer(&mut world);
+    assert!(world.is_alive(row));
 }

@@ -8,6 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
+pulldown-cmark = { version = "0.13", default-features = false }
 rfd = { version = "0.15", default-features = false, features = ["tokio", "xdg-portal"] }
 rndr_core = { path = "../../../../rndr/crates/rndr_core" }
 rndr_term = { path = "../../../../rndr/crates/rndr_term" }

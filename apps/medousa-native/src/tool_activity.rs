@@ -1,11 +1,12 @@
 //! Presentation-only inspector. RNDR owns modal hit isolation, Escape, scrolling,
 //! keyboard/button activation and text selection; no network or tool execution.
-use super::{literal, project, Part};
-use medousa_app_core::{contract::ToolRunState, ChatRevision, ChatSnapshot};
+use super::{Part, literal, project};
+use medousa_app_core::{ChatRevision, ChatSnapshot, contract::ToolRunState};
 use rndr_core::*;
 use rndr_ui::{
+    Typography, UiId,
     controls::{self, ButtonProps, ButtonVariant, HostIntent},
-    text, Typography, UiId,
+    text,
 };
 
 const OPEN: u64 = 0x746f6f6c01;
@@ -293,7 +294,8 @@ pub fn sync(world: &mut World, snapshot: Option<&ChatSnapshot>) {
     // Desktop input carries logical key events; core overlay dismissal still
     // reads the legacy `Input.key` shim. Consume Escape only while this sheet
     // owns the modal interaction, preserving normal chat/editor key handling.
-    let escape = state.selected.is_some()
+    let escape = !crate::media_preview::viewer_open(world)
+        && state.selected.is_some()
         && world.resource::<Input>().is_some_and(|i| {
             i.keys.iter().any(|k| {
                 !k.released && !k.synthetic && k.logical == LogicalKey::Named(NamedKey::Escape)
@@ -712,6 +714,14 @@ fn render_cards(world: &mut World, state: &Inspector) {
         }
         section(world, card, "RESULT");
         selectable(world, card, result(run));
+        if run.tool_name == "cognition_image_view" {
+            let images: Vec<_> = super::output_images(run)
+                .map(|(id, label)| (id.to_owned(), label.to_owned()))
+                .collect();
+            if !images.is_empty() {
+                crate::media_preview::gallery(world, card, &state.session, &images);
+            }
+        }
         let receipts = run.artifact_refs.as_ref().map_or(0, Vec::len);
         if receipts > 0 {
             text(

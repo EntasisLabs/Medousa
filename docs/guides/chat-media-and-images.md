@@ -43,6 +43,8 @@ example, ask: “Run the screenshot command, then inspect `screenshots/result.pn
 and tell me whether the layout is clipped.” It can create the file with its
 terminal tools, then open it with `cognition_image_view`.
 
+In native Chat, **View work** opens the tool history, with each inspected image beside the call that produced it. Screenshots inspected during the same reply automatically appear together in one inline gallery, in tool-call order. Your uploads and generated images still appear inline.
+
 The file must be on the active **workshop daemon's disk**, inside an authorized
 coding folder. In Coder, this defaults to the admitted checkout. In an Assistant
 turn, the agent supplies an existing authorized coding root; the default is the
@@ -109,3 +111,5 @@ Chat media is session-scoped and deleted with the owning session. **Save to
 vault** creates a self-contained vault note so the saved image survives session
 deletion. Generated-image history retains provider/model and generation lineage,
 but raw provider responses and credentials are not written into the transcript.
+
+In native Chat, consecutive images sit together beneath the message text. Select a preview to see its filename and inspect it at a larger size. When there are more than two images, **+N** opens the first hidden image. In the viewer, use the chevrons or the left and right arrow keys to compare images. Use **+** and **−** to zoom, scroll to pan, or select **Fit image to window** to see the whole image again. Select **×** or press **Esc** to return to the conversation.

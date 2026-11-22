@@ -62,7 +62,7 @@ pub struct CognitionImageViewTool;
 
 #[medousa_tool(id = IMAGE_VIEW_ID)]
 impl CognitionImageViewTool {
-    /// View a PNG, JPEG, WebP, or GIF file produced or found through terminal tools. Sends actual pixels to vision-capable models, not just metadata. Paths are on the workshop daemon, confined to authorized coding roots; Coder uses its admitted checkout. No URLs or arbitrary host paths. Large images use a bounded PNG rendition; originals are unchanged. Invoke this tool directly: generic parallel wrappers may return metadata without forwarding image attachments. A receipt alone is not visual verification.
+    /// View a PNG, JPEG, WebP, or GIF file produced or found through terminal tools. Sends actual pixels to vision-capable models, not just metadata. Paths are on the workshop daemon, confined to authorized coding roots; Coder uses its admitted checkout. No URLs or arbitrary host paths. Large images use a bounded PNG rendition; originals are unchanged. Invoke this tool directly: generic parallel wrappers may return metadata without forwarding image attachments. A receipt alone is not visual verification. Native Chat automatically groups inspected images from the same reply in one inline gallery.
     async fn invoke_typed(&self, input: ImageViewInput) -> Result<ImageViewOutput, StasisError> {
         let context = crate::agent_runtime::execution_context::active_turn_execution_context()
             .ok_or_else(|| StasisError::PortFailure("image view requires an active turn".into()))?;

@@ -256,8 +256,8 @@ fn core_filters_empty_handoff_shells_and_renders_failures() {
 }
 
 #[test]
-fn assistant_tool_images_are_inline_chronological_deduplicated_and_retained() {
-    let run = serde_json::json!({"runId":"r", "toolName":"cognition_image_view", "status":"succeeded", "round":1,
+fn assistant_generated_images_are_inline_chronological_deduplicated_and_retained() {
+    let run = serde_json::json!({"runId":"r", "toolName":"cognition_image_generate", "status":"succeeded", "round":1,
     "artifactRefs":[
         {"role":"input","contentType":"image/png","byteSize":10,"hash64":"h","artifactId":"art:input"},
         {"role":"output","contentType":"application/json","byteSize":10,"hash64":"h","artifactId":"art:json"},
@@ -274,10 +274,10 @@ fn assistant_tool_images_are_inline_chronological_deduplicated_and_retained() {
         .unwrap(),
     );
     let projected = project(&assistant);
-    let image = projected.iter().position(|p| p.image.is_some()).unwrap();
-    assert_eq!(projected[image].image.as_ref().unwrap().0, "art:pixels");
+    let image = projected.iter().position(|p| !p.images.is_empty()).unwrap();
+    assert_eq!(projected[image].images[0].0, "art:pixels");
     assert_eq!(projected[image + 1].id, "text:end");
-    assert_eq!(projected.iter().filter(|p| p.image.is_some()).count(), 1);
+    assert_eq!(projected.iter().filter(|p| !p.images.is_empty()).count(), 1);
     let (mut world, root) = fixture();
     sync(
         &mut world,
@@ -308,12 +308,12 @@ fn assistant_tool_images_are_inline_chronological_deduplicated_and_retained() {
     assert_eq!(
         project(&assistant)
             .iter()
-            .filter(|p| p.image.is_some())
+            .filter(|p| !p.images.is_empty())
             .count(),
         1
     );
     assistant.tool_runs.as_mut().unwrap()[0].status = "failed".into();
-    assert!(!project(&assistant).iter().any(|p| p.image.is_some()));
+    assert!(!project(&assistant).iter().any(|p| !p.images.is_empty()));
 }
 
 #[test]
@@ -578,4 +578,38 @@ fn timeline_scrollbar_is_quiet_when_empty_and_visible_for_overflow_or_focus() {
     });
     sync_navigation(&mut world, root);
     assert_eq!(world.get::<Opacity>(rail).unwrap().0, 1.);
+}
+
+#[test]
+fn inspected_images_across_rounds_share_one_row_without_selection() {
+    let mut assistant = item("a", "assistant", "");
+    assistant.tool_runs = Some(["first", "trial", "last"].into_iter().enumerate().map(|(round,id)|serde_json::from_value(serde_json::json!({"runId":id,"toolName":"cognition_image_view","status":"succeeded","round":round+1,"artifactRefs":[{"role":"output","contentType":"image/png","byteSize":1,"hash64":"h","artifactId":format!("art:{id}")}]})).unwrap()).collect());
+    let projected = project(&assistant);
+    let rows: Vec<_> = projected.iter().filter(|p| !p.images.is_empty()).collect();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0]
+            .images
+            .iter()
+            .map(|(id, _)| id.as_str())
+            .collect::<Vec<_>>(),
+        ["art:first", "art:trial", "art:last"]
+    );
+    assistant.content = "`![code](art:trial)`\n\n![Before](art:first)\n![After](art:last)".into();
+    let projected = project(&assistant);
+    let work = projected.last().unwrap();
+    assert_eq!(work.text, "View work · 3 images");
+    assert_eq!(work.tools.len(), 3);
+    assert_eq!(
+        projected
+            .iter()
+            .find(|p| !p.images.is_empty())
+            .unwrap()
+            .images,
+        vec![
+            ("art:first".into(), "Before".into()),
+            ("art:trial".into(), "Medousa image".into()),
+            ("art:last".into(), "After".into())
+        ]
+    );
 }

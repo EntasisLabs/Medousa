@@ -299,15 +299,25 @@ fn assistant_image_visual_acceptance() {
     app.world_mut().resource_mut::<Model>().unwrap().chat.hydrate("s".into(), "a".into(), vec![
         serde_json::json!({"entry_id":"u","entry_seq":1,"role":"user","content":"Can you show me what the calmer layout would look like?"}),
         serde_json::json!({"entry_id":"a","entry_seq":2,"role":"assistant","content":"Here is the conversation-first concept.","parts":[
-            {"kind":"text","markdown":"Here is the **conversation-first** concept."},
+            {"kind":"text","segment_id":"intro","markdown":"Here is the **conversation-first** concept."},
             {"kind":"tool_run","run_id":"image","tool_name":"cognition_image_view","status":"succeeded","input_summary":"Conversation-first concept","started_at":"2026-11-15T15:00:00Z","artifact_refs":[
                 {"role":"output","content_type":"image/png","byte_size":42,"hash64":"h","artifact_id":"art:fixture:concept","label":"Conversation first"}
-            ]}
+                ]},
+            {"kind":"tool_run","run_id":"image2","started_at":"2026-11-15T15:01:00Z","input_summary":"Alternate views","tool_name":"cognition_image_view","status":"succeeded","artifact_refs":[
+                {"role":"output","content_type":"image/png","byte_size":42,"hash64":"i","artifact_id":"art:fixture:second","label":"Alternate"},
+                {"role":"output","content_type":"image/png","byte_size":42,"hash64":"j","artifact_id":"art:fixture:third","label":"Detail"},
+                {"role":"output","content_type":"image/png","byte_size":42,"hash64":"k","artifact_id":"art:fixture:intermediate","label":"Intermediate"}
+            ]},
+            {"kind":"text","segment_id":"reply","markdown":"Here are the options."}
         ]}),
     ], None).unwrap();
     let bytes = std::fs::read("verification/concepts/01-conversation-first.png").unwrap();
     let mut exporter = rndr_render::Exporter::new().unwrap();
     for (width, height, suffix) in [(1200, 850, "wide"), (760, 650, "narrow")] {
+        publish_system_appearance(app.world_mut(), SystemAppearance {
+            dark: Some(suffix == "wide"),
+            ..Default::default()
+        });
         app.world_mut()
             .insert_resource(Viewport::new(width as f32, height as f32));
         for _ in 0..8 {
@@ -317,14 +327,38 @@ fn assistant_image_visual_acceptance() {
         for _ in 0..12 {
             rndr_paint::frame(&mut app);
         }
-        let images = app.world().entities_with::<ImageView>();
-        assert!(
-            !images.is_empty(),
-            "assistant output must produce pixels, not only a tool card"
+        let images: Vec<_> = app
+            .world()
+            .entities_with::<ImageView>()
+            .into_iter()
+            .filter(|e| {
+                app.world()
+                    .get::<Button>(*e)
+                    .is_some_and(|b| b.action == "expand-image")
+            })
+            .collect();
+        assert_eq!(
+            images.len(),
+            2,
+            "remaining image is available through overflow"
         );
+        let badge = app
+            .world()
+            .query::<Semantics>()
+            .iter()
+            .find(|(_, s)| s.name.as_deref() == Some("Show 2 more images"))
+            .map(|(e, _)| *e)
+            .unwrap();
+        assert!(
+            app.world().get::<Rect>(badge).unwrap().w <= 49.,
+            "overflow is a badge, not a bar"
+        );
+        let first = app.world().get::<Rect>(images[0]).unwrap();
+        let second = app.world().get::<Rect>(images[1]).unwrap();
+        assert!((first.y - second.y).abs() < 1. && (first.x - second.x).abs() >= first.w - 1.);
         for image in images {
             let rect = app.world().get::<Rect>(image).unwrap();
-            assert!(rect.w > 0. && rect.h > 0. && rect.w <= 400.1 && rect.h <= 280.1);
+            assert!(rect.w > 0. && rect.h > 0. && rect.w <= 600.1 && rect.h <= 340.1);
         }
         let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
             exporter
@@ -379,7 +413,7 @@ fn assistant_image_visual_acceptance() {
             .world()
             .query::<Semantics>()
             .iter()
-            .find(|(_, s)| s.name.as_deref() == Some("Zoom in"))
+            .find(|(e, s)| app.world().has::<Button>(*e) && s.name.as_deref() == Some("Zoom in"))
             .map(|(e, _)| *e)
             .unwrap();
         for _ in 0..2 {
@@ -823,55 +857,166 @@ fn timeline_single_scrollbar_visual_acceptance() {
 #[test]
 #[ignore = "Sealed Forge Reviews Parley/GPU visual acceptance"]
 fn native_reviews_visual_acceptance() {
- let mut exporter=rndr_render::Exporter::new().unwrap();
- std::fs::create_dir_all("verification").unwrap();
- for (width,height,light,changes,confirm,name) in [(1200,850,false,false,false,"summary-wide"),(760,850,false,false,false,"summary-narrow"),(1200,850,false,true,false,"changes-wide"),(760,760,false,true,false,"changes-narrow"),(1200,850,true,true,false,"changes-light"),(760,850,true,false,true,"confirm-narrow")] {
-  let(mut app,_rx)=fixture();let engine:Arc<dyn TextEngine>=Arc::new(rndr_render::ParleyText::new());app.world_mut().insert_resource(engine);
-  app.world_mut().insert_resource(Viewport::new(width as f32,height as f32));
-  publish_system_appearance(app.world_mut(),SystemAppearance{dark:Some(!light),..Default::default()});
-  crate::surfaces::select(app.world_mut(),crate::surfaces::SurfaceId::Reviews);
-  crate::reviews::take_commands(app.world_mut());crate::reviews::tests::seed_visual(app.world_mut(),changes,confirm);
-  for _ in 0..4{rndr_paint::frame(&mut app);}
-  crate::reviews::tests::assert_visual_geometry(app.world(), changes);
-  let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
-  image::save_buffer(format!("verification/native-reviews-{name}.png"),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
-  if changes {
-   let root = app.world().query::<Semantics>().into_iter().find(|(_, sem)|
-       sem.name.as_deref() == Some("Sealed changes to src/main.rs")).unwrap().0;
-   let port = *app.world().get::<Rect>(root).unwrap();
-   let extent = app.world().get::<Scroll>(root).unwrap().content[0];
-   assert!(extent > port.w + 100., "Long source must establish a horizontal range");
-   app.world_mut().get_mut::<Scroll>(root).unwrap().offset[0] = port.w - extent;
-   for _ in 0..4 { rndr_paint::frame(&mut app); }
-   assert!(app.world().get::<Scroll>(root).unwrap().offset[0] < -100.);
-   let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
-   image::save_buffer(format!("verification/native-reviews-{name}-horizontal-tail.png"),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
-   app.world_mut().get_mut::<Scroll>(root).unwrap().offset[0] = 0.;
-   crate::reviews::tests::scroll_visual_diff_to_end(app.world_mut());
-   for _ in 0..4 { rndr_paint::frame(&mut app); }
-   crate::reviews::tests::assert_visual_diff_end(app.world());
-   crate::reviews::tests::assert_visual_geometry(app.world(), true);
-   let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
-   image::save_buffer(format!("verification/native-reviews-{name}-end.png"),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
-   for expanded in [true, false] {
-    crate::reviews::tests::visual_accordions(app.world_mut(), expanded);
-    for _ in 0..4 { rndr_paint::frame(&mut app); }
-    let count = app.world().query::<Semantics>().into_iter().filter(|(_, sem)|
-        sem.name.as_deref().is_some_and(|n| n.starts_with("Sealed changes to "))).count();
-    assert_eq!(count, if expanded { 2 } else { 0 });
-    let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
-    image::save_buffer(format!("verification/native-reviews-{name}-accordions-{}.png",if expanded {"expanded"} else {"collapsed"}),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
-   }
-   for expanded in [false, true] {
-    crate::reviews::tests::visual_context(app.world_mut(), expanded);
-    for _ in 0..4 { rndr_paint::frame(&mut app); }
-    let control = if expanded { "Collapse unchanged context" } else { "Show unchanged context" };
-    assert!(app.world().query::<Label>().iter().any(|(_,l)| l.text == control));
-    let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
-    image::save_buffer(format!("verification/native-reviews-{name}-context-{}.png",if expanded {"expanded"} else {"collapsed"}),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
-   }
-
-
-  }
- }
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    for (width, height, light, changes, confirm, name) in [
+        (1200, 850, false, false, false, "summary-wide"),
+        (760, 850, false, false, false, "summary-narrow"),
+        (1200, 850, false, true, false, "changes-wide"),
+        (760, 760, false, true, false, "changes-narrow"),
+        (1200, 850, true, true, false, "changes-light"),
+        (760, 850, true, false, true, "confirm-narrow"),
+    ] {
+        let (mut app, _rx) = fixture();
+        let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+        app.world_mut().insert_resource(engine);
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, height as f32));
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(!light),
+                ..Default::default()
+            },
+        );
+        crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Reviews);
+        crate::reviews::take_commands(app.world_mut());
+        crate::reviews::tests::seed_visual(app.world_mut(), changes, confirm);
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        crate::reviews::tests::assert_visual_geometry(app.world(), changes);
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-reviews-{name}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+        if changes {
+            let root = app
+                .world()
+                .query::<Semantics>()
+                .into_iter()
+                .find(|(_, sem)| sem.name.as_deref() == Some("Sealed changes to src/main.rs"))
+                .unwrap()
+                .0;
+            let port = *app.world().get::<Rect>(root).unwrap();
+            let extent = app.world().get::<Scroll>(root).unwrap().content[0];
+            assert!(
+                extent > port.w + 100.,
+                "Long source must establish a horizontal range"
+            );
+            app.world_mut().get_mut::<Scroll>(root).unwrap().offset[0] = port.w - extent;
+            for _ in 0..4 {
+                rndr_paint::frame(&mut app);
+            }
+            assert!(app.world().get::<Scroll>(root).unwrap().offset[0] < -100.);
+            let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+                exporter
+                    .render_frame(Some(world), frame, width, height, 1.)
+                    .unwrap()
+            });
+            image::save_buffer(
+                format!("verification/native-reviews-{name}-horizontal-tail.png"),
+                &image.rgba,
+                image.width,
+                image.height,
+                image::ColorType::Rgba8,
+            )
+            .unwrap();
+            app.world_mut().get_mut::<Scroll>(root).unwrap().offset[0] = 0.;
+            crate::reviews::tests::scroll_visual_diff_to_end(app.world_mut());
+            for _ in 0..4 {
+                rndr_paint::frame(&mut app);
+            }
+            crate::reviews::tests::assert_visual_diff_end(app.world());
+            crate::reviews::tests::assert_visual_geometry(app.world(), true);
+            let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+                exporter
+                    .render_frame(Some(world), frame, width, height, 1.)
+                    .unwrap()
+            });
+            image::save_buffer(
+                format!("verification/native-reviews-{name}-end.png"),
+                &image.rgba,
+                image.width,
+                image.height,
+                image::ColorType::Rgba8,
+            )
+            .unwrap();
+            for expanded in [true, false] {
+                crate::reviews::tests::visual_accordions(app.world_mut(), expanded);
+                for _ in 0..4 {
+                    rndr_paint::frame(&mut app);
+                }
+                let count = app
+                    .world()
+                    .query::<Semantics>()
+                    .into_iter()
+                    .filter(|(_, sem)| {
+                        sem.name
+                            .as_deref()
+                            .is_some_and(|n| n.starts_with("Sealed changes to "))
+                    })
+                    .count();
+                assert_eq!(count, if expanded { 2 } else { 0 });
+                let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+                    exporter
+                        .render_frame(Some(world), frame, width, height, 1.)
+                        .unwrap()
+                });
+                image::save_buffer(
+                    format!(
+                        "verification/native-reviews-{name}-accordions-{}.png",
+                        if expanded { "expanded" } else { "collapsed" }
+                    ),
+                    &image.rgba,
+                    image.width,
+                    image.height,
+                    image::ColorType::Rgba8,
+                )
+                .unwrap();
+            }
+            for expanded in [false, true] {
+                crate::reviews::tests::visual_context(app.world_mut(), expanded);
+                for _ in 0..4 {
+                    rndr_paint::frame(&mut app);
+                }
+                let control = if expanded {
+                    "Collapse unchanged context"
+                } else {
+                    "Show unchanged context"
+                };
+                assert!(
+                    app.world()
+                        .query::<Label>()
+                        .iter()
+                        .any(|(_, l)| l.text == control)
+                );
+                let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+                    exporter
+                        .render_frame(Some(world), frame, width, height, 1.)
+                        .unwrap()
+                });
+                image::save_buffer(
+                    format!(
+                        "verification/native-reviews-{name}-context-{}.png",
+                        if expanded { "expanded" } else { "collapsed" }
+                    ),
+                    &image.rgba,
+                    image.width,
+                    image.height,
+                    image::ColorType::Rgba8,
+                )
+                .unwrap();
+            }
+        }
+    }
 }

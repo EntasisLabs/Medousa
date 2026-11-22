@@ -14,7 +14,7 @@ struct Part {
     text: String,
     details: Option<String>,
     tools: Vec<ToolRunState>,
-    image: Option<(String, String)>,
+    images: Vec<(String, String)>,
 }
 pub struct ReadingIdentity {
     pub sender: String,
@@ -559,7 +559,7 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
             Some(mut mounted)
                 if mounted.part.details.is_some() == part.details.is_some()
                     && mounted.part.tools.is_empty() == part.tools.is_empty()
-                    && mounted.part.image == part.image =>
+                    && mounted.part.images == part.images =>
             {
                 if mounted.part != part {
                     if !part.tools.is_empty() {
@@ -576,7 +576,7 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
                             body.title = part.text.clone();
                             body.dirty = true;
                         }
-                    } else if part.image.is_none() {
+                    } else if part.images.is_empty() {
                         let view = world.get_mut::<MarkdownView>(mounted.entity).unwrap();
                         if let Some(suffix) = part.text.strip_prefix(view.source()) {
                             view.push_str(suffix);
@@ -592,8 +592,8 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
                 if let Some(old) = other {
                     despawn(world, old.entity);
                 }
-                let entity = if let Some((id, label)) = &part.image {
-                    crate::media_preview::mount(world, row.entity, session, id, label, false)
+                let entity = if !part.images.is_empty() {
+                    crate::media_preview::gallery(world, row.entity, session, &part.images)
                 } else if !part.tools.is_empty() {
                     tool_activity::mount(world, row.entity, None, &item.id, &part)
                 } else if let Some(details) = &part.details {
@@ -829,7 +829,7 @@ fn plain(id: impl Into<String>, text: String) -> Part {
         text,
         details: None,
         tools: vec![],
-        image: None,
+        images: vec![],
     }
 }
 fn detail(id: impl Into<String>, title: String, text: String) -> Part {
@@ -838,7 +838,7 @@ fn detail(id: impl Into<String>, title: String, text: String) -> Part {
         text: title,
         details: Some(text),
         tools: vec![],
-        image: None,
+        images: vec![],
     }
 }
 fn tool(run: &ToolRunState) -> Part {
@@ -847,32 +847,119 @@ fn tool(run: &ToolRunState) -> Part {
         text: tool_activity::summary(std::slice::from_ref(run)),
         details: None,
         tools: vec![run.clone()],
-        image: None,
+        images: vec![],
     }
 }
 fn tool_parts(run: &ToolRunState, parts: &mut Vec<Part>, images: &mut HashSet<String>) {
     parts.push(tool(run));
-    if run.status != "succeeded" {
-        return;
-    }
-    for reference in run.artifact_refs.iter().flatten() {
-        if reference.role != "output" || !reference.content_type.starts_with("image/") {
-            continue;
-        }
-        let Some(id) = reference
-            .artifact_id
-            .as_ref()
-            .filter(|id| id.starts_with("art:"))
-        else {
-            continue;
-        };
-        if images.insert(id.clone()) {
-            let label = reference.label.as_deref().unwrap_or("Medousa image");
+    for (id, label) in output_images(run) {
+        if images.insert(id.to_owned()) {
             let mut part = plain(format!("artifact:{id}"), literal(label));
-            part.image = Some((id.clone(), label.into()));
+            part.images.push((id.into(), label.into()));
             parts.push(part);
         }
     }
+}
+fn output_images(run: &ToolRunState) -> impl Iterator<Item = (&str, &str)> {
+    run.artifact_refs.iter().flatten().filter_map(|r| {
+        let id = r.artifact_id.as_deref()?;
+        (run.status == "succeeded"
+            && r.role == "output"
+            && r.content_type.starts_with("image/")
+            && id.starts_with("art:"))
+        .then(|| (id, r.label.as_deref().unwrap_or("Medousa image")))
+    })
+}
+
+// Group successful inspections by assistant item, in tool order. Markdown
+// references may caption a thumbnail, but never gate it or duplicate it.
+fn present_observations(parts: Vec<Part>) -> Vec<Part> {
+    use pulldown_cmark::{Event, Parser, Tag};
+    let mut observed = HashMap::new();
+    let mut gallery = plain("observations", String::new());
+    for run in parts
+        .iter()
+        .flat_map(|p| &p.tools)
+        .filter(|r| r.tool_name == "cognition_image_view")
+    {
+        for (id, label) in output_images(run) {
+            let index = gallery.images.len();
+            observed.entry(id.to_owned()).or_insert_with(|| {
+                gallery.images.push((id.to_owned(), label.to_owned()));
+                index
+            });
+        }
+    }
+    if observed.is_empty() {
+        return parts;
+    }
+    let mut work = plain("work", String::new());
+    let mut result = vec![];
+    let mut shared = HashSet::new();
+    for p in parts {
+        if !p.tools.is_empty() {
+            work.tools.extend(p.tools);
+            continue;
+        }
+        if p.images
+            .first()
+            .is_some_and(|(id, _)| observed.contains_key(id))
+        {
+            continue;
+        }
+        if p.id != "body" && !p.id.starts_with("text:") {
+            result.push(p);
+            continue;
+        }
+        let mut cursor = 0;
+        for (event, span) in Parser::new(&p.text).into_offset_iter() {
+            let Event::Start(Tag::Image { dest_url, .. }) = event else {
+                continue;
+            };
+            let Some(&index) = observed.get(dest_url.as_ref()) else {
+                continue;
+            };
+            if span.start < cursor {
+                continue;
+            }
+            let before = &p.text[cursor..span.start];
+            if !before.trim().is_empty() {
+                result.push(plain(format!("{}:{cursor}", p.id), before.to_owned()));
+            }
+            if shared.insert(dest_url.to_string()) {
+                if let Some(caption) = p.text[span.clone()]
+                    .strip_prefix("![")
+                    .and_then(|s| s.split_once("]("))
+                    .map(|(s, _)| s)
+                    .filter(|s| !s.is_empty())
+                {
+                    gallery.images[index].1 = caption.to_owned();
+                }
+            }
+            cursor = span.end;
+        }
+        if cursor == 0 {
+            result.push(p);
+        } else if !p.text[cursor..].trim().is_empty() {
+            result.push(plain(
+                format!("{}:{cursor}", p.id),
+                p.text[cursor..].to_owned(),
+            ));
+        }
+    }
+    work.id = format!("tool:{}", work.tools[0].run_id);
+    work.text = if work.tools.iter().any(|r| r.status == "running") {
+        tool_activity::summary(&work.tools)
+    } else {
+        format!(
+            "View work · {} image{}",
+            observed.len(),
+            if observed.len() == 1 { "" } else { "s" }
+        )
+    };
+    result.push(gallery);
+    result.push(work);
+    result
 }
 fn artifact_part(artifact: &medousa_app_core::contract::UiArtifact) -> Part {
     if artifact.mime.starts_with("image/") && artifact.artifact_id.starts_with("art:") {
@@ -880,7 +967,8 @@ fn artifact_part(artifact: &medousa_app_core::contract::UiArtifact) -> Part {
             format!("artifact:{}", artifact.artifact_id),
             literal(&artifact.label),
         );
-        part.image = Some((artifact.artifact_id.clone(), artifact.label.clone()));
+        part.images
+            .push((artifact.artifact_id.clone(), artifact.label.clone()));
         return part;
     }
     plain(
@@ -975,7 +1063,7 @@ fn project(item: &ChatItem) -> Vec<Part> {
             literal(&format!("{} · {}", label, media.mime)),
         );
         if media.mime.starts_with("image/") {
-            part.image = Some((media.media_id.clone(), label.into()));
+            part.images.push((media.media_id.clone(), label.into()));
         }
         parts.push(part);
     }
@@ -1013,7 +1101,20 @@ fn project(item: &ChatItem) -> Vec<Part> {
     // Coalesce adjacent tool rounds, never across narrative/progress/artifacts.
     // Keep the first canonical run ID so streaming appends retain the control.
     let mut grouped: Vec<Part> = vec![];
+    let parts = if item.role == ChatItemRole::Assistant {
+        present_observations(parts)
+    } else {
+        parts
+    };
     for part in parts {
+        if !part.images.is_empty()
+            && let Some(last) = grouped.last_mut().filter(|p| !p.images.is_empty())
+        {
+            last.images.extend(part.images);
+            last.text.push_str("\n");
+            last.text.push_str(&part.text);
+            continue;
+        }
         if !part.tools.is_empty() {
             if let Some(last) = grouped.last_mut().filter(|p| !p.tools.is_empty()) {
                 last.tools.extend(part.tools);
