@@ -1020,3 +1020,51 @@ fn native_reviews_visual_acceptance() {
         }
     }
 }
+
+#[test]
+#[ignore = "Empty conversation presence Parley/GPU acceptance"]
+fn empty_presence_visual_acceptance() {
+    let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    for (width, height, suffix) in [
+        (1200, 850, "dark"),
+        (1200, 850, "light"),
+        (760, 650, "narrow"),
+    ] {
+        let (mut app, _rx) = fixture();
+        app.world_mut().insert_resource(engine.clone());
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, height as f32));
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(suffix != "light"),
+                ..Default::default()
+            },
+        );
+        let m = app.world_mut().resource_mut::<Model>().unwrap();
+        m.chat
+            .hydrate("empty".into(), "a".into(), vec![], None)
+            .unwrap();
+        app.world_mut().resource_mut::<Focus>().unwrap().entity = None;
+        for _ in 0..12 {
+            rndr_paint::frame(&mut app);
+        }
+        let ui = *app.world().resource::<Ui>().unwrap();
+        assert!(!app.world().has::<Hidden>(ui.empty_presence));
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-empty-presence-{suffix}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
+}

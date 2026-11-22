@@ -131,11 +131,14 @@ pub fn sync(world: &mut World, root: Entity, session: Option<&str>) {
                 },
             ),
     );
-    let mut props = ButtonProps::new("＋", HostIntent::Command(PICK));
-    props.name = Some("Attach files".into());
+    let mut props = ButtonProps::new("Attach files", HostIntent::Command(PICK));
     props.variant = controls::ButtonVariant::Quiet;
     props.enabled = session.is_some() && items.len() < MAX_FILES;
-    controls::Button::mount(world, root, UiId(PICK), props).expect("attachment control");
+    let pick =
+        controls::IconButton::icon(world, root, UiId(PICK), Icon::Plus, "Attach files", props)
+            .expect("attachment control");
+    world.get_mut::<LabelBox>(pick.label).unwrap().inset_x = 0.;
+    crate::native_style::action_hint(world, pick.root, "Attach files");
     for item in items {
         let row = world.spawn((Layout {
             width: Size::Fill,

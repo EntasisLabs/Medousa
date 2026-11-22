@@ -60,23 +60,26 @@ pub(super) fn sidebar_header(w: &mut World, n: &mut Notes, header: Entity) {
             w.get_mut::<Layout>(slash).unwrap().width = Size::Hug;
         }
         let h = visual::document_action(w, header, id, label, true);
-        // Let a short vault name leave room for the longer group label.
-        if matches!(picker, Picker::Vault) {
-            let fit = w.get_mut::<visual::FitLabel>(h.root).unwrap();
-            fit.min = 42.;
-            fit.max = 62.;
-        } else {
-            w.remove::<visual::FitLabel>(h.root);
-        }
+        // Every crumb is sized to its own label so separators stay evenly
+        // spaced; a short vault name leaves room for the longer group label.
+        let fit = w.get_mut::<visual::FitLabel>(h.root).unwrap();
+        (fit.min, fit.max) = match picker {
+            Picker::Vault => (42., 96.),
+            _ => (32., 120.),
+        };
         w.get_mut::<LabelBox>(h.label).unwrap().inset_x = 2.;
         // Hug the face so the focus ring is uniform on every edge.
         *w.get_mut::<Layout>(h.root).unwrap() = Layout {
-            width: Size::Fill,
             padding: 1.,
             ..Layout::column()
         };
         n.actions.insert(id, Action::Picker(picker, h.root));
     }
+    let spacer = w.spawn((Layout {
+        width: Size::Fill,
+        ..Layout::row()
+    },));
+    set_parent(w, spacer, header);
     for (icon, label, action, enabled) in [
         (
             Icon::Plus,

@@ -222,13 +222,21 @@ pub(super) fn mount(world: &mut World, parent: Entity, thread_parent: Entity) ->
         },
     );
     world.insert(earlier, Hidden);
-    let earlier_button = controls::Button::mount(
-        world,
-        earlier,
-        UiId(EARLIER),
-        ButtonProps::new("Earlier collaborations", HostIntent::Command(EARLIER)),
-    )
-    .unwrap();
+    let mut earlier_props =
+        ButtonProps::new("Earlier collaborations", HostIntent::Command(EARLIER));
+    earlier_props.variant = controls::ButtonVariant::Quiet;
+    let earlier_button =
+        controls::Button::mount(world, earlier, UiId(EARLIER), earlier_props).unwrap();
+    // A quiet disclosure sized to its label, not a full-width bordered slab.
+    world.insert(
+        earlier_button.root,
+        crate::native_style::FitLabel {
+            label: earlier_button.label,
+            extra: 4.,
+            min: 48.,
+            max: 360.,
+        },
+    );
     let earlier_rows = container(
         world,
         Some(earlier),

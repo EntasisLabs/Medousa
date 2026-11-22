@@ -173,6 +173,19 @@ pub fn trailing_meta(world: &mut World, h: rndr_ui::controls::ControlHandle) {
         if let Some(l) = world.get_mut::<Layout>(child) {
             l.width = Size::Hug;
         }
+        // Measured, so short counts like "95 turns" never ellipsize while
+        // the title keeps the remaining width.
+        if world.has::<Label>(child) {
+            world.insert(
+                child,
+                FitLabel {
+                    label: child,
+                    extra: 0.,
+                    min: 0.,
+                    max: 120.,
+                },
+            );
+        }
         world.insert(
             child,
             UiStyle {
@@ -307,6 +320,64 @@ pub fn borders(world: &mut World) {
         let color = color(world, token);
         if let Some(border) = world.get_mut::<Border>(e) {
             border.color = color;
+        }
+    }
+}
+
+/// A scrollbar appears only when its viewport overflows, or while the user
+/// operates it. The native target, focus route and drag gesture are unchanged.
+pub fn scrollbar_visibility(world: &mut World, bar: Entity, overflows: bool) {
+    let active = world.resource::<Focus>().and_then(|f| f.entity) == Some(bar)
+        || scrollbar_dragging(world, bar);
+    world.insert(bar, Opacity(if overflows || active { 1. } else { 0. }));
+}
+
+/// App-wide resting chrome: split lines are hairlines and idle scrollbars
+/// without overflow disappear. Hover, focus and drag keep RNDR's own ink.
+pub fn quiet_chrome(world: &mut World) {
+    for bar in world.entities_with::<Scrollbar>() {
+        // RNDR's shared geometry covers both Scroll viewports and editors.
+        if let Some(geometry) = scrollbar_geometry(world, bar) {
+            scrollbar_visibility(world, bar, geometry.max > 1.);
+        }
+    }
+    let focus = world.resource::<Focus>().and_then(|f| f.entity);
+    let drag = world.resource::<Drag>().and_then(|d| d.entity);
+    let pointer = world.resource::<Input>().map(|i| i.pointer.position);
+    let line = color(world, stroke());
+    for sash in world.entities_with::<Splitter>() {
+        let Some(rect) = world.get::<Rect>(sash).copied() else {
+            continue;
+        };
+        let hovered = pointer.is_some_and(|[x, y]| {
+            x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h
+        });
+        if focus == Some(sash) || drag == Some(sash) || hovered {
+            continue;
+        }
+        let vertical = rect.h >= rect.w;
+        let span = if vertical { rect.w } else { rect.h };
+        let inset = ((span - 1.) * 0.5).max(0.);
+        for child in children_of(world, sash) {
+            world.insert(child, line);
+            world.insert(
+                child,
+                if vertical {
+                    Absolute {
+                        left: Some(inset),
+                        right: Some(inset),
+                        top: Some(0.),
+                        bottom: Some(0.),
+                    }
+                } else {
+                    Absolute {
+                        left: Some(0.),
+                        right: Some(0.),
+                        top: Some(inset),
+                        bottom: Some(inset),
+                    }
+                },
+            );
         }
     }
 }

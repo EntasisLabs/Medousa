@@ -139,13 +139,13 @@ fn sync_navigation(world: &mut World, root: Entity) {
     let availability = [
         (
             PREVIOUS_TURN,
-            "↑",
+            Icon::ChevronUp,
             "Previous user turn",
             turn_target(state, scroll, rect, PREVIOUS_TURN).is_some(),
         ),
         (
             NEXT_TURN,
-            "↓",
+            Icon::ChevronDown,
             "Next user turn",
             turn_target(state, scroll, rect, NEXT_TURN).is_some(),
         ),
@@ -154,23 +154,14 @@ fn sync_navigation(world: &mut World, root: Entity) {
     // paint a full-height thumb when there is nothing to scroll.
     for child in children_of(world, parent) {
         if world.has::<Scrollbar>(child) {
-            let focused = world.resource::<Focus>().and_then(|f| f.entity) == Some(child);
-            world.insert(
-                child,
-                Opacity(if scroll.content[1] > rect.h + 1. || focused {
-                    1.
-                } else {
-                    0.
-                }),
-            );
+            visual::scrollbar_visibility(world, child, scroll.content[1] > rect.h + 1.);
         }
     }
-    for (command, glyph, name, enabled) in availability {
+    for (command, icon, name, enabled) in availability {
         let mut props = rndr_ui::controls::ButtonProps::new(
-            glyph,
+            name,
             rndr_ui::controls::HostIntent::Command(command),
         );
-        props.name = Some(name.into());
         props.variant = rndr_ui::controls::ButtonVariant::Quiet;
         props.enabled = enabled;
         let unchanged = children_of(world, parent).into_iter().any(|e| {
@@ -182,7 +173,22 @@ fn sync_navigation(world: &mut World, root: Entity) {
         // Updating through RNDR also cancels pressed gestures and gates focus/activation.
         // Do not reproject unchanged controls from the post-layout callback.
         if !unchanged {
-            rndr_ui::controls::Button::mount(world, parent, rndr_ui::UiId(command), props).unwrap();
+            let control = rndr_ui::controls::IconButton::icon(
+                world,
+                parent,
+                rndr_ui::UiId(command),
+                icon,
+                name,
+                props,
+            )
+            .unwrap();
+            world.insert(control.label, LabelBox::CONTENT);
+            // Unavailable turn jumps leave no empty chrome beside the reading lane.
+            if enabled {
+                world.remove::<Hidden>(control.root);
+            } else {
+                world.insert(control.root, Hidden);
+            }
         }
     }
 }
@@ -247,20 +253,26 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
     },));
     set_parent(world, navigation, frame);
     world.get_mut::<Timeline>(root).unwrap().navigation = Some(navigation);
-    for (command, glyph, name) in [
-        (PREVIOUS_TURN, "↑", "Previous user turn"),
-        (NEXT_TURN, "↓", "Next user turn"),
-        (LATEST, "⇣", "Return to latest response"),
+    for (command, icon, name) in [
+        (PREVIOUS_TURN, Icon::ChevronUp, "Previous user turn"),
+        (NEXT_TURN, Icon::ChevronDown, "Next user turn"),
+        (LATEST, Icon::ArrowDown, "Return to latest response"),
     ] {
         let mut props = rndr_ui::controls::ButtonProps::new(
-            glyph,
+            name,
             rndr_ui::controls::HostIntent::Command(command),
         );
-        props.name = Some(name.into());
         props.variant = rndr_ui::controls::ButtonVariant::Quiet;
-        let control =
-            rndr_ui::controls::Button::mount(world, navigation, rndr_ui::UiId(command), props)
-                .unwrap();
+        let control = rndr_ui::controls::IconButton::icon(
+            world,
+            navigation,
+            rndr_ui::UiId(command),
+            icon,
+            name,
+            props,
+        )
+        .unwrap();
+        world.insert(control.label, LabelBox::CONTENT);
         world.insert(control.root, NavigationTarget(root, command));
         world.get_mut::<Layout>(control.root).unwrap().width = Size::Px(28.);
         world.get_mut::<Layout>(control.root).unwrap().height = Size::Px(28.);

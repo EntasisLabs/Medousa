@@ -794,6 +794,19 @@ fn render_explorer_context(w: &mut World, c: &mut Code) {
         props.variant = controls::ButtonVariant::Quiet;
         let h = controls::Button::mount(w, breadcrumb, UiId(id), props).unwrap();
         compact(w, h, Size::Fill);
+        // The project hugs its name; the undertaking takes what remains, so
+        // the separator sits beside the project rather than mid-row.
+        if matches!(action, Action::ChooseProjects) {
+            w.insert(
+                h.root,
+                visual::FitLabel {
+                    label: h.label,
+                    extra: 4.,
+                    min: 48.,
+                    max: 160.,
+                },
+            );
+        }
         w.insert(
             h.root,
             Semantics {

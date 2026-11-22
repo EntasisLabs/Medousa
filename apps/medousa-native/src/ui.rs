@@ -134,6 +134,7 @@ struct Ui {
     session_actions: Entity,
     timeline: Entity,
     empty_presence: Entity,
+    presence_tail: Entity,
     composer_parent: Entity,
     exchange: collaboration::View,
     composer: EditorSurfaceHandle,
@@ -194,6 +195,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Layout, visual::path_crumbs);
     app.add_system(Schedule::Layout, chrome::polish);
     app.add_system(Schedule::Layout, visual::borders);
+    app.add_system(Schedule::Layout, visual::quiet_chrome);
     app
 }
 fn container(world: &mut World, parent: Option<Entity>, layout: Layout) -> Entity {
@@ -232,6 +234,8 @@ fn button(
         (NEW, "New chat") => Some((Icon::Plus, "New chat")),
         (40, "Split") => Some((Icon::PanelLeft, "Split conversation pane")),
         (41, "Join") => Some((Icon::PanelLeft, "Join conversation panes")),
+        (SEND, _) => Some((Icon::ArrowUp, "Send message")),
+        (STOP, _) => Some((Icon::Square, "Stop response")),
         _ => None,
     };
     let h = if let Some((icon, name)) = icon {
@@ -546,17 +550,9 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     world.insert(
         ask,
         UiStyle {
-            foreground: Some(visual::secondary().into()),
-            typography: Some(Typography::Reading),
+            foreground: Some(visual::text().into()),
+            typography: Some(Typography::Heading),
             ..Default::default()
-        },
-    );
-    container(
-        world,
-        Some(empty_presence),
-        Layout {
-            height: Size::Fill,
-            ..Layout::column()
         },
     );
     let approvals = approvals::setup(world, main);
@@ -665,16 +661,57 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
             ..Layout::row()
         },
     );
+    world.insert(
+        controls,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
     let attachments = attachments::setup(world, controls, attachment_tray);
     world.get_mut::<Layout>(attachments).unwrap().width = Size::Px(28.);
-    let model_stack = container(
+    container(
         world,
         Some(controls),
         Layout {
             width: Size::Fill,
+            ..Layout::row()
+        },
+    );
+    // Provider caption and model read as one trailing line beside Send.
+    let model_stack = container(
+        world,
+        Some(controls),
+        Layout {
+            width: Size::Hug,
             height: Size::Hug,
-            gap: 0.,
-            ..Layout::column()
+            gap: 2.,
+            ..Layout::row()
+        },
+    );
+    world.insert(
+        model_stack,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
+    let model_caption = text(world, model_stack, "Choose a model", Typography::Caption).unwrap();
+    world.insert(
+        model_caption,
+        UiStyle {
+            foreground: Some(visual::secondary().into()),
+            ..Default::default()
+        },
+    );
+    world.get_mut::<Layout>(model_caption).unwrap().padding = 0.;
+    world.insert(
+        model_caption,
+        visual::FitLabel {
+            label: model_caption,
+            extra: 0.,
+            min: 0.,
+            max: 160.,
         },
     );
     let model = SingleSelect::mount(
@@ -687,15 +724,6 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     )
     .unwrap()
     .root;
-    let model_caption = text(world, model_stack, "Choose a model", Typography::Caption).unwrap();
-    world.insert(
-        model_caption,
-        UiStyle {
-            foreground: Some(visual::secondary().into()),
-            ..Default::default()
-        },
-    );
-    world.get_mut::<Layout>(model_caption).unwrap().padding = 0.;
     let footer = container(
         world,
         Some(composer_shell),
@@ -706,8 +734,15 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
             ..Layout::row()
         },
     );
+    world.insert(
+        footer,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
     let runtime_trigger = button(world, footer, DETAILS, "Medousa  ⌄", true);
-    world.get_mut::<Layout>(runtime_trigger.root).unwrap().width = Size::Px(100.);
+    fit_trigger(world, runtime_trigger);
     let mode = SingleSelect::mount(
         world,
         footer,
@@ -718,12 +753,20 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     )
     .unwrap()
     .root;
-    container(
+    let status_slot = container(
         world,
         Some(footer),
         Layout {
             width: Size::Fill,
-            ..Layout::column()
+            height: Size::Hug,
+            ..Layout::row()
+        },
+    );
+    world.insert(
+        status_slot,
+        Align {
+            items: Items::Center,
+            ..Default::default()
         },
     );
     let behavior_trigger = button(world, footer, BEHAVIOR, "Behavior  ⌄", true);
@@ -799,15 +842,18 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     let model_pages = text(world, filter_row, "", Typography::Secondary).unwrap();
     world.get_mut::<Layout>(model_pages).unwrap().width = Size::Px(50.);
     button(world, filter_row, MODEL_NEXT, "Next", true);
+    // Connection state lives in the composer footer rather than as a
+    // detached line under the writing lane.
     let status = text(
         world,
-        main,
+        status_slot,
         "Connecting to local daemon…",
-        Typography::Secondary,
+        Typography::Caption,
     )
     .unwrap();
-    world.get_mut::<Layout>(status).unwrap().height = Size::Px(22.);
-    world.get_mut::<Layout>(status).unwrap().padding = 3.;
+    world.get_mut::<Layout>(status).unwrap().width = Size::Fill;
+    world.get_mut::<Layout>(status).unwrap().padding = 0.;
+    world.get_mut::<Label>(status).unwrap().overflow = TextOverflow::Ellipsis;
     world.insert(
         status,
         UiStyle {
@@ -815,8 +861,21 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
             ..Default::default()
         },
     );
+    // Balances the presence greeting so it and the composer sit together at
+    // the optical center of an empty conversation.
+    let presence_tail = container(
+        world,
+        Some(main),
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            ..Layout::column()
+        },
+    );
+    world.insert(presence_tail, Hidden);
     Ui {
         content: parent,
+        presence_tail,
         sidebar,
         details,
         filter_row,
@@ -968,14 +1027,7 @@ fn provider_caption(provider: &str) -> String {
         _ => format!("Using {provider}"),
     }
 }
-fn quiet_selector(
-    world: &mut World,
-    root: Entity,
-    id: u64,
-    title: &str,
-    enabled: bool,
-    width: Size,
-) {
+fn quiet_selector(world: &mut World, root: Entity, id: u64, title: &str, enabled: bool, max: f32) {
     // Retain RNDR's selector event routing/popup and accessible name. Only its
     // trigger presentation changes; do not traverse/style popup option rows.
     let name = world.get::<Semantics>(root).and_then(|s| s.name.clone());
@@ -985,11 +1037,31 @@ fn quiet_selector(
     props.enabled = enabled;
     props.name = name;
     let handle = controls::Button::mount(world, parent, UiId(id), props).unwrap();
-    world.get_mut::<Layout>(root).unwrap().width = width;
+    // Trigger width follows its measured title, so footers read as one line.
+    world.insert(
+        root,
+        visual::FitLabel {
+            label: handle.label,
+            extra: 4.,
+            min: 48.,
+            max,
+        },
+    );
     world.get_mut::<Label>(handle.label).unwrap().overflow = TextOverflow::Ellipsis;
     // Selectors remain visually quiet even while disabled during a turn.
     // Keep the native outer focus ring and the popup untouched.
     // RNDR owns hover/pressed/disabled/focus layers; do not flatten them.
+}
+fn fit_trigger(world: &mut World, handle: controls::ControlHandle) {
+    world.insert(
+        handle.root,
+        visual::FitLabel {
+            label: handle.label,
+            extra: 4.,
+            min: 48.,
+            max: 200.,
+        },
+    );
 }
 fn round_send(world: &mut World, handle: controls::ControlHandle, enabled: bool) {
     let mut nodes = vec![handle.root];
@@ -1730,6 +1802,13 @@ fn sync(world: &mut World) {
         connected,
     };
     world.get_mut::<Label>(ui.status).unwrap().text = m.chat.status.clone();
+    // A healthy connection needs no standing announcement; problems and
+    // transient outcomes still appear in the footer.
+    if m.chat.status == "Connected" {
+        world.insert(ui.status, Hidden);
+    } else {
+        world.remove::<Hidden>(ui.status);
+    }
     approvals::sync(world, ui.approvals, m.chat.session(), m.chat.snapshot());
     runtimes::sync(world, ui.runtime, m.chat.session());
     context::sync(world, ui.context, m.chat.session());
@@ -1829,12 +1908,7 @@ fn sync(world: &mut World) {
             Some(OptionId(m.depth as u64)),
         )
         .unwrap();
-        for (entity, width) in [
-            (ui.model, Size::Fill),
-            (ui.mode, Size::Px(112.)),
-            (ui.depth, Size::Px(110.)),
-        ] {
-            world.get_mut::<Layout>(entity).unwrap().width = width;
+        for entity in [ui.model, ui.mode, ui.depth] {
             let mut pending = children_of(world, entity);
             while let Some(child) = pending.pop() {
                 if let Some(label) = world.get_mut::<Label>(child) {
@@ -1872,7 +1946,7 @@ fn sync(world: &mut World) {
         10,
         &format!("{model_title}  ⌄"),
         available,
-        Size::Fill,
+        260.,
     );
     let mode_title = m
         .mode
@@ -1886,7 +1960,7 @@ fn sync(world: &mut World) {
         11,
         &format!("{mode_title}  ⌄"),
         available && m.chat.session().is_some(),
-        Size::Px(94.),
+        160.,
     );
     quiet_selector(
         world,
@@ -1897,7 +1971,7 @@ fn sync(world: &mut World) {
             ["Concise", "Standard", "Deep"][m.depth.min(2)]
         ),
         available,
-        Size::Px(190.),
+        190.,
     );
     world.get_mut::<Label>(ui.model_caption).unwrap().text = m
         .selected
@@ -1905,7 +1979,7 @@ fn sync(world: &mut World) {
         .map(|(provider, _)| provider_caption(provider))
         .unwrap_or_default();
     let behavior_button = button(world, ui.footer, BEHAVIOR, "Behavior  ⌄", true);
-    world.get_mut::<Layout>(behavior_button.root).unwrap().width = Size::Px(100.);
+    fit_trigger(world, behavior_button);
     let open = !world.has::<Hidden>(ui.behavior);
     world.insert(
         behavior_button.root,
@@ -1999,17 +2073,20 @@ fn sync(world: &mut World) {
     );
     // Don't present an empty room while history is loading, or for an
     // external provider whose own conversation may not yet have arrived.
+    // A connected new conversation without a session is also an empty room.
     let show_presence = provider.is_none()
         && !m.loading
-        && m.chat
-            .snapshot()
-            .is_some_and(|snapshot| snapshot.items.is_empty() && snapshot.active_turn_id.is_none());
+        && m.chat.snapshot().map_or(m.connected, |snapshot| {
+            snapshot.items.is_empty() && snapshot.active_turn_id.is_none()
+        });
     let timeline_frame = world.get::<Parent>(ui.timeline).unwrap().entity;
     if show_presence {
         world.remove::<Hidden>(ui.empty_presence);
+        world.remove::<Hidden>(ui.presence_tail);
         world.insert(timeline_frame, Hidden);
     } else {
         world.insert(ui.empty_presence, Hidden);
+        world.insert(ui.presence_tail, Hidden);
         world.remove::<Hidden>(timeline_frame);
     }
     let state = world.resource::<Model>().unwrap();
