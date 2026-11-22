@@ -28,6 +28,8 @@ pub(crate) mod chrome;
 pub(crate) mod collaboration;
 #[path = "conversations.rs"]
 mod conversations;
+#[path = "workshop_status.rs"]
+pub(crate) mod workshop_status;
 
 const BEHAVIOR: u64 = 33;
 const TOGGLE_SEARCH: u64 = 34;
@@ -194,6 +196,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Update, visual::reading_zoom);
     app.add_system(Schedule::Update, visual::sync_appearance);
     app.add_system(Schedule::Update, update);
+    app.add_system(Schedule::Update, workshop_status::update);
     app.add_system(Schedule::Layout, workspace::chrome);
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
     app.add_system(Schedule::Layout, crate::calendar::chrome);
@@ -300,6 +303,7 @@ fn setup(world: &mut World) {
     );
     let body = chrome::mount(world, root);
     let chat_root = crate::surfaces::mount(world, body);
+    workshop_status::mount(world, crate::surfaces::rail(world).expect("rail"));
     let (navigation_split, details_split) = workspace::mount(world, chat_root);
     let prefs = world.resource::<workspace::Workspace>().unwrap().prefs;
     let model = world.resource_mut::<Model>().unwrap();
@@ -1300,7 +1304,7 @@ fn update(world: &mut World) {
         let host = controls::host_intent(world, &intent);
         if host
             .as_ref()
-            .is_some_and(|h| crate::surfaces::action(world, h))
+            .is_some_and(|h| crate::surfaces::action(world, h) || workshop_status::action(world, h))
         {
             continue;
         }

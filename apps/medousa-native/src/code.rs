@@ -199,6 +199,8 @@ struct Code {
     toolbar: Option<Entity>,
     editors: Option<Entity>,
     find_tools: Option<Entity>,
+    /// Quiet editor-scoped status under the source: caret and language.
+    status_line: Option<Entity>,
     find_open: HashSet<Key>,
     tabs: Option<Entity>,
     strip: Option<TabStripHandle>,
@@ -622,6 +624,26 @@ pub fn mount(w: &mut World, parent: Entity) {
     let find_tools = column(w, content, Size::Fill, Size::Hug);
     let editor_dock = crate::terminal::mount(w, content);
     let editors = column(w, editor_dock, Size::Fill, Size::Fill);
+    // Editor status lives with the editor rather than in a window-wide bar,
+    // and only while a file is open.
+    let status_line = text(w, content, "", Typography::Caption).unwrap();
+    w.get_mut::<Layout>(status_line).unwrap().width = Size::Fill;
+    w.insert(
+        status_line,
+        LabelBox {
+            inset_x: 12.,
+            inset_y: 4.,
+            ..LabelBox::CONTENT
+        },
+    );
+    w.insert(
+        status_line,
+        UiStyle {
+            foreground: Some(rndr_ui::Token::Tertiary.into()),
+            ..Default::default()
+        },
+    );
+    w.insert(status_line, Hidden);
     caption(
         w,
         editors,
@@ -636,6 +658,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         toolbar: Some(toolbar),
         editors: Some(editors),
         find_tools: Some(find_tools),
+        status_line: Some(status_line),
         tabs: Some(tabs),
         redraw: true,
         ..Default::default()
@@ -1434,12 +1457,74 @@ pub fn sync(w: &mut World) {
     } else {
         Vec::new()
     };
+    sync_status_line(w, &c);
     *w.resource_mut::<Code>().unwrap() = c;
     for update in deferred {
         apply(w, update);
     }
     let selected = w.resource::<Code>().and_then(|c| c.selected.clone());
     crate::terminal::sync(w, selected);
+}
+/// `Ln 12, Col 4 · Rust` for the open file; hidden with no file open.
+fn sync_status_line(w: &mut World, c: &Code) {
+    let Some(line) = c.status_line else {
+        return;
+    };
+    let text = c.key().and_then(|key| {
+        let view = c.views.get(&key)?;
+        let doc = w.resource::<SourceDocuments>()?.get(view.document)?;
+        let source = doc.text();
+        let head = doc.selection().head.min(source.len());
+        let before = source.get(..head)?;
+        let row = before.matches('\n').count() + 1;
+        let col = before
+            .rsplit('\n')
+            .next()
+            .map_or(0, |l| l.chars().count())
+            + 1;
+        Some(match language(&key.1) {
+            Some(language) => format!("Ln {row}, Col {col} · {language}"),
+            None => format!("Ln {row}, Col {col}"),
+        })
+    });
+    match text {
+        Some(text) => {
+            w.remove::<Hidden>(line);
+            let label = w.get_mut::<Label>(line).unwrap();
+            if label.text != text {
+                label.text = text;
+            }
+        }
+        None => w.insert(line, Hidden),
+    }
+}
+fn language(path: &str) -> Option<&'static str> {
+    let file = path.rsplit('/').next().unwrap_or(path);
+    let ext = file.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
+    Some(match (file, ext.as_deref()) {
+        ("Dockerfile", _) => "Dockerfile",
+        ("Makefile", _) => "Makefile",
+        (_, Some("rs")) => "Rust",
+        (_, Some("ts" | "tsx")) => "TypeScript",
+        (_, Some("js" | "jsx" | "mjs" | "cjs")) => "JavaScript",
+        (_, Some("svelte")) => "Svelte",
+        (_, Some("py")) => "Python",
+        (_, Some("go")) => "Go",
+        (_, Some("swift")) => "Swift",
+        (_, Some("kt" | "kts")) => "Kotlin",
+        (_, Some("java")) => "Java",
+        (_, Some("c" | "h")) => "C",
+        (_, Some("cc" | "cpp" | "hpp")) => "C++",
+        (_, Some("md")) => "Markdown",
+        (_, Some("json")) => "JSON",
+        (_, Some("toml")) => "TOML",
+        (_, Some("yaml" | "yml")) => "YAML",
+        (_, Some("html")) => "HTML",
+        (_, Some("css" | "postcss")) => "CSS",
+        (_, Some("sh" | "bash" | "zsh")) => "Shell",
+        (_, Some("sql")) => "SQL",
+        _ => return None,
+    })
 }
 fn context_events(w: &mut World, c: &mut Code) {
     use rndr_ui::menu::{MenuAt, MenuItem, MenuPicked, open_menu};
