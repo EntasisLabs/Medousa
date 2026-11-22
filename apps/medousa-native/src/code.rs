@@ -394,6 +394,111 @@ fn tree_row(w: &mut World, p: Entity, c: &mut Code, s: &str, a: Action, selected
     }
     c.actions.insert(id, a);
 }
+/// Explorer rows are rebuilt on redraw. A folder's chevron records which
+/// folder it shows, so the rebuilt chevron starts at the presented angle.
+struct FolderChevron(String);
+impl Component for FolderChevron {}
+
+fn turn_key(work: &str, folder: &str) -> String {
+    format!("{work}\u{0}{folder}")
+}
+
+fn presented_turns(w: &World) -> HashMap<String, f32> {
+    w.query::<FolderChevron>()
+        .iter()
+        .map(|(e, f)| {
+            let angle = w.get::<Transform>(*e).map_or(0., |t| t.rotate);
+            (f.0.clone(), angle)
+        })
+        .collect()
+}
+
+struct Folder<'a> {
+    work: &'a str,
+    path: &'a str,
+    name: &'a str,
+    depth: usize,
+    expanded: bool,
+}
+
+/// A folder row: indentation, one right-pointing chevron turned a quarter
+/// when expanded, then the name. The row keeps its name and Folder action.
+fn folder_row(w: &mut World, p: Entity, c: &mut Code, f: Folder<'_>, turns: &HashMap<String, f32>) {
+    let Folder {
+        work,
+        path: folder,
+        name,
+        depth,
+        expanded,
+    } = f;
+    let id = next();
+    let h = controls::NavigationRow::mount(
+        w,
+        p,
+        UiId(id),
+        ButtonProps::new(format!(" {name}"), HostIntent::Command(id)),
+        controls::NavigationMeta::default(),
+    )
+    .expect("folder row");
+    compact(w, h, Size::Fill);
+    c.actions.insert(id, Action::Folder(folder.into()));
+    let Some(face) = w.get::<Parent>(h.label).map(|p| p.entity) else {
+        return;
+    };
+    if let Some(l) = w.get_mut::<Layout>(face) {
+        l.axis = Axis::Row;
+    }
+    w.insert(
+        face,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
+    // Same leading inset and indentation as a file row's text, so the
+    // chevron sits where a file icon would at this depth.
+    let inset = w.get::<LabelBox>(h.label).map_or(0., |b| b.inset_x);
+    let typography = UiStyle {
+        typography: Some(Typography::Label),
+        ..Default::default()
+    };
+    let indent = w.spawn((
+        Layout::column(),
+        Label::new(INDENT.repeat(depth)),
+        LabelBox {
+            inset_x: inset * 0.5,
+            ..LabelBox::CONTENT
+        },
+        typography.clone(),
+    ));
+    let angle = if expanded {
+        std::f32::consts::FRAC_PI_2
+    } else {
+        0.
+    };
+    let chevron = w.spawn((
+        Layout::column(),
+        Label::new(Icon::ChevronRight.scalar().to_string()),
+        LabelBox::CONTENT,
+        typography,
+        Transform {
+            rotate: turns.get(&turn_key(work, folder)).copied().unwrap_or(angle),
+            ..Default::default()
+        },
+        FolderChevron(turn_key(work, folder)),
+    ));
+    for e in [indent, chevron] {
+        set_parent(w, e, face);
+    }
+    if let Some(children) = w.get_mut::<Children>(face) {
+        children.list.retain(|e| *e != indent && *e != chevron);
+        children.list.splice(0..0, [indent, chevron]);
+    }
+    if let Some(b) = w.get_mut::<LabelBox>(h.label) {
+        b.inset_x = 1.;
+    }
+    visual::ease(w, chevron, motion::Prop::Rotate, angle);
+}
 fn row(w: &mut World, p: Entity) -> Entity {
     // Measured actions flow onto another line instead of clipping or eliding.
     let e = w.spawn((
@@ -826,6 +931,7 @@ fn render(w: &mut World, c: &mut Code) {
     let (Some(rows), Some(toolbar)) = (c.rows, c.toolbar) else {
         return;
     };
+    let turns = presented_turns(w);
     for p in [rows, toolbar] {
         for child in children_of(w, p) {
             despawn(w, child);
@@ -909,23 +1015,14 @@ fn render(w: &mut World, c: &mut Code) {
                 if shown.insert(folder.clone()) {
                     let expanded =
                         !query.is_empty() || c.expanded.contains(&(work.clone(), folder.clone()));
-                    tree_row(
-                        w,
-                        rows,
-                        c,
-                        &format!(
-                            "{}{} {}",
-                            INDENT.repeat(i - 1),
-                            if expanded {
-                                Icon::ChevronDown.scalar()
-                            } else {
-                                Icon::ChevronRight.scalar()
-                            },
-                            parts[i - 1]
-                        ),
-                        Action::Folder(folder.clone()),
-                        false,
-                    );
+                    let f = Folder {
+                        work: &work,
+                        path: &folder,
+                        name: parts[i - 1],
+                        depth: i - 1,
+                        expanded,
+                    };
+                    folder_row(w, rows, c, f, &turns);
                 }
                 if query.is_empty() && !c.expanded.contains(&(work.clone(), folder)) {
                     visible = false;

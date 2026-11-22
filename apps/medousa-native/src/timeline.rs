@@ -828,8 +828,10 @@ fn sync_detail(world: &mut World, entity: Entity) {
             world.insert(view, Hidden);
         }
     }
-    let title = format!("{} {}", if open { "▾" } else { "▸" }, body.title);
-    timeline_button(world, entity, 1, &title, DISCLOSE);
+    let button = timeline_button(world, entity, 1, &body.title, DISCLOSE);
+    if let Some(face) = visual::label_face(world, button) {
+        visual::disclosure(world, button, face, open);
+    }
     world.insert(entity, body);
 }
 

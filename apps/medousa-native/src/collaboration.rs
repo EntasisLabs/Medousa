@@ -809,15 +809,19 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
         .filter(|row| anchor(snapshot, row).is_none())
         .count()
         + peer_count;
-    let earlier_text = format!(
-        "{} Earlier collaborations ({count})",
-        if state.earlier_open { "▾" } else { "▸" }
-    );
+    let earlier_text = format!("Earlier collaborations ({count})");
+    if let Some(face) = world
+        .get::<Parent>(ui.exchange.earlier_label)
+        .map(|p| p.entity)
+    {
+        crate::native_style::disclosure(world, face, face, state.earlier_open);
+    }
+    // RNDR republishes a button's label from its props, so update through
+    // the control rather than its Label.
     if world.get::<Label>(ui.exchange.earlier_label).unwrap().text != earlier_text {
-        world
-            .get_mut::<Label>(ui.exchange.earlier_label)
-            .unwrap()
-            .text = earlier_text;
+        let mut props = ButtonProps::new(&earlier_text, HostIntent::Command(EARLIER));
+        props.variant = controls::ButtonVariant::Quiet;
+        controls::Button::mount(world, ui.exchange.earlier, UiId(EARLIER), props).unwrap();
     }
     visible(world, ui.exchange.execution, false);
     if let Some(id) = selected {

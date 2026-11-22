@@ -75,6 +75,14 @@ pub fn fit_labels(world: &mut World) {
         if label != root {
             chrome += world.get::<Layout>(label).map_or(0., |l| l.padding * 2.);
         }
+        // A leading disclosure chevron shares the label's row.
+        if let Some(face) = world.get::<Parent>(label).map(|p| p.entity) {
+            for sibling in children_of(world, face) {
+                if world.has::<DisclosureChevron>(sibling) {
+                    chrome += world.get::<Rect>(sibling).map_or(0., |r| r.w);
+                }
+            }
+        }
         // Fractional advances can lose a device pixel at either edge after
         // nested snapping; reserve two, as RNDR's toolbar fit does.
         let width = ((natural + chrome + extra) * scale).ceil() / scale + 2. / scale;
@@ -421,7 +429,29 @@ pub fn disclosure(world: &mut World, owner: Entity, face: Entity, open: bool) {
         children.list.retain(|e| *e != chevron);
         children.list.insert(0, chevron);
     }
+    if let Some(l) = world.get_mut::<Layout>(face) {
+        l.axis = Axis::Row;
+    }
+    world.insert(
+        face,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
     world.insert(owner, Disclosure { chevron, open });
+}
+
+/// The face holding a control's label: where a leading chevron belongs.
+pub fn label_face(world: &World, root: Entity) -> Option<Entity> {
+    let mut pending = vec![root];
+    while let Some(e) = pending.pop() {
+        if e != root && world.has::<Label>(e) && !world.has::<DisclosureChevron>(e) {
+            return world.get::<Parent>(e).map(|p| p.entity);
+        }
+        pending.extend(children_of(world, e).into_iter().rev());
+    }
+    None
 }
 
 /// A scrollbar appears only when its viewport overflows, or while the user

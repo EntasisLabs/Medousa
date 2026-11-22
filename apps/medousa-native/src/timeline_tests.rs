@@ -613,3 +613,46 @@ fn inspected_images_across_rounds_share_one_row_without_selection() {
         ]
     );
 }
+
+#[test]
+fn detail_disclosure_turns_one_chevron_and_keeps_a_plain_name() {
+    let (mut world, root) = fixture();
+    let mut failure = item("failed", "assistant", "");
+    failure.failed = Some(true);
+    failure.error_line = Some("Provider unavailable".into());
+    failure.error_detail = Some("Retry later".into());
+    sync(&mut world, root, Some(&snapshot(vec![failure], 1)));
+    let detail = world.get::<Timeline>(root).unwrap().rows[0]
+        .parts
+        .iter()
+        .find(|p| p.id == "error-detail")
+        .unwrap()
+        .entity;
+    let button = children_of(&world, detail)
+        .into_iter()
+        .find(|e| world.has::<Button>(*e))
+        .unwrap();
+    let glyph = Icon::ChevronRight.scalar().to_string();
+    let mut labels = vec![];
+    let mut pending = vec![button];
+    while let Some(e) = pending.pop() {
+        if world.has::<Label>(e) {
+            labels.push(e);
+        }
+        pending.extend(children_of(&world, e));
+    }
+    let chevron = *labels
+        .iter()
+        .find(|e| world.get::<Label>(**e).unwrap().text == glyph)
+        .unwrap();
+    let rotate = |w: &World| w.get::<Transform>(chevron).map_or(0., |t| t.rotate);
+    assert_eq!(rotate(&world), 0.);
+    assert!(labels.iter().all(|e| {
+        let text = &world.get::<Label>(*e).unwrap().text;
+        !text.contains('▸') && !text.contains('▾')
+    }));
+    assert!(activate(&mut world, button));
+    assert!((rotate(&world) - std::f32::consts::FRAC_PI_2).abs() < 1e-4);
+    assert!(activate(&mut world, button));
+    assert_eq!(rotate(&world), 0.);
+}

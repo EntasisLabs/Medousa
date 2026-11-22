@@ -805,7 +805,13 @@ fn explorer_rows_are_compact_clipped_and_use_supported_icons() {
             .text
             .contains(Icon::FileCode.scalar())
     );
+    // An expanded folder turns its one right-pointing chevron a quarter.
     assert!(labels.iter().any(|e| {
+        w.get::<Label>(*e).unwrap().text == Icon::ChevronRight.scalar().to_string()
+            && w.get::<Transform>(*e)
+                .is_some_and(|t| (t.rotate - std::f32::consts::FRAC_PI_2).abs() < 1e-4)
+    }));
+    assert!(!labels.iter().any(|e| {
         w.get::<Label>(*e)
             .unwrap()
             .text
