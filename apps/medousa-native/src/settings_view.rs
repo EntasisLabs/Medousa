@@ -910,6 +910,208 @@ fn agent_section(w: &mut World, s: &mut State, body: Entity) {
     }
 }
 
+fn mcp(w: &mut World, s: &mut State, body: Entity) {
+    quiet(
+        w,
+        body,
+        "Connect tools from MCP servers. Medousa reaches them through the gateway, which this Mac runs for a local workshop.",
+    );
+    let Some(status) = s.mcp.clone() else {
+        quiet(
+            w,
+            body,
+            if s.mcp_reading.is_some() {
+                "Checking the gateway…"
+            } else {
+                ""
+            },
+        );
+        return;
+    };
+    let idle = s.mcp_busy.is_none();
+    heading(w, body, "Gateway");
+    let row = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 8.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        row,
+        Align {
+            items: Items::Center,
+            justify: Justify::Start,
+        },
+    );
+    let line = if status.reachable {
+        let mut parts = vec!["Running".to_string()];
+        if let Some(n) = status.connected_servers {
+            parts.push(format!("{n} connected"));
+        }
+        if let Some(n) = status.catalog_entries {
+            parts.push(format!("{n} tools"));
+        }
+        parts.join(" · ")
+    } else {
+        "Not running".to_string()
+    };
+    let v = text(w, row, &line, Typography::Emphasis).unwrap();
+    w.get_mut::<Layout>(v).unwrap().width = Size::Fill;
+    if status.local {
+        let verb = if status.reachable {
+            "Restart gateway"
+        } else {
+            "Start gateway"
+        };
+        button(w, row, s, verb, Action::McpRestart, idle);
+    }
+    if !status.reachable && !status.message.is_empty() {
+        quiet(w, body, &status.message);
+    }
+    if s.mcp_busy.is_some_and(|(_, restart)| restart) {
+        quiet(w, body, "Restarting… this can take a few seconds.");
+    } else if s.mcp_restart_needed {
+        quiet(w, body, "Restart the gateway to apply your changes.");
+    }
+    if !status.local {
+        quiet(w, body, "This workshop manages its own MCP servers.");
+    }
+
+    heading(w, body, "Your servers");
+    if status.servers.is_empty() {
+        quiet(w, body, "No servers yet.");
+    }
+    for server in &status.servers {
+        let line = panel(
+            w,
+            body,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                padding: 6.,
+                gap: 12.,
+                ..Layout::row()
+            },
+        );
+        w.insert(
+            line,
+            Align {
+                items: Items::Center,
+                justify: Justify::Start,
+            },
+        );
+        let col = panel(
+            w,
+            line,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 2.,
+                ..Layout::column()
+            },
+        );
+        label(w, col, &server.title, Typography::Emphasis);
+        let state = match (server.enabled, server.connected) {
+            (false, _) => "Off".to_string(),
+            (true, true) => format!("Connected · {} tools", server.tool_count),
+            (true, false) => "Not connected".to_string(),
+        };
+        quiet(w, col, &format!("{} · {state}", server.id));
+        if !status.local {
+            continue;
+        }
+        let side = panel(
+            w,
+            line,
+            Layout {
+                width: Size::Hug,
+                height: Size::Hug,
+                gap: 4.,
+                ..Layout::row()
+            },
+        );
+        w.insert(
+            side,
+            Align {
+                items: Items::Center,
+                justify: Justify::End,
+            },
+        );
+        let verb = if server.enabled {
+            "Turn off"
+        } else {
+            "Turn on"
+        };
+        let h = button(
+            w,
+            side,
+            s,
+            verb,
+            Action::McpEnable(server.id.clone(), !server.enabled),
+            idle,
+        );
+        if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+            sem.name = Some(format!("{verb} {}", server.title));
+        }
+        let confirming = s.mcp_confirm.as_deref() == Some(server.id.as_str());
+        let h = button(
+            w,
+            side,
+            s,
+            if confirming { "Remove?" } else { "Remove" },
+            Action::McpRemove(server.id.clone()),
+            idle,
+        );
+        if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+            sem.name = Some(format!("Remove {}", server.title));
+            if confirming {
+                sem.description = "Press again to remove".into();
+            }
+        }
+        if confirming {
+            w.insert(
+                h.label,
+                UiStyle {
+                    foreground: Some(Token::DangerText.into()),
+                    ..Default::default()
+                },
+            );
+        }
+    }
+    if status.local && more(w, body, s, "mcp-add", "Add a server", "stdio, HTTP or SSE") {
+        quiet(
+            w,
+            body,
+            "Adding servers, per-tool settings and sign-in are coming to this app soon. Until then, add them in the original Medousa app.",
+        );
+    }
+    if more(
+        w,
+        body,
+        s,
+        "mcp-advanced",
+        "Advanced",
+        "Address, config and log",
+    ) {
+        fact(w, body, "Gateway", &status.gateway_url);
+        if !status.config_path.is_empty() {
+            fact(w, body, "Config", &status.config_path);
+        }
+        if status.local {
+            fact(
+                w,
+                body,
+                "Log",
+                &medousa_desktop_host::mcp::log_path().display().to_string(),
+            );
+        }
+    }
+}
+
 /// A thin progress bar `percent` full.
 fn bar(w: &mut World, p: Entity, percent: f32) {
     let track = panel(
@@ -1111,6 +1313,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         Section::Connection => connection(w, s, body),
         Section::Packages => packages(w, s, body),
         Section::Agent => agent_section(w, s, body),
+        Section::Mcp => mcp(w, s, body),
         other => {
             debug_assert!(!other.ready());
             quiet(

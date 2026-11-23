@@ -188,7 +188,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -321,6 +321,18 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "agent");
+        with_state(app.world_mut(), |_, s| {
+            s.section = Section::Mcp;
+            s.mcp_reading = None;
+            s.mcp = Some(mcp_status(true));
+            s.mcp_confirm = Some("linear".into());
+            s.mcp_restart_needed = true;
+            s.redraw = true;
+        });
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "mcp");
     }
 }
 
@@ -518,4 +530,115 @@ fn the_conversation_model_is_picked_from_the_engine_models() {
     );
     assert!(!s.open.contains("model"), "the list closes on a pick");
     assert!(matches!(s.patching, Some((_, agent::Patch::Model(..)))));
+}
+
+fn mcp_status(local: bool) -> medousa_desktop_host::mcp::Status {
+    use medousa_desktop_host::mcp::{Server, Status};
+    Status {
+        gateway_url: "http://127.0.0.1:7420".into(),
+        reachable: true,
+        message: "ok".into(),
+        connected_servers: Some(1),
+        catalog_entries: Some(12),
+        servers: vec![
+            Server {
+                id: "github".into(),
+                title: "GitHub".into(),
+                enabled: true,
+                connected: true,
+                tool_count: 12,
+            },
+            Server {
+                id: "linear".into(),
+                title: "Linear".into(),
+                enabled: false,
+                connected: false,
+                tool_count: 0,
+            },
+        ],
+        local,
+        config_path: "~/.config/medousa/mcp-gateway.toml".into(),
+    }
+}
+
+fn mcp_open(local: bool) -> App {
+    let mut app = app();
+    click(&mut app, "MCP");
+    let w = app.world_mut();
+    let read = state(w).unwrap().mcp_reading.expect("status read on open");
+    apply(
+        w,
+        Update {
+            serial: read,
+            result: Ok(Reply::Mcp(Box::new(mcp_status(local)))),
+        },
+    );
+    app.update();
+    app
+}
+
+#[test]
+fn mcp_lists_servers_and_edits_wait_for_a_restart() {
+    let mut app = mcp_open(true);
+    let t = texts(app.world());
+    for expected in [
+        "Running · 1 connected · 12 tools",
+        "github · Connected · 12 tools",
+        "linear · Off",
+    ] {
+        assert!(t.iter().any(|x| x == expected), "{expected} in {t:?}");
+    }
+    click(&mut app, "Turn off GitHub");
+    let (serial, restart) = state(app.world())
+        .unwrap()
+        .mcp_busy
+        .expect("edit in flight");
+    assert!(!restart);
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::McpDone("Server disabled".into())),
+        },
+    );
+    let s = state(app.world()).unwrap();
+    assert!(s.mcp_restart_needed);
+    assert!(s.mcp_reading.is_some(), "status read again");
+    app.update();
+    assert!(
+        texts(app.world())
+            .iter()
+            .any(|x| x == "Restart the gateway to apply your changes.")
+    );
+}
+
+#[test]
+fn removing_a_server_takes_a_second_press() {
+    let mut app = mcp_open(true);
+    click(&mut app, "Remove Linear");
+    assert_eq!(
+        state(app.world()).unwrap().mcp_confirm.as_deref(),
+        Some("linear")
+    );
+    assert!(
+        state(app.world()).unwrap().mcp_busy.is_none(),
+        "nothing removed yet"
+    );
+    click(&mut app, "Remove Linear");
+    let s = state(app.world()).unwrap();
+    assert!(s.mcp_busy.is_some());
+    assert!(s.mcp_confirm.is_none());
+}
+
+#[test]
+fn a_workshop_elsewhere_manages_its_own_servers() {
+    let app = mcp_open(false);
+    let w = app.world();
+    assert!(named(w, "Turn off GitHub").is_none());
+    assert!(named(w, "Restart gateway").is_none());
+    assert!(
+        texts(w)
+            .iter()
+            .any(|x| x == "This workshop manages its own MCP servers.")
+    );
 }

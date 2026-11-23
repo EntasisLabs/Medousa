@@ -84,7 +84,11 @@ impl Section {
     pub(crate) fn ready(self) -> bool {
         matches!(
             self,
-            Section::Preferences | Section::Agent | Section::Packages | Section::Connection
+            Section::Preferences
+                | Section::Agent
+                | Section::Packages
+                | Section::Mcp
+                | Section::Connection
         )
     }
 }
@@ -100,6 +104,10 @@ enum Action {
     Agent(agent::Patch),
     /// Opens or closes a disclosure: a picker or a "more" group.
     Toggle(&'static str),
+    McpEnable(String, bool),
+    /// First press asks; a second on the same server removes it.
+    McpRemove(String),
+    McpRestart,
 }
 
 /// The active workshop as the registry describes it.
@@ -126,6 +134,10 @@ enum Kind {
     OpenInstaller,
     Defaults,
     Patch(agent::Patch),
+    McpStatus,
+    McpEnable(String, bool),
+    McpRemove(String),
+    McpRestart,
 }
 pub struct Update {
     serial: u64,
@@ -138,6 +150,9 @@ enum Reply {
     Packages(Catalog),
     Done,
     Defaults(serde_json::Value),
+    Mcp(Box<medousa_desktop_host::mcp::Status>),
+    /// A gateway change went through, with its message.
+    McpDone(String),
 }
 
 pub(crate) struct State {
@@ -164,6 +179,14 @@ pub(crate) struct State {
     defaults: Option<serde_json::Value>,
     defaults_reading: Option<u64>,
     patching: Option<(u64, agent::Patch)>,
+    /// The MCP gateway, its read, a change in flight, the server a Remove
+    /// is waiting to be confirmed for, and edits that need a restart.
+    mcp: Option<medousa_desktop_host::mcp::Status>,
+    mcp_reading: Option<u64>,
+    /// The change in flight, and whether it is a restart.
+    mcp_busy: Option<(u64, bool)>,
+    mcp_confirm: Option<String>,
+    mcp_restart_needed: bool,
     /// Disclosures open on this visit, by key.
     open: HashSet<&'static str>,
     actions: HashMap<u64, Action>,
@@ -242,6 +265,11 @@ pub fn mount(w: &mut World, parent: Entity) {
         defaults_reading: None,
         patching: None,
         open: HashSet::new(),
+        mcp: None,
+        mcp_reading: None,
+        mcp_busy: None,
+        mcp_confirm: None,
+        mcp_restart_needed: false,
         actions: HashMap::new(),
         queue: vec![],
         redraw: true,
@@ -282,6 +310,9 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 if section == Section::Packages && s.packages.is_none() && s.listing.is_none() {
                     s.list_packages();
                 }
+                if section == Section::Mcp && s.mcp_reading.is_none() {
+                    s.mcp_reading = Some(s.enqueue(Kind::McpStatus));
+                }
                 if section == Section::Agent && s.defaults_reading.is_none() {
                     s.defaults_reading = Some(s.enqueue(Kind::Defaults));
                 }
@@ -317,6 +348,31 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     });
                     let serial = s.enqueue(Kind::Patch(patch.clone()));
                     s.patching = Some((serial, patch));
+                }
+            }
+            Action::McpEnable(id, enabled) => {
+                if s.mcp_busy.is_none() {
+                    s.message.clear();
+                    s.mcp_confirm = None;
+                    s.mcp_busy = Some((s.enqueue(Kind::McpEnable(id, enabled)), false));
+                }
+            }
+            Action::McpRemove(id) => {
+                if s.mcp_busy.is_none() {
+                    if s.mcp_confirm.as_deref() == Some(id.as_str()) {
+                        s.mcp_confirm = None;
+                        s.message.clear();
+                        s.mcp_busy = Some((s.enqueue(Kind::McpRemove(id)), false));
+                    } else {
+                        s.mcp_confirm = Some(id);
+                    }
+                }
+            }
+            Action::McpRestart => {
+                if s.mcp_busy.is_none() {
+                    s.message.clear();
+                    s.mcp_confirm = None;
+                    s.mcp_busy = Some((s.enqueue(Kind::McpRestart), true));
                 }
             }
             Action::Toggle(key) => {
@@ -437,6 +493,42 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
                 .and_then(|r| r.map(|()| Reply::Saved))
         }
         Kind::Defaults => agent::read(client).await.map(Reply::Defaults),
+        Kind::McpStatus => Ok(Reply::Mcp(Box::new(
+            medousa_desktop_host::mcp::status(client).await,
+        ))),
+        Kind::McpEnable(id, enabled) => tokio::task::spawn_blocking(move || {
+            medousa_desktop_host::mcp::set_server_enabled(&id, enabled)
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| {
+            r.map(|()| {
+                Reply::McpDone(
+                    if enabled {
+                        "Server enabled"
+                    } else {
+                        "Server disabled"
+                    }
+                    .into(),
+                )
+            })
+        }),
+        Kind::McpRemove(id) => {
+            tokio::task::spawn_blocking(move || medousa_desktop_host::mcp::remove_server(&id))
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map(|()| Reply::McpDone("Server removed".into())))
+        }
+        Kind::McpRestart => match medousa_desktop_host::mcp::restart().await {
+            Ok((message, ready)) => {
+                // Medousa learns the gateway's tools once it is up.
+                if ready {
+                    let _ = client.capabilities().reindex().await;
+                }
+                Ok(Reply::McpDone(message))
+            }
+            Err(e) => Err(e),
+        },
         Kind::Patch(patch) => agent::write(client, &patch).await.map(Reply::Defaults),
         Kind::Packages => Ok(Reply::Packages(
             medousa_desktop_host::packages::catalog().await,
@@ -467,6 +559,35 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
 
 pub fn apply(w: &mut World, u: Update) {
     with_state(w, |_, s| {
+        if s.mcp_reading == Some(u.serial) {
+            s.mcp_reading = None;
+            match u.result {
+                Ok(Reply::Mcp(status)) => s.mcp = Some(*status),
+                Err(e) => s.message = format!("Couldn’t check MCP: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if let Some((serial, restart)) = s.mcp_busy
+            && serial == u.serial
+        {
+            s.mcp_busy = None;
+            match u.result {
+                Ok(Reply::McpDone(message)) => {
+                    // A restart applies every edit; any other edit waits for one.
+                    s.mcp_restart_needed = !restart;
+                    s.message = message;
+                }
+                Err(e) => s.message = e,
+                _ => {}
+            }
+            if s.mcp_reading.is_none() {
+                s.mcp_reading = Some(s.enqueue(Kind::McpStatus));
+            }
+            s.redraw = true;
+            return;
+        }
         if s.defaults_reading == Some(u.serial) {
             s.defaults_reading = None;
             match u.result {
@@ -530,7 +651,14 @@ pub fn apply(w: &mut World, u: Update) {
         match u.result {
             Ok(Reply::Health(h)) => s.health = Some(*h),
             Ok(Reply::Workshop(w)) => s.workshop = w,
-            Ok(Reply::Saved | Reply::Packages(_) | Reply::Done | Reply::Defaults(_)) => {}
+            Ok(
+                Reply::Saved
+                | Reply::Packages(_)
+                | Reply::Done
+                | Reply::Defaults(_)
+                | Reply::Mcp(_)
+                | Reply::McpDone(_),
+            ) => {}
             Err(e) if reading => s.message = format!("Couldn’t read the connection: {e}"),
             Err(e) => {
                 s.message = format!("The theme is applied here but wasn’t saved for next time: {e}")
