@@ -27,8 +27,18 @@ fn click(app: &mut App, name: &str) {
     for _ in 0..2 {
         app.update();
     }
-    let e = named(app.world(), name).unwrap_or_else(|| panic!("{name} shown"));
-    let r = *app.world().get::<Rect>(e).unwrap();
+    // A read landing mid-click redraws the page; find the control again
+    // once it is laid out.
+    let mut r = None;
+    for _ in 0..4 {
+        let e = named(app.world(), name).unwrap_or_else(|| panic!("{name} shown"));
+        r = app.world().get::<Rect>(e).copied();
+        if r.is_some() {
+            break;
+        }
+        app.update();
+    }
+    let r = r.unwrap_or_else(|| panic!("{name} laid out"));
     let at = [r.x + r.w / 2., r.y + r.h / 2.];
     for (pressed, down, released) in [
         (true, true, false),
@@ -49,7 +59,7 @@ fn click(app: &mut App, name: &str) {
 }
 
 #[test]
-fn sections_follow_medousa_home_and_unported_ones_say_so() {
+fn sections_follow_medousa_home() {
     let labels: Vec<_> = Section::ALL.iter().map(|s| s.label()).collect();
     assert_eq!(
         labels,
@@ -77,11 +87,6 @@ fn sections_follow_medousa_home_and_unported_ones_say_so() {
     // A real click on a section row switches to it.
     click(&mut app, "Sharing");
     assert_eq!(state(app.world()).unwrap().section, Section::Sharing);
-    assert!(
-        texts(app.world())
-            .iter()
-            .any(|t| t.starts_with("Coming to this app soon"))
-    );
 }
 
 #[test]
@@ -188,7 +193,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime,sharing}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -397,6 +402,24 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "runtime");
+        with_state(app.world_mut(), |_, s| {
+            s.section = Section::Sharing;
+            let read = sharing_read(true);
+            s.shared = read.shared.ok();
+            s.devices = read.pairs.ok().map(|p| p.paired_devices);
+            s.lan = Some(Ok(sharing::Lan {
+                enabled: false,
+                message: "LAN pairing is off — engine is loopback-only.".into(),
+            }));
+            s.qr = Some(sample_qr());
+            s.qr_image += 1;
+            s.open.insert("pair.qr");
+            s.redraw = true;
+        });
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "sharing");
     }
 }
 
@@ -1204,4 +1227,145 @@ fn shell_tools_with_no_allowlist_take_a_second_press() {
     let mut app = runtime_open(serde_json::json!({ "shell_allowed_binaries": ["git"] }));
     click(&mut app, "Agent shell tools");
     assert!(state(app.world()).unwrap().patching.is_some());
+}
+
+fn sample_qr() -> sharing::Qr {
+    use base64::Engine;
+    let mut png = Vec::new();
+    image::RgbaImage::from_fn(21, 21, |x, y| {
+        if (x + y) % 2 == 0 {
+            image::Rgba([0, 0, 0, 255])
+        } else {
+            image::Rgba([255, 255, 255, 255])
+        }
+    })
+    .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+    .unwrap();
+    sharing::decode_qr(serde_json::json!({
+        "url": "medousa://pair?invite=abc",
+        "expiresAt": (chrono::Utc::now() + chrono::Duration::seconds(125)).to_rfc3339(),
+        "shortCode": "abc123xyz",
+        "pngBase64": base64::engine::general_purpose::STANDARD.encode(&png),
+    }))
+    .unwrap()
+}
+
+fn sharing_read(shared: bool) -> sharing::Read {
+    sharing::Read {
+        shared: Ok(serde_json::from_value(serde_json::json!({
+            "mode": if shared { "shared" } else { "personal" },
+            "root_profile_id": "user:root",
+            "general_profile_id": "user:general",
+        }))
+        .unwrap()),
+        pairs: Ok(serde_json::from_value(serde_json::json!({
+            "pairedDevices": [{
+                "pairingId": "p1", "phoneId": "ph1", "phoneName": "Pixel",
+                "pairedAt": "2026-11-01T00:00:00Z", "lastSeen": "2026-11-20T15:04:00Z",
+                "trustActive": true
+            }]
+        }))
+        .unwrap()),
+        lan: None,
+    }
+}
+
+fn sharing_open() -> App {
+    let mut app = app();
+    app.world_mut().insert_resource(Viewport::new(1200., 2000.));
+    click(&mut app, "Sharing");
+    let w = app.world_mut();
+    let read = state(w).unwrap().sharing_reading.expect("read on open");
+    apply(
+        w,
+        Update {
+            serial: read,
+            result: Ok(Reply::Sharing(Box::new(sharing_read(false)))),
+        },
+    );
+    app.update();
+    app
+}
+
+#[test]
+fn sharing_turns_shared_mode_on_and_lists_paired_phones() {
+    let mut app = sharing_open();
+    let t = texts(app.world());
+    assert!(
+        t.iter().any(|x| x == "Personal · phone, peers & channels"),
+        "{t:?}"
+    );
+    assert!(t.iter().any(|x| x == "Pixel"));
+    click(&mut app, "Shared mode");
+    let busy = state(app.world())
+        .unwrap()
+        .sharing_busy
+        .expect("saved through the worker");
+    apply(
+        app.world_mut(),
+        Update {
+            serial: busy,
+            result: Ok(Reply::Shared(sharing_read(true).shared.unwrap())),
+        },
+    );
+    app.update();
+    let t = texts(app.world());
+    assert!(
+        t.iter().any(|x| x == "Shared · phone, peers & channels"),
+        "{t:?}"
+    );
+    assert!(
+        t.iter()
+            .any(|x| x == "Seats via Phone invites · admin user:root")
+    );
+}
+
+#[test]
+fn removing_a_phone_takes_a_second_press_then_reads_again() {
+    let mut app = sharing_open();
+    click(&mut app, "Remove Pixel");
+    let s = state(app.world()).unwrap();
+    assert_eq!(s.device_confirm.as_deref(), Some("p1"));
+    assert!(s.sharing_busy.is_none(), "asks first");
+    click(&mut app, "Keep Pixel");
+    assert!(state(app.world()).unwrap().device_confirm.is_none());
+    click(&mut app, "Remove Pixel");
+    click(&mut app, "Confirm removal of Pixel");
+    let busy = state(app.world()).unwrap().sharing_busy.expect("removing");
+    apply(
+        app.world_mut(),
+        Update {
+            serial: busy,
+            result: Ok(Reply::Done),
+        },
+    );
+    assert!(state(app.world()).unwrap().sharing_reading.is_some());
+}
+
+#[test]
+fn the_pairing_qr_shows_its_code_and_copies_the_link() {
+    let mut app = sharing_open();
+    click(&mut app, "Show pairing QR");
+    let read = state(app.world())
+        .unwrap()
+        .qr_reading
+        .expect("fetched when shown");
+    apply(
+        app.world_mut(),
+        Update {
+            serial: read,
+            result: Ok(Reply::Qr(Box::new(sample_qr()))),
+        },
+    );
+    app.update();
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "ABC-123-XYZ"), "{t:?}");
+    assert!(t.iter().any(|x| x.starts_with("Refreshes in 2:0")), "{t:?}");
+    click(&mut app, "Copy link");
+    assert_eq!(
+        app.world().resource::<Clipboard>().unwrap().text,
+        "medousa://pair?invite=abc"
+    );
+    click(&mut app, "Hide pairing QR");
+    assert!(!state(app.world()).unwrap().open.contains("pair.qr"));
 }

@@ -1,7 +1,7 @@
 //! Settings, after medousa-home's: the same sections in the same groups. Look
 //! switches the theme live and saves it where medousa-home reads it;
-//! Connection shows the active workshop, the engine and this app. Sections
-//! not ported yet say so instead of showing a dead page.
+//! Connection shows the active workshop, the engine and this app. Parts a
+//! section doesn't do yet point to the original app.
 use medousa_desktop_host::packages::{Catalog, Progress};
 use medousa_sdk::MedousaClient;
 use medousa_types::HealthResponse;
@@ -17,6 +17,8 @@ pub(crate) mod agent;
 pub(crate) mod external;
 #[path = "settings_runtime.rs"]
 pub(crate) mod runtime;
+#[path = "settings_sharing.rs"]
+pub(crate) mod sharing;
 #[path = "settings_view.rs"]
 mod view;
 
@@ -84,20 +86,6 @@ impl Section {
     pub(crate) fn machine(self) -> bool {
         matches!(self, Section::Packages | Section::Mcp | Section::Connection)
     }
-    /// Ported to this app so far.
-    pub(crate) fn ready(self) -> bool {
-        matches!(
-            self,
-            Section::Preferences
-                | Section::Accounts
-                | Section::Agent
-                | Section::Runtime
-                | Section::ExternalAgents
-                | Section::Packages
-                | Section::Mcp
-                | Section::Connection
-        )
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -135,6 +123,15 @@ enum Action {
     DismissCallbackKey,
     /// Leaves agent shell tools off after the empty-allowlist warning.
     KeepShellOff,
+    SharedMode(bool),
+    /// Shows or hides the pairing QR, fetching it when shown.
+    PairingQr,
+    RotateInvite,
+    CopyInvite,
+    /// First press asks; a second on the same device removes it.
+    DeviceRemove(String),
+    CancelDeviceRemove,
+    LanPairing(bool),
 }
 
 /// The active workshop as the registry describes it.
@@ -175,6 +172,14 @@ enum Kind {
     AgentSignOut(String),
     ConversationRemove(String),
     ConversationRotate(String),
+    /// Shared mode, paired devices and, given this Mac's workshop URL, LAN
+    /// pairing.
+    Sharing(Option<String>),
+    SetShared(bool),
+    Qr,
+    RotateInvite,
+    DeviceRemove(String),
+    Lan(String, bool),
 }
 pub struct Update {
     serial: u64,
@@ -198,6 +203,10 @@ enum Reply {
     /// A sign-in started; its CLI is waited for.
     SigningIn(String),
     CallbackKey(String),
+    Sharing(Box<sharing::Read>),
+    Shared(sharing::SharedMode),
+    Qr(Box<sharing::Qr>),
+    Lan(serde_json::Value),
 }
 
 /// Waiting for an agent's CLI to report it signed in.
@@ -211,6 +220,9 @@ pub(crate) struct Waiting {
 /// How often, and how long, a sign-in is waited for (medousa-home's).
 const WAIT_EVERY: std::time::Duration = std::time::Duration::from_millis(2500);
 const WAIT_FOR: std::time::Duration = std::time::Duration::from_secs(180);
+/// While the pairing QR shows, paired devices are checked this often so a
+/// new phone appears, as medousa-home polls.
+const PAIR_POLL: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Review providers that sign in with a device code, and the connected
 /// accounts on this workshop.
@@ -282,6 +294,25 @@ pub(crate) struct State {
     agents: Option<external::Agents>,
     agents_reading: Option<u64>,
     agent_busy: Option<(u64, String)>,
+    /// Sharing: what was read, the read and the change in flight, the
+    /// device a Remove waits on, the pairing QR and its drawing.
+    shared: Option<sharing::SharedMode>,
+    shared_note: String,
+    devices: Option<Vec<sharing::Device>>,
+    lan: Option<Result<sharing::Lan, String>>,
+    sharing_reading: Option<u64>,
+    sharing_busy: Option<u64>,
+    sharing_note: String,
+    device_confirm: Option<String>,
+    qr: Option<sharing::Qr>,
+    qr_reading: Option<u64>,
+    /// The image id the QR is drawn under, bumped for each new QR, and the
+    /// one uploaded last.
+    qr_image: u64,
+    qr_loaded: u64,
+    /// The countdown shown, and when paired devices are next checked.
+    qr_secs: u64,
+    pair_poll: Option<std::time::Instant>,
     waiting: Option<Waiting>,
     agent_note: String,
     conversation_confirm: Option<String>,
@@ -319,6 +350,22 @@ impl State {
     fn list_packages(&mut self) {
         if self.listing.is_none() {
             self.listing = Some(self.enqueue(Kind::Packages));
+            self.redraw = true;
+        }
+    }
+    fn read_sharing(&mut self) {
+        if self.sharing_reading.is_none() {
+            let lan = self
+                .local()
+                .then(|| self.workshop.as_ref().map(|w| w.url.clone()))
+                .flatten();
+            self.sharing_reading = Some(self.enqueue(Kind::Sharing(lan)));
+            self.redraw = true;
+        }
+    }
+    fn read_qr(&mut self) {
+        if self.qr_reading.is_none() {
+            self.qr_reading = Some(self.enqueue(Kind::Qr));
             self.redraw = true;
         }
     }
@@ -400,6 +447,20 @@ pub fn mount(w: &mut World, parent: Entity) {
         agents: None,
         agents_reading: None,
         agent_busy: None,
+        shared: None,
+        shared_note: String::new(),
+        devices: None,
+        lan: None,
+        sharing_reading: None,
+        sharing_busy: None,
+        sharing_note: String::new(),
+        device_confirm: None,
+        qr: None,
+        qr_reading: None,
+        qr_image: 0x7172_0000_0000,
+        qr_loaded: 0,
+        qr_secs: 0,
+        pair_poll: None,
         waiting: None,
         agent_note: String::new(),
         conversation_confirm: None,
@@ -450,6 +511,14 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 }
                 if section == Section::Mcp && s.mcp_reading.is_none() {
                     s.mcp_reading = Some(s.enqueue(Kind::McpStatus));
+                }
+                if section == Section::Sharing {
+                    s.device_confirm = None;
+                    s.read_sharing();
+                    // LAN pairing is offered by where the workshop runs.
+                    if s.workshop.is_none() && s.reading.is_empty() {
+                        s.refresh();
+                    }
                 }
                 if section == Section::ExternalAgents {
                     s.read_agents();
@@ -650,11 +719,70 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             }
             Action::Theme(id) => choose_theme(w, s, id),
             Action::KeepShellOff => s.shell_confirm = false,
+            Action::SharedMode(on) => {
+                if s.sharing_busy.is_none() {
+                    s.sharing_note.clear();
+                    s.sharing_busy = Some(s.enqueue(Kind::SetShared(on)));
+                }
+            }
+            Action::PairingQr => {
+                if s.open.remove("pair.qr") {
+                    s.pair_poll = None;
+                } else {
+                    s.open.insert("pair.qr");
+                    s.sharing_note.clear();
+                    s.pair_poll = Some(std::time::Instant::now() + PAIR_POLL);
+                    s.read_qr();
+                }
+            }
+            Action::RotateInvite => {
+                if s.sharing_busy.is_none() {
+                    s.sharing_note.clear();
+                    s.sharing_busy = Some(s.enqueue(Kind::RotateInvite));
+                }
+            }
+            Action::CopyInvite => {
+                if let Some(qr) = &s.qr
+                    && let Some(clipboard) = w.resource_mut::<Clipboard>()
+                {
+                    clipboard.text = qr.url.clone();
+                    clipboard.html.clear();
+                    clipboard.html_text.clear();
+                    clipboard.dirty = true;
+                    s.sharing_note = "Invite link copied.".into();
+                }
+            }
+            Action::DeviceRemove(id) => {
+                if s.sharing_busy.is_none() {
+                    if s.device_confirm.as_deref() == Some(id.as_str()) {
+                        s.device_confirm = None;
+                        s.sharing_note.clear();
+                        s.sharing_busy = Some(s.enqueue(Kind::DeviceRemove(id)));
+                    } else {
+                        s.device_confirm = Some(id);
+                    }
+                }
+            }
+            Action::CancelDeviceRemove => s.device_confirm = None,
+            Action::LanPairing(on) => {
+                if s.sharing_busy.is_none()
+                    && s.local()
+                    && let Some(url) = s.workshop.as_ref().map(|w| w.url.clone())
+                {
+                    s.sharing_note.clear();
+                    s.sharing_busy = Some(s.enqueue(Kind::Lan(url, on)));
+                }
+            }
             Action::Refresh => {
                 if s.section == Section::Packages {
                     s.list_packages();
                 } else if s.section == Section::ExternalAgents {
                     s.read_agents();
+                } else if s.section == Section::Sharing {
+                    s.read_sharing();
+                    if s.open.contains("pair.qr") {
+                        s.read_qr();
+                    }
                 } else if matches!(s.section, Section::Agent | Section::Runtime) {
                     if s.defaults_reading.is_none() && s.patching.is_none() {
                         s.defaults_reading = Some(s.enqueue(Kind::Defaults));
@@ -743,6 +871,26 @@ pub fn sync(w: &mut World) {
             } else if now >= wait.next && s.agents_reading.is_none() {
                 wait.next = now + WAIT_EVERY;
                 s.read_agents();
+            }
+        }
+        // The pairing QR counts down and is fetched again when it expires;
+        // paired devices are checked so a new phone shows up.
+        if s.section == Section::Sharing && s.open.contains("pair.qr") && active {
+            if let Some(qr) = &s.qr {
+                let secs = sharing::seconds_left(qr.expires_at);
+                if secs != s.qr_secs {
+                    s.qr_secs = secs;
+                    s.redraw = true;
+                }
+                if secs == 0 && qr.expires_at.is_some() {
+                    s.read_qr();
+                }
+            }
+            if s.pair_poll
+                .is_some_and(|at| std::time::Instant::now() >= at)
+            {
+                s.pair_poll = Some(std::time::Instant::now() + PAIR_POLL);
+                s.read_sharing();
             }
         }
         if s.redraw && active {
@@ -929,6 +1077,58 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
             .await
             .map(|_| Reply::Done)
             .map_err(|e| e.to_string()),
+        Kind::Sharing(lan) => {
+            let shared = client
+                .http()
+                .get::<sharing::SharedMode>("/v1/shared-mode")
+                .await
+                .map_err(|e| e.to_string());
+            let pairs = client
+                .http()
+                .get::<sharing::PairStatus>("/pair/status")
+                .await
+                .map_err(|e| e.to_string());
+            let lan = match lan {
+                Some(url) => Some(medousa_desktop_host::peer_lan::status(&url).await),
+                None => None,
+            };
+            Ok(Reply::Sharing(Box::new(sharing::Read {
+                shared,
+                pairs,
+                lan,
+            })))
+        }
+        Kind::SetShared(on) => client
+            .http()
+            .put::<sharing::SharedMode, _>(
+                "/v1/shared-mode",
+                &serde_json::json!({ "mode": if on { "shared" } else { "personal" } }),
+            )
+            .await
+            .map(Reply::Shared)
+            .map_err(|e| e.to_string()),
+        Kind::Qr => client
+            .http()
+            .get::<serde_json::Value>("/qr/image")
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(sharing::decode_qr)
+            .map(|q| Reply::Qr(Box::new(q))),
+        Kind::RotateInvite => client
+            .http()
+            .post::<serde_json::Value, _>("/qr/rotate", &serde_json::json!({}))
+            .await
+            .map(|_| Reply::Done)
+            .map_err(|e| e.to_string()),
+        Kind::DeviceRemove(id) => client
+            .http()
+            .delete::<serde_json::Value>(&format!("/pair/{}", urlencoding::encode(&id)))
+            .await
+            .map(|_| Reply::Done)
+            .map_err(|e| e.to_string()),
+        Kind::Lan(url, on) => medousa_desktop_host::peer_lan::set_enabled(&url, on)
+            .await
+            .map(Reply::Lan),
         Kind::ConversationRotate(id) => client
             .http()
             .post_empty::<medousa_types::RotateExternalCallbackResponse>(&format!(
@@ -1004,6 +1204,74 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
 
 pub fn apply(w: &mut World, u: Update) {
     with_state(w, |_, s| {
+        if s.sharing_reading == Some(u.serial) {
+            s.sharing_reading = None;
+            match u.result {
+                Ok(Reply::Sharing(read)) => {
+                    let read = *read;
+                    match read.shared {
+                        Ok(m) => {
+                            s.shared = Some(m);
+                            s.shared_note.clear();
+                        }
+                        Err(e) => {
+                            s.shared = None;
+                            s.shared_note = sharing::missing_or(&e, "Shared mode");
+                        }
+                    }
+                    match read.pairs {
+                        Ok(p) => s.devices = Some(p.paired_devices),
+                        Err(e) => {
+                            s.devices = None;
+                            s.sharing_note = sharing::missing_or(&e, "Phone pairing");
+                        }
+                    }
+                    s.lan = read.lan.map(|r| r.map(|v| sharing::lan(&v)));
+                }
+                Err(e) => s.sharing_note = format!("Couldn’t read sharing: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.qr_reading == Some(u.serial) {
+            s.qr_reading = None;
+            match u.result {
+                Ok(Reply::Qr(qr)) => {
+                    s.qr = Some(*qr);
+                    s.qr_image += 1;
+                }
+                Err(e) => s.sharing_note = format!("The pairing QR isn’t ready: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.sharing_busy == Some(u.serial) {
+            s.sharing_busy = None;
+            match u.result {
+                Ok(Reply::Shared(m)) => {
+                    s.shared = Some(m);
+                    s.shared_note.clear();
+                }
+                Ok(Reply::Lan(v)) => {
+                    let lan = sharing::lan(&v);
+                    s.sharing_note = lan.message.clone();
+                    s.lan = Some(Ok(lan));
+                }
+                Ok(Reply::Done) => {
+                    // A new invite or a removed device: read both again.
+                    s.read_sharing();
+                    if s.open.contains("pair.qr") {
+                        s.read_qr();
+                    }
+                }
+                Err(e) => s.sharing_note = format!("That didn’t go through: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
         if s.agents_reading == Some(u.serial) {
             s.agents_reading = None;
             match u.result {
@@ -1230,7 +1498,11 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Agents(_)
                 | Reply::AgentNote(_)
                 | Reply::SigningIn(_)
-                | Reply::CallbackKey(_),
+                | Reply::CallbackKey(_)
+                | Reply::Sharing(_)
+                | Reply::Shared(_)
+                | Reply::Qr(_)
+                | Reply::Lan(_),
             ) => {}
             Err(e) if reading => s.message = format!("Couldn’t read the connection: {e}"),
             Err(e) => {

@@ -1733,6 +1733,31 @@ fn runtime_row(w: &mut World, p: Entity, label_: &str, hint: &str) -> Entity {
     side
 }
 
+/// An on/off setting: its name and hint, with an On/Off button.
+#[allow(clippy::too_many_arguments)]
+fn switch_row(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    label_: &str,
+    hint: &str,
+    on: bool,
+    a: Action,
+    enabled: bool,
+) {
+    let side = runtime_row(w, p, label_, hint);
+    let h = button(w, side, s, if on { "On" } else { "Off" }, a, enabled);
+    w.remove::<visual::FitLabel>(h.root);
+    w.get_mut::<Layout>(h.root).unwrap().width = Size::Px(64.);
+    if on {
+        mark(w, h.root);
+    }
+    if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+        sem.name = Some(label_.into());
+        sem.description = if on { "On".into() } else { "Off".into() };
+    }
+}
+
 fn runtime_flag(
     w: &mut World,
     p: Entity,
@@ -1741,26 +1766,17 @@ fn runtime_flag(
     flag: &super::runtime::Flag,
     idle: bool,
 ) {
-    use super::agent::Patch;
-    let side = runtime_row(w, p, flag.label, flag.hint);
     let on = flag.on(d);
-    let h = button(
+    switch_row(
         w,
-        side,
+        p,
         s,
-        if on { "On" } else { "Off" },
-        Action::Agent(Patch::Field(flag.key, (!on).into())),
+        flag.label,
+        flag.hint,
+        on,
+        Action::Agent(super::agent::Patch::Field(flag.key, (!on).into())),
         idle,
     );
-    w.remove::<visual::FitLabel>(h.root);
-    w.get_mut::<Layout>(h.root).unwrap().width = Size::Px(64.);
-    if on {
-        mark(w, h.root);
-    }
-    if let Some(sem) = w.get_mut::<Semantics>(h.root) {
-        sem.name = Some(flag.label.into());
-        sem.description = if on { "On".into() } else { "Off".into() };
-    }
 }
 
 fn runtime_num(
@@ -2033,6 +2049,273 @@ fn runtime_section(w: &mut World, s: &mut State, body: Entity) {
     }
 }
 
+/// The pairing QR, its short code and countdown, and what to do with it.
+fn pairing_qr(w: &mut World, s: &mut State, body: Entity) {
+    use super::sharing as sh;
+    let Some(qr) = s.qr.clone() else {
+        quiet(
+            w,
+            body,
+            if s.qr_reading.is_some() {
+                "Generating QR…"
+            } else {
+                "The pairing QR isn’t ready yet. Press Refresh to try again."
+            },
+        );
+        return;
+    };
+    let column = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::column()
+        },
+    );
+    w.insert(
+        column,
+        Align {
+            items: Items::Center,
+            justify: Justify::Start,
+        },
+    );
+    if s.qr_loaded != s.qr_image {
+        let _ = rndr_render::load_rgba(w, s.qr_image, qr.width, qr.height, qr.rgba.clone());
+        s.qr_loaded = s.qr_image;
+    }
+    // A white mat keeps the code scannable in a dark theme.
+    let mat = w.spawn((
+        Layout {
+            width: Size::Px(200.),
+            height: Size::Px(200.),
+            padding: 12.,
+            ..Layout::column()
+        },
+        Color::rgba(1., 1., 1., 1.),
+        Radius(14.),
+    ));
+    set_parent(w, mat, column);
+    let image = w.spawn((
+        Layout {
+            width: Size::Px(176.),
+            height: Size::Px(176.),
+            ..Layout::column()
+        },
+        ImageView::new(s.qr_image),
+        Semantics {
+            name: Some("QR code for phone pairing".into()),
+            ..Default::default()
+        },
+    ));
+    set_parent(w, image, mat);
+    // Short lines hug their text so they sit centred under the code.
+    let centred = |w: &mut World, value: &str, kind: Typography, faint: bool| {
+        let e = text(w, column, value, kind).unwrap();
+        w.get_mut::<Layout>(e).unwrap().width = Size::Hug;
+        if faint {
+            w.insert(
+                e,
+                UiStyle {
+                    foreground: Some(Token::Tertiary.into()),
+                    ..Default::default()
+                },
+            );
+        }
+    };
+    centred(w, &sh::short_code(&qr.short_code), Typography::Title, false);
+    centred(
+        w,
+        "Short code fallback if the camera can’t scan",
+        Typography::Secondary,
+        true,
+    );
+    let secs = sh::seconds_left(qr.expires_at);
+    if secs > 0 {
+        centred(
+            w,
+            &format!("Refreshes in {}", sh::countdown(secs)),
+            Typography::Secondary,
+            true,
+        );
+    }
+    quiet(
+        w,
+        column,
+        "Open Medousa on your phone on the same Wi‑Fi and scan this code — or enter the short code manually. Off-LAN? Copy the link and paste it in the app.",
+    );
+    let row = panel(
+        w,
+        column,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            gap: 8.,
+            ..Layout::row()
+        },
+    );
+    let idle = s.sharing_busy.is_none();
+    button(w, row, s, "Copy link", Action::CopyInvite, true);
+    button(w, row, s, "Rotate invite", Action::RotateInvite, idle);
+}
+
+fn sharing_section(w: &mut World, s: &mut State, body: Entity) {
+    let shared_on = s.shared.as_ref().is_some_and(|m| m.shared());
+    quiet(
+        w,
+        body,
+        &format!(
+            "{} · phone, peers & channels",
+            if shared_on { "Shared" } else { "Personal" }
+        ),
+    );
+    let idle = s.sharing_busy.is_none();
+    if s.sharing_reading.is_some() && s.shared.is_none() && s.devices.is_none() {
+        quiet(w, body, "Reading…");
+    }
+
+    heading(w, body, "Shared");
+    quiet(w, body, "Team seats on this brain — vault stays shared.");
+    let meta = match &s.shared {
+        _ if !s.shared_note.is_empty() => s.shared_note.clone(),
+        Some(m) if m.shared() => format!("Seats via Phone invites · admin {}", m.root_profile_id),
+        _ => "Personal hats stay as today".into(),
+    };
+    switch_row(
+        w,
+        body,
+        s,
+        "Shared mode",
+        &meta,
+        shared_on,
+        Action::SharedMode(!shared_on),
+        idle && s.shared.is_some(),
+    );
+
+    heading(w, body, "Phone");
+    quiet(w, body, "Pair as a second portal on the same Wi‑Fi.");
+    let open = s.open.contains("pair.qr");
+    let side = runtime_row(w, body, "Pairing QR", "Same Wi‑Fi — generated when you ask");
+    named_button(
+        w,
+        side,
+        s,
+        if open { "Hide" } else { "Show" },
+        if open {
+            "Hide pairing QR".into()
+        } else {
+            "Show pairing QR".into()
+        },
+        Action::PairingQr,
+        true,
+    );
+    if open {
+        pairing_qr(w, s, body);
+    }
+    match &s.devices {
+        Some(devices) if devices.is_empty() => {
+            quiet(w, body, "No phones paired yet.");
+        }
+        Some(devices) => {
+            for d in devices.clone() {
+                let (line, col) = split_row(w, body);
+                label(w, col, &d.phone_name, Typography::Label);
+                quiet(w, col, &super::sharing::device_meta(&d));
+                let confirming = s.device_confirm.as_deref() == Some(d.pairing_id.as_str());
+                if confirming {
+                    named_button(
+                        w,
+                        line,
+                        s,
+                        "Cancel",
+                        format!("Keep {}", d.phone_name),
+                        Action::CancelDeviceRemove,
+                        true,
+                    );
+                }
+                named_button(
+                    w,
+                    line,
+                    s,
+                    if confirming { "Remove?" } else { "Remove" },
+                    if confirming {
+                        format!("Confirm removal of {}", d.phone_name)
+                    } else {
+                        format!("Remove {}", d.phone_name)
+                    },
+                    Action::DeviceRemove(d.pairing_id.clone()),
+                    idle,
+                );
+            }
+        }
+        None => {}
+    }
+
+    heading(w, body, "Nearby");
+    quiet(w, body, "Wi‑Fi reachability, peers, and canvas backups.");
+    match &s.lan {
+        Some(Ok(lan)) => {
+            let (on, message) = (lan.enabled, lan.message.clone());
+            switch_row(
+                w,
+                body,
+                s,
+                "LAN pairing",
+                &format!("{message} Changing this restarts the engine."),
+                on,
+                Action::LanPairing(!on),
+                idle,
+            );
+        }
+        Some(Err(e)) => {
+            let e = e.clone();
+            fact(w, body, "LAN pairing", &format!("Not available here: {e}"));
+        }
+        None if !s.local() && s.reading.is_empty() => {
+            quiet(
+                w,
+                body,
+                "This workshop runs on another machine; its LAN pairing is set there.",
+            );
+        }
+        None => {}
+    }
+    quiet(
+        w,
+        body,
+        "Peers, trusted workshops and canvas backups are still managed in the original Medousa app.",
+    );
+
+    heading(w, body, "Channels");
+    quiet(
+        w,
+        body,
+        "Messaging doors — Telegram, Discord, Slack and WhatsApp are set up in the original Medousa app for now.",
+    );
+    if !s.sharing_note.is_empty() {
+        let note = s.sharing_note.clone();
+        label(w, body, &note, Typography::Label);
+    }
+    let row = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            ..Layout::row()
+        },
+    );
+    button(
+        w,
+        row,
+        s,
+        "Refresh",
+        Action::Refresh,
+        s.sharing_reading.is_none(),
+    );
+}
+
 fn bar(w: &mut World, p: Entity, percent: f32) {
     let track = panel(
         w,
@@ -2237,13 +2520,6 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         Section::Accounts => accounts(w, s, body),
         Section::ExternalAgents => external_agents(w, s, body),
         Section::Runtime => runtime_section(w, s, body),
-        other => {
-            debug_assert!(!other.ready());
-            quiet(
-                w,
-                body,
-                "Coming to this app soon. Until then, change these in the original Medousa app.",
-            );
-        }
+        Section::Sharing => sharing_section(w, s, body),
     }
 }
