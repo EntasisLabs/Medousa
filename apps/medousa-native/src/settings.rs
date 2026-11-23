@@ -7,7 +7,7 @@ use medousa_sdk::MedousaClient;
 use medousa_types::HealthResponse;
 use rndr_core::*;
 use rndr_ui::controls::HostIntent;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -98,8 +98,8 @@ enum Action {
     Remove(String),
     OpenInstaller,
     Agent(agent::Patch),
-    /// Shows or hides the conversation model list.
-    Models,
+    /// Opens or closes a disclosure: a picker or a "more" group.
+    Toggle(&'static str),
 }
 
 /// The active workshop as the registry describes it.
@@ -164,7 +164,8 @@ pub(crate) struct State {
     defaults: Option<serde_json::Value>,
     defaults_reading: Option<u64>,
     patching: Option<(u64, agent::Patch)>,
-    models_open: bool,
+    /// Disclosures open on this visit, by key.
+    open: HashSet<&'static str>,
     actions: HashMap<u64, Action>,
     queue: Vec<Command>,
     redraw: bool,
@@ -240,7 +241,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         defaults: None,
         defaults_reading: None,
         patching: None,
-        models_open: false,
+        open: HashSet::new(),
         actions: HashMap::new(),
         queue: vec![],
         redraw: true,
@@ -308,14 +309,21 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     if let Some(d) = s.defaults.as_mut() {
                         agent::apply(d, &patch);
                     }
-                    if matches!(patch, agent::Patch::Model(..)) {
-                        s.models_open = false;
-                    }
+                    // A pick closes its picker, as medousa-home's do.
+                    s.open.remove(match patch {
+                        agent::Patch::Stance(_) => "stance",
+                        agent::Patch::Depth(_) => "depth",
+                        agent::Patch::Model(..) => "model",
+                    });
                     let serial = s.enqueue(Kind::Patch(patch.clone()));
                     s.patching = Some((serial, patch));
                 }
             }
-            Action::Models => s.models_open = !s.models_open,
+            Action::Toggle(key) => {
+                if !s.open.remove(key) {
+                    s.open.insert(key);
+                }
+            }
             Action::OpenInstaller => {
                 if s.busy.is_none() {
                     s.message.clear();

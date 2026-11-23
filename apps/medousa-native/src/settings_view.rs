@@ -229,6 +229,272 @@ fn tile(w: &mut World, p: Entity, s: &mut State, swatch: &crate::theme::Swatch, 
     w.insert(name, LabelBox::CONTENT);
 }
 
+/// A quiet hairline card around a disclosure, as medousa-home's.
+fn card(w: &mut World, root: Entity) {
+    let line = visual::color(w, Token::SubtleStroke);
+    w.insert(
+        root,
+        Border {
+            color: line,
+            width: 1.,
+        },
+    );
+    w.insert(root, visual::SemanticBorder(Token::SubtleStroke));
+    w.insert(root, Radius(10.));
+}
+
+/// Fills every inner layer of a control so its hover and selected wash
+/// cover the whole of it.
+fn fill_layers(w: &mut World, root: Entity) {
+    let mut layers = children_of(w, root);
+    while let Some(layer) = layers.pop() {
+        if let Some(l) = w.get_mut::<Layout>(layer) {
+            l.width = Size::Fill;
+            l.height = Size::Fill;
+        }
+        layers.extend(children_of(w, layer));
+    }
+}
+
+/// Draws `value` at a fixed spot inside a control, as part of its face.
+#[allow(clippy::too_many_arguments)]
+fn pinned(
+    w: &mut World,
+    root: Entity,
+    value: &str,
+    kind: Typography,
+    left: Option<f32>,
+    right: Option<f32>,
+    top: f32,
+    width: Option<f32>,
+    quiet_ink: bool,
+) {
+    let e = text(w, root, value, kind).unwrap();
+    w.insert(
+        e,
+        Absolute {
+            left,
+            right,
+            top: Some(top),
+            ..Default::default()
+        },
+    );
+    w.insert(e, LabelBox::CONTENT);
+    let l = w.get_mut::<Layout>(e).unwrap();
+    l.width = width.map_or(Size::Hug, Size::Px);
+    if width.is_some() {
+        w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Ellipsis;
+    }
+    if quiet_ink {
+        w.insert(
+            e,
+            UiStyle {
+                foreground: Some(Token::Tertiary.into()),
+                ..Default::default()
+            },
+        );
+    }
+}
+
+/// medousa-home's summary trigger: what is chosen now, with Change to open
+/// its picker in place. Returns whether it is open.
+#[allow(clippy::too_many_arguments)]
+fn summary(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    key: &'static str,
+    kicker: &str,
+    title: &str,
+    meta: &str,
+    swatch: Option<[Color; 3]>,
+    enabled: bool,
+) -> bool {
+    let open = s.open.contains(key);
+    let h = button(
+        w,
+        p,
+        s,
+        &format!("{kicker}: {title}"),
+        Action::Toggle(key),
+        enabled,
+    );
+    w.remove::<visual::FitLabel>(h.root);
+    *w.get_mut::<Layout>(h.root).unwrap() = Layout {
+        width: Size::Fill,
+        height: Size::Px(70.),
+        ..Layout::column()
+    };
+    fill_layers(w, h.root);
+    card(w, h.root);
+    w.insert(
+        h.label,
+        UiStyle {
+            foreground: Some(UiColor::Explicit(Color::rgba(0., 0., 0., 0.))),
+            ..Default::default()
+        },
+    );
+    if open {
+        mark(w, h.root);
+    }
+    if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+        sem.description = if open {
+            "Close".into()
+        } else {
+            "Change".into()
+        };
+    }
+    let mut left = 14.;
+    if let Some(colors) = swatch {
+        let strip = w.spawn((
+            Layout {
+                width: Size::Px(54.),
+                height: Size::Px(30.),
+                ..Layout::row()
+            },
+            Absolute {
+                left: Some(14.),
+                top: Some(20.),
+                ..Default::default()
+            },
+            Radius(6.),
+        ));
+        set_parent(w, strip, h.root);
+        for (i, color) in colors.into_iter().enumerate() {
+            let block = w.spawn((
+                Layout {
+                    width: if i == 2 { Size::Px(14.) } else { Size::Fill },
+                    height: Size::Fill,
+                    ..Layout::row()
+                },
+                color,
+            ));
+            set_parent(w, block, strip);
+        }
+        left = 82.;
+    }
+    pinned(
+        w,
+        h.root,
+        kicker,
+        Typography::Secondary,
+        Some(left),
+        None,
+        10.,
+        None,
+        true,
+    );
+    pinned(
+        w,
+        h.root,
+        title,
+        Typography::Emphasis,
+        Some(left),
+        None,
+        27.,
+        Some(480.),
+        false,
+    );
+    if !meta.is_empty() {
+        pinned(
+            w,
+            h.root,
+            meta,
+            Typography::Secondary,
+            Some(left),
+            None,
+            47.,
+            Some(480.),
+            true,
+        );
+    }
+    pinned(
+        w,
+        h.root,
+        if open { "Close" } else { "Change" },
+        Typography::Secondary,
+        None,
+        Some(14.),
+        26.,
+        None,
+        true,
+    );
+    open
+}
+
+/// medousa-home's "more" disclosure: a title, what it holds, and a chevron.
+/// Returns whether it is open.
+fn more(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    key: &'static str,
+    title: &str,
+    meta: &str,
+) -> bool {
+    let open = s.open.contains(key);
+    let h = button(w, p, s, title, Action::Toggle(key), true);
+    w.remove::<visual::FitLabel>(h.root);
+    *w.get_mut::<Layout>(h.root).unwrap() = Layout {
+        width: Size::Fill,
+        height: Size::Px(40.),
+        ..Layout::column()
+    };
+    fill_layers(w, h.root);
+    card(w, h.root);
+    w.insert(
+        h.label,
+        UiStyle {
+            foreground: Some(UiColor::Explicit(Color::rgba(0., 0., 0., 0.))),
+            ..Default::default()
+        },
+    );
+    if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+        sem.description = format!("{}. {meta}", if open { "Expanded" } else { "Collapsed" });
+    }
+    pinned(
+        w,
+        h.root,
+        title,
+        Typography::Emphasis,
+        Some(12.),
+        None,
+        11.,
+        None,
+        false,
+    );
+    if !meta.is_empty() {
+        pinned(
+            w,
+            h.root,
+            meta,
+            Typography::Secondary,
+            None,
+            Some(40.),
+            12.,
+            None,
+            true,
+        );
+    }
+    let chevron = if open {
+        Icon::ChevronUp
+    } else {
+        Icon::ChevronDown
+    };
+    pinned(
+        w,
+        h.root,
+        &chevron.scalar().to_string(),
+        Typography::Secondary,
+        None,
+        Some(14.),
+        12.,
+        None,
+        true,
+    );
+    open
+}
+
 fn look(w: &mut World, s: &mut State, body: Entity) {
     heading(w, body, "Look");
     quiet(
@@ -239,29 +505,46 @@ fn look(w: &mut World, s: &mut State, body: Entity) {
     let dark = w
         .resource::<rndr_ui::UiTheme>()
         .is_some_and(|t| t.appearance == rndr_ui::Appearance::Dark);
-    let grid = panel(
+    let swatches = crate::theme::swatches();
+    let current = swatches.iter().find(|t| t.id == s.theme).cloned();
+    let (title, colors) = current.as_ref().map_or((s.theme.clone(), None), |t| {
+        (t.label.clone(), Some(if dark { t.dark } else { t.light }))
+    });
+    let meta = if s.saving.is_some() {
+        "Saving…"
+    } else {
+        "25 themes, shared with every Medousa app"
+    };
+    if summary(w, body, s, "theme", "Theme", &title, meta, colors, true) {
+        let grid = panel(
+            w,
+            body,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 8.,
+                ..Layout::row()
+            },
+        );
+        w.insert(grid, Wrap { line_gap: 8. });
+        for swatch in &swatches {
+            tile(w, grid, s, swatch, dark);
+        }
+    }
+    if more(
         w,
         body,
-        Layout {
-            width: Size::Fill,
-            height: Size::Hug,
-            gap: 8.,
-            ..Layout::row()
-        },
-    );
-    w.insert(grid, Wrap { line_gap: 8. });
-    for swatch in crate::theme::swatches() {
-        tile(w, grid, s, &swatch, dark);
+        s,
+        "prefs-more",
+        "More preferences",
+        "Code, activity, proofreading",
+    ) {
+        quiet(
+            w,
+            body,
+            "Code, task activity, proofreading and everyday options are coming to this app soon. Until then, change them in the original Medousa app.",
+        );
     }
-    if s.saving.is_some() {
-        quiet(w, body, "Saving…");
-    }
-    heading(w, body, "More preferences");
-    quiet(
-        w,
-        body,
-        "Code, task activity, proofreading and everyday options are coming to this app soon. Until then, change them in the original Medousa app.",
-    );
 }
 
 /// One fact: a quiet name and its value on the same line.
@@ -353,14 +636,17 @@ fn connection(w: &mut World, s: &mut State, body: Entity) {
                 )
             };
             fact(w, body, "Version", &build);
-            if !h.active_profile_display_name.is_empty() {
-                fact(w, body, "Profile", &h.active_profile_display_name);
+            let detail = format!("{} tools · {}", h.tool_registry_count, h.backend);
+            if more(w, body, s, "engine-more", "Engine details", &detail) {
+                if !h.active_profile_display_name.is_empty() {
+                    fact(w, body, "Profile", &h.active_profile_display_name);
+                }
+                fact(w, body, "Tools", &h.tool_registry_count.to_string());
+                if let Some(ms) = h.last_agent_turn_latency_ms {
+                    fact(w, body, "Last reply", &format!("{ms} ms"));
+                }
+                fact(w, body, "Backend", &h.backend);
             }
-            fact(w, body, "Tools", &h.tool_registry_count.to_string());
-            if let Some(ms) = h.last_agent_turn_latency_ms {
-                fact(w, body, "Last reply", &format!("{ms} ms"));
-            }
-            fact(w, body, "Backend", &h.backend);
         }
         None if reading => {
             quiet(w, body, "Checking the engine…");
@@ -451,103 +737,105 @@ fn agent_section(w: &mut World, s: &mut State, body: Entity) {
         body,
         "Stance and how deep she goes. Saved for this workshop.",
     );
-    let grid = panel(
-        w,
-        body,
-        Layout {
-            width: Size::Fill,
-            height: Size::Hug,
-            gap: 6.,
-            ..Layout::row()
-        },
-    );
-    w.insert(grid, Wrap { line_gap: 6. });
-    for (id, name, hint) in &stances {
-        choice(
-            w,
-            grid,
-            s,
-            name,
-            hint,
-            Action::Agent(Patch::Stance(id.clone())),
-            *id == stance,
-            idle,
-        );
-    }
     let stance_hint = stances
         .iter()
         .find(|(id, ..)| *id == stance)
         .map(|(_, _, h)| h.clone())
         .unwrap_or_default();
-    if !stance_hint.is_empty() {
-        quiet(w, body, &stance_hint);
-    }
-    let grid = panel(
+    if summary(
         w,
         body,
-        Layout {
-            width: Size::Fill,
-            height: Size::Hug,
-            gap: 6.,
-            ..Layout::row()
-        },
-    );
-    w.insert(grid, Wrap { line_gap: 6. });
-    for (id, name, hint) in a::DEPTHS {
-        choice(
+        s,
+        "stance",
+        "Stance",
+        &stance_name,
+        &stance_hint,
+        None,
+        idle,
+    ) {
+        let grid = panel(
             w,
-            grid,
-            s,
-            name,
-            hint,
-            Action::Agent(Patch::Depth(id.into())),
-            id == depth,
-            idle,
+            body,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 6.,
+                ..Layout::row()
+            },
         );
+        w.insert(grid, Wrap { line_gap: 6. });
+        for (id, name, hint) in &stances {
+            choice(
+                w,
+                grid,
+                s,
+                name,
+                hint,
+                Action::Agent(Patch::Stance(id.clone())),
+                *id == stance,
+                idle,
+            );
+        }
     }
+    let depth_hint = a::DEPTHS
+        .iter()
+        .find(|(id, ..)| *id == depth)
+        .map_or("", |(_, _, h)| h)
+        .to_string();
+    if summary(
+        w,
+        body,
+        s,
+        "depth",
+        "Depth",
+        &depth_name,
+        &depth_hint,
+        None,
+        idle,
+    ) {
+        let grid = panel(
+            w,
+            body,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 6.,
+                ..Layout::row()
+            },
+        );
+        w.insert(grid, Wrap { line_gap: 6. });
+        for (id, name, hint) in a::DEPTHS {
+            choice(
+                w,
+                grid,
+                s,
+                name,
+                hint,
+                Action::Agent(Patch::Depth(id.into())),
+                id == depth,
+                idle,
+            );
+        }
+    }
+
+    heading(w, body, "Models & providers");
     quiet(
         w,
         body,
-        a::DEPTHS
-            .iter()
-            .find(|(id, ..)| *id == depth)
-            .map_or("", |(_, _, h)| h),
+        "Who answers. The other roles follow it unless set apart.",
     );
-
-    heading(w, body, "Conversation model");
-    let row = panel(
+    let provider = main.as_ref().map_or(String::new(), |(p, _)| p.clone());
+    if summary(
         w,
         body,
-        Layout {
-            width: Size::Fill,
-            height: Size::Hug,
-            gap: 8.,
-            ..Layout::row()
-        },
-    );
-    w.insert(
-        row,
-        Align {
-            items: Items::Center,
-            justify: Justify::Start,
-        },
-    );
-    let current = match &main {
-        Some((p, m)) => format!("{m} · {p}"),
-        None => "No model chosen".into(),
-    };
-    let v = text(w, row, &current, Typography::Label).unwrap();
-    w.get_mut::<Layout>(v).unwrap().width = Size::Fill;
-    let open = s.models_open;
-    button(
-        w,
-        row,
         s,
-        if open { "Close" } else { "Change" },
-        Action::Models,
+        "model",
+        "Conversation model",
+        &model_name,
+        &provider,
+        None,
         idle,
-    );
-    if open {
+    ) {
         let models = crate::ui::models(w);
         if models.is_empty() {
             quiet(
@@ -575,26 +863,51 @@ fn agent_section(w: &mut World, s: &mut State, body: Entity) {
             }
         }
     }
-
-    heading(w, body, "Other roles");
-    for (key, name) in [
+    let roles: Vec<(&str, String)> = [
         ("vision", "Sees images"),
         ("imageGeneration", "Makes images"),
         ("stt", "Listens"),
-    ] {
-        let value = a::role(&defaults, key)
-            .map_or("Same as conversation".into(), |(p, m)| format!("{m} · {p}"));
-        fact(w, body, name, &value);
+    ]
+    .into_iter()
+    .map(|(key, name)| {
+        (
+            name,
+            a::role(&defaults, key)
+                .map_or("Same as conversation".into(), |(p, m)| format!("{m} · {p}")),
+        )
+    })
+    .collect();
+    let set_apart = roles
+        .iter()
+        .filter(|(_, v)| v != "Same as conversation")
+        .count();
+    let meta = match set_apart {
+        0 => "All follow the conversation model".to_string(),
+        1 => "1 set apart".into(),
+        k => format!("{k} set apart"),
+    };
+    if more(w, body, s, "roles", "Other roles", &meta) {
+        for (name, value) in &roles {
+            fact(w, body, name, value);
+        }
     }
     if s.patching.is_some() {
         quiet(w, body, "Saving…");
     }
-    heading(w, body, "More agent settings");
-    quiet(
+    if more(
         w,
         body,
-        "Provider keys, fallbacks, stage routing, coding runtime, mode suggestions and retention are coming to this app soon. Until then, change them in the original Medousa app.",
-    );
+        s,
+        "agent-more",
+        "More agent settings",
+        "Keys, routing, retention",
+    ) {
+        quiet(
+            w,
+            body,
+            "Provider keys, fallbacks, stage routing, coding runtime, mode suggestions and retention are coming to this app soon. Until then, change them in the original Medousa app.",
+        );
+    }
 }
 
 /// A thin progress bar `percent` full.
@@ -735,23 +1048,31 @@ fn packages(w: &mut World, s: &mut State, body: Entity) {
             }
         }
     }
-    heading(w, body, "Medousa Installer");
-    if catalog.installer_available {
-        quiet(w, body, "Repair or change the app and engine themselves.");
-        button(
-            w,
-            body,
-            s,
-            "Open Medousa Installer",
-            Action::OpenInstaller,
-            busy.is_none(),
-        );
-    } else {
-        quiet(
-            w,
-            body,
-            "Medousa Installer isn’t on this Mac. It’s only needed to repair or change the app and engine.",
-        );
+    if more(
+        w,
+        body,
+        s,
+        "installer",
+        "Advanced",
+        "Repair the app and engine",
+    ) {
+        if catalog.installer_available {
+            quiet(w, body, "Repair or change the app and engine themselves.");
+            button(
+                w,
+                body,
+                s,
+                "Open Medousa Installer",
+                Action::OpenInstaller,
+                busy.is_none(),
+            );
+        } else {
+            quiet(
+                w,
+                body,
+                "Medousa Installer isn’t on this Mac. It’s only needed to repair or change the app and engine.",
+            );
+        }
     }
     let refresh = button(
         w,

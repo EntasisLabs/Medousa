@@ -88,6 +88,12 @@ fn sections_follow_medousa_home_and_unported_ones_say_so() {
 fn picking_a_theme_applies_it_now_and_saves_it_for_medousa_home() {
     let mut app = app();
     take_commands(app.world_mut());
+    // The current theme leads; its picker opens in place.
+    assert!(
+        named(app.world(), "Nord").is_none(),
+        "tiles wait behind Change"
+    );
+    click(&mut app, "Theme: Obsidian");
     click(&mut app, "Nord");
     let nord = crate::theme::resolve("nord");
     assert_eq!(state(app.world()).unwrap().theme, "nord");
@@ -154,6 +160,12 @@ fn connection_shows_the_workshop_and_the_engine() {
         },
     );
     app.update();
+    let t = texts(app.world());
+    assert!(
+        !t.iter().any(|x| x == "Dee"),
+        "details wait behind their row"
+    );
+    click(&mut app, "Engine details");
     let t = texts(app.world());
     for expected in ["Studio", "On this Mac", "0.9.2 (abc123)", "Dee", "42", "ok"] {
         assert!(t.iter().any(|x| x == expected), "{expected} in {t:?}");
@@ -291,7 +303,8 @@ fn settings_visual_acceptance() {
             s.section = Section::Agent;
             s.busy = None;
             s.defaults_reading = None;
-            s.models_open = true;
+            s.open.insert("model");
+            s.open.insert("stance");
             s.defaults = Some(serde_json::json!({
                 "active_voice_id": "direct",
                 "response_depth_mode": "deep",
@@ -374,6 +387,14 @@ fn packages_list_what_is_installed_and_offer_the_rest() {
         named(w, "Remove Engine core").is_none(),
         "required packages stay"
     );
+    assert!(
+        !t.iter()
+            .any(|x| x.starts_with("Medousa Installer isn’t on this Mac")),
+        "repairs wait under Advanced"
+    );
+    let mut app = app;
+    click(&mut app, "Advanced");
+    let t = texts(app.world());
     assert!(
         t.iter()
             .any(|x| x.starts_with("Medousa Installer isn’t on this Mac"))
@@ -462,6 +483,7 @@ fn stance_and_depth_save_to_the_workshop_defaults() {
             .any(|x| x == "Default · Standard · claude-opus-5-5"),
         "{t:?}"
     );
+    click(&mut app, "Stance: Default");
     click(&mut app, "Direct");
     let s = state(app.world()).unwrap();
     assert_eq!(
@@ -487,13 +509,13 @@ fn stance_and_depth_save_to_the_workshop_defaults() {
 #[test]
 fn the_conversation_model_is_picked_from_the_engine_models() {
     let mut app = agent_open();
-    click(&mut app, "Change");
+    click(&mut app, "Conversation model: claude-opus-5-5");
     click(&mut app, "gpt-6 · openai");
     let s = state(app.world()).unwrap();
     assert_eq!(
         agent::role(s.defaults.as_ref().unwrap(), "main"),
         Some(("openai".into(), "gpt-6".into()))
     );
-    assert!(!s.models_open, "the list closes on a pick");
+    assert!(!s.open.contains("model"), "the list closes on a pick");
     assert!(matches!(s.patching, Some((_, agent::Patch::Model(..)))));
 }
