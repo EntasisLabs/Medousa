@@ -176,7 +176,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -251,5 +251,146 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "connection");
+        with_state(app.world_mut(), |_, s| {
+            s.section = Section::Packages;
+            s.listing = None;
+            s.packages = Some(Catalog {
+                packages: vec![
+                    row("computer-control", "Computer control", false, true),
+                    row("coding-runtime", "Coding runtime", false, true),
+                    row("local-brain", "Offline brain", true, true),
+                    row("channels", "Channel adapters", true, true),
+                ],
+                installer_available: true,
+                release_version: Some("1.0.0".into()),
+            });
+            s.busy = Some((1, "computer-control".into()));
+            *s.progress.lock().unwrap() = Some(Progress {
+                package_id: "computer-control".into(),
+                display_name: "Computer control".into(),
+                phase: "downloading".into(),
+                phase_label: "Downloading".into(),
+                percent: 40.,
+                message: "19 MB of 48 MB".into(),
+            });
+            s.redraw = true;
+        });
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "packages");
     }
+}
+
+fn row(
+    id: &str,
+    name: &str,
+    installed: bool,
+    optional: bool,
+) -> medousa_desktop_host::packages::PackageRow {
+    medousa_desktop_host::packages::PackageRow {
+        id: id.into(),
+        display_name: name.into(),
+        hint: format!("{name} hint"),
+        category_label: "Tools".into(),
+        installed,
+        installed_version: installed.then(|| "1.0.0".into()),
+        available_version: Some("1.0.0".into()),
+        update_available: false,
+        size_bytes: 48 * 1024 * 1024,
+        optional,
+    }
+}
+
+fn packages_open() -> App {
+    let mut app = app();
+    click(&mut app, "Packages");
+    let w = app.world_mut();
+    let listing = state(w).unwrap().listing.expect("catalog read on open");
+    apply(
+        w,
+        Update {
+            serial: listing,
+            result: Ok(Reply::Packages(Catalog {
+                packages: vec![
+                    row("computer-control", "Computer control", false, true),
+                    row("local-brain", "Offline brain", true, true),
+                    row("engine-core", "Engine core", true, false),
+                ],
+                installer_available: false,
+                release_version: Some("1.0.0".into()),
+            })),
+        },
+    );
+    app.update();
+    app
+}
+
+#[test]
+fn packages_list_what_is_installed_and_offer_the_rest() {
+    let app = packages_open();
+    let w = app.world();
+    let t = texts(w);
+    assert!(
+        t.iter()
+            .any(|x| x == "Computer control hint · ~48 MB · v1.0.0"),
+        "{t:?}"
+    );
+    assert!(named(w, "Install Computer control").is_some());
+    assert!(
+        named(w, "Remove Offline brain").is_some(),
+        "optional and installed"
+    );
+    assert!(
+        named(w, "Remove Engine core").is_none(),
+        "required packages stay"
+    );
+    assert!(
+        t.iter()
+            .any(|x| x.starts_with("Medousa Installer isn’t on this Mac"))
+    );
+}
+
+#[test]
+fn installing_shows_progress_then_reads_the_catalog_again() {
+    let mut app = packages_open();
+    click(&mut app, "Install Computer control");
+    let w = app.world_mut();
+    let (serial, id) = state(w).unwrap().busy.clone().expect("install in flight");
+    assert_eq!(id, "computer-control");
+    // Other installs wait for this one.
+    assert!(named(w, "Remove Offline brain").is_some());
+    // The worker reports progress through the shared slot.
+    *state(w).unwrap().progress.lock().unwrap() = Some(Progress {
+        package_id: id.clone(),
+        display_name: "Computer control".into(),
+        phase: "downloading".into(),
+        phase_label: "Downloading".into(),
+        percent: 40.,
+        message: "19 MB of 48 MB".into(),
+    });
+    app.update();
+    let t = texts(app.world());
+    assert!(
+        t.iter()
+            .any(|x| x == "Computer control · Downloading · 19 MB of 48 MB"),
+        "{t:?}"
+    );
+    assert!(
+        app.world().resource::<MotionWatch>().unwrap().active,
+        "frames keep coming"
+    );
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::Done),
+        },
+    );
+    let s = state(app.world()).unwrap();
+    assert!(s.busy.is_none());
+    assert!(
+        s.listing.is_some(),
+        "installed state is read from disk again"
+    );
 }

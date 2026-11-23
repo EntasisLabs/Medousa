@@ -1,6 +1,8 @@
 //! Desktop host policy shared by Tauri and RNDR, with no renderer dependency.
 pub mod connection;
 pub mod defaults;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod packages;
 pub mod paths;
 pub mod workshop_registry;
 pub mod workshop_runtime;

@@ -66,7 +66,7 @@ or an accepted proposal appear without reopening it.
 sections in the same groups. **Look** switches the theme at once and saves it
 for the active workshop, where medousa-home reads it too. **Connection** shows
 the active workshop, the engine's status and version, and this app's version.
-The other sections say they are still configured in the original app.
+**Packages** lists the optional binaries, installs or updates them into the data folder with a progress bar, removes optional ones, and opens Medousa Installer for repairs. The other sections say they are still configured in the original app.
 
 The Chat surface contains a left conversation sidebar and native chat workspace.
 Session search/paging and mutations, model/mode/depth controls, source-document

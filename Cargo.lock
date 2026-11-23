@@ -7914,6 +7914,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "libc",
  "medousa-host",
+ "medousa-install-support",
  "medousa-iroh-http",
  "medousa-local-credential",
  "medousa-sdk",

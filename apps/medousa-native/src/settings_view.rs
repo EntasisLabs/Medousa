@@ -6,6 +6,8 @@ use rndr_ui::{Token, Typography, UiColor, UiStyle, text};
 
 const TILE_W: f32 = 148.;
 const TILE_H: f32 = 76.;
+/// Package progress bar length.
+const BAR: f32 = 320.;
 
 fn panel(w: &mut World, parent: Entity, layout: Layout) -> Entity {
     let e = w.spawn((layout,));
@@ -380,6 +382,173 @@ fn connection(w: &mut World, s: &mut State, body: Entity) {
     );
 }
 
+/// A thin progress bar `percent` full.
+fn bar(w: &mut World, p: Entity, percent: f32) {
+    let track = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Px(BAR),
+            height: Size::Px(4.),
+            ..Layout::row()
+        },
+    );
+    visual::plane(w, track, Token::ControlHover);
+    w.insert(track, Radius(2.));
+    let fill = panel(
+        w,
+        track,
+        Layout {
+            width: Size::Px((percent.clamp(2., 100.) / 100. * BAR).round()),
+            height: Size::Fill,
+            ..Layout::row()
+        },
+    );
+    visual::plane(w, fill, Token::Accent);
+    w.insert(fill, Radius(2.));
+}
+
+fn packages(w: &mut World, s: &mut State, body: Entity) {
+    quiet(
+        w,
+        body,
+        "Medousa already has the engine. Add optional workshop capabilities here — computer control, coding, offline brain, and channels. MCP lives under MCP.",
+    );
+    let Some(catalog) = s.packages.clone() else {
+        if s.listing.is_some() {
+            quiet(w, body, "Loading catalog…");
+        }
+        return;
+    };
+    let busy = s.busy.clone();
+    let progress = s.progress.lock().unwrap().clone();
+    for row in &catalog.packages {
+        let line = panel(
+            w,
+            body,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                padding: 6.,
+                gap: 12.,
+                ..Layout::row()
+            },
+        );
+        w.insert(
+            line,
+            Align {
+                items: Items::Start,
+                justify: Justify::Start,
+            },
+        );
+        let text_col = panel(
+            w,
+            line,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 2.,
+                ..Layout::column()
+            },
+        );
+        label(w, text_col, &row.display_name, Typography::Emphasis);
+        let mut meta = row.hint.clone();
+        if let Some(size) = medousa_desktop_host::packages::format_bytes(row.size_bytes) {
+            meta.push_str(&format!(" · ~{size}"));
+        }
+        if let (true, Some(v)) = (row.installed, &row.installed_version) {
+            meta.push_str(&format!(" · v{v}"));
+        } else if let Some(v) = &row.available_version {
+            meta.push_str(&format!(" · v{v}"));
+        }
+        quiet(w, text_col, &meta);
+        let mine = busy.as_ref().is_some_and(|(_, id)| *id == row.id);
+        if mine && let Some(p) = progress.as_ref() {
+            bar(w, text_col, p.percent);
+            quiet(
+                w,
+                text_col,
+                &format!("{} · {} · {}", p.display_name, p.phase_label, p.message),
+            );
+        } else if mine {
+            quiet(w, text_col, "Starting…");
+        }
+        let side = panel(
+            w,
+            line,
+            Layout {
+                width: Size::Hug,
+                height: Size::Hug,
+                gap: 4.,
+                ..Layout::row()
+            },
+        );
+        w.insert(
+            side,
+            Align {
+                items: Items::Center,
+                justify: Justify::End,
+            },
+        );
+        let idle = busy.is_none();
+        if row.installed && !row.update_available {
+            let done = text(w, side, "Installed", Typography::Secondary).unwrap();
+            w.get_mut::<Layout>(done).unwrap().width = Size::Hug;
+            w.insert(
+                done,
+                UiStyle {
+                    foreground: Some(Token::SuccessText.into()),
+                    ..Default::default()
+                },
+            );
+            if row.optional {
+                let name = format!("Remove {}", row.display_name);
+                let h = button(w, side, s, "Remove", Action::Remove(row.id.clone()), idle);
+                if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+                    sem.name = Some(name);
+                }
+            }
+        } else {
+            let verb = if row.update_available {
+                "Update"
+            } else {
+                "Install"
+            };
+            let h = button(w, side, s, verb, Action::Install(row.id.clone()), idle);
+            if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+                sem.name = Some(format!("{verb} {}", row.display_name));
+            }
+        }
+    }
+    heading(w, body, "Medousa Installer");
+    if catalog.installer_available {
+        quiet(w, body, "Repair or change the app and engine themselves.");
+        button(
+            w,
+            body,
+            s,
+            "Open Medousa Installer",
+            Action::OpenInstaller,
+            busy.is_none(),
+        );
+    } else {
+        quiet(
+            w,
+            body,
+            "Medousa Installer isn’t on this Mac. It’s only needed to repair or change the app and engine.",
+        );
+    }
+    let refresh = button(
+        w,
+        body,
+        s,
+        "Check for updates",
+        Action::Refresh,
+        s.listing.is_none() && busy.is_none(),
+    );
+    let _ = refresh;
+}
+
 pub(super) fn render(w: &mut World, s: &mut State) {
     if w.resource::<Focus>()
         .and_then(|f| f.entity)
@@ -404,6 +573,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     match s.section {
         Section::Preferences => look(w, s, body),
         Section::Connection => connection(w, s, body),
+        Section::Packages => packages(w, s, body),
         other => {
             debug_assert!(!other.ready());
             quiet(
