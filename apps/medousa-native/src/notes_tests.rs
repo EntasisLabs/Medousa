@@ -1541,7 +1541,11 @@ fn note_header_is_one_quiet_row_and_the_rest_lives_behind_more() {
         .find(|(_, a)| matches!(a, Action::ToggleSource))
         .map(|(id, _)| *id)
         .unwrap();
-    assert!(actions.values().any(|a| matches!(a, Action::Format(MarkdownCommand::Quote))));
+    assert!(
+        actions
+            .values()
+            .any(|a| matches!(a, Action::Format(MarkdownCommand::Quote)))
+    );
     let before = w.resource::<Notes>().unwrap().source;
     send(
         w,

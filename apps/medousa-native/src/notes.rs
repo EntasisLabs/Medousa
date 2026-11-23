@@ -794,7 +794,15 @@ fn render(world: &mut World, n: &mut Notes) {
             (Icon::Type, "Heading", MarkdownCommand::Heading(1)),
             (Icon::List, "List", MarkdownCommand::Bullet),
         ] {
-            icon_button(world, formatting, n, icon, label, |_| Action::Format(command), enabled);
+            icon_button(
+                world,
+                formatting,
+                n,
+                icon,
+                label,
+                |_| Action::Format(command),
+                enabled,
+            );
         }
     }
     // Retained open documents are navigation, not a pile of form controls.
@@ -876,8 +884,24 @@ fn render(world: &mut World, n: &mut Notes) {
             );
         }
         let viewing = n.views.contains_key(&path);
-        icon_button(world, toolbar, n, Icon::Search, "Find / Replace", |_| Action::Find, viewing);
-        icon_button(world, toolbar, n, Icon::Ellipsis, "More note actions", Action::Overflow, true);
+        icon_button(
+            world,
+            toolbar,
+            n,
+            Icon::Search,
+            "Find / Replace",
+            |_| Action::Find,
+            viewing,
+        );
+        icon_button(
+            world,
+            toolbar,
+            n,
+            Icon::Ellipsis,
+            "More note actions",
+            Action::Overflow,
+            true,
+        );
         if let Some(remote) = n.remote.get(&path) {
             caption(
                 world,
@@ -1009,7 +1033,11 @@ fn open_overflow(world: &mut World, n: &mut Notes, anchor: Entity) {
             entry("Write", Action::Write, true)
         },
         entry(
-            if n.source { "Back to rich editing" } else { "Edit source" },
+            if n.source {
+                "Back to rich editing"
+            } else {
+                "Edit source"
+            },
             Action::ToggleSource,
             true,
         ),

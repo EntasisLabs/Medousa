@@ -738,13 +738,7 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
             {
                 if mounted.part != part {
                     if !part.tools.is_empty() {
-                        tool_activity::mount(
-                            world,
-                            body,
-                            Some(mounted.entity),
-                            &item.id,
-                            &part,
-                        );
+                        tool_activity::mount(world, body, Some(mounted.entity), &item.id, &part);
                     } else if let Some(details) = &part.details {
                         if let Some(body) = world.get_mut::<DetailBody>(mounted.entity) {
                             body.text = details.clone();

@@ -575,7 +575,15 @@ fn timeline_scrollbar_rests_hidden_and_wakes_for_pointer_scroll_or_focus() {
     assert_eq!(world.get::<Opacity>(rail).unwrap().0, 0.);
     // Overflow alone does not paint a line down the conversation.
     world.get_mut::<Scroll>(root).unwrap().content[1] = 1200.;
-    world.insert(root, Rect { x: 0., y: 0., w: 600., h: 400. });
+    world.insert(
+        root,
+        Rect {
+            x: 0.,
+            y: 0.,
+            w: 600.,
+            h: 400.,
+        },
+    );
     let mut input = world.resource::<Input>().cloned().unwrap_or_default();
     input.pointer.position = [-10., -10.];
     world.insert_resource(input.clone());
@@ -709,7 +717,10 @@ fn short_user_turns_hug_their_text_and_long_ones_wrap_at_a_measure() {
 fn copy_appears_for_the_hovered_or_focused_message_only() {
     let (mut world, root) = fixture();
     let history = snapshot(
-        vec![item("u", "user", "question"), item("a", "assistant", "answer")],
+        vec![
+            item("u", "user", "question"),
+            item("a", "assistant", "answer"),
+        ],
         1,
     );
     sync(&mut world, root, Some(&history));
@@ -726,14 +737,33 @@ fn copy_appears_for_the_hovered_or_focused_message_only() {
             .find(|e| world.has::<CopyText>(*e))
             .unwrap()
     };
-    world.insert(rows[0], Rect { x: 0., y: 0., w: 400., h: 60. });
-    world.insert(rows[1], Rect { x: 0., y: 80., w: 400., h: 60. });
+    world.insert(
+        rows[0],
+        Rect {
+            x: 0.,
+            y: 0.,
+            w: 400.,
+            h: 60.,
+        },
+    );
+    world.insert(
+        rows[1],
+        Rect {
+            x: 0.,
+            y: 80.,
+            w: 400.,
+            h: 60.,
+        },
+    );
     let mut input = world.resource::<Input>().cloned().unwrap_or_default();
     input.pointer.position = [20., 100.];
     world.insert_resource(input);
     chrome(&mut world);
     let opacity = |world: &World, row| world.get::<Opacity>(copy(world, row)).unwrap().0;
-    assert_eq!((opacity(&world, rows[0]), opacity(&world, rows[1])), (0., 1.));
+    assert_eq!(
+        (opacity(&world, rows[0]), opacity(&world, rows[1])),
+        (0., 1.)
+    );
     // Keyboard focus reveals it without a pointer.
     let mut input = world.resource::<Input>().cloned().unwrap();
     input.pointer.position = [-10., -10.];
@@ -744,5 +774,8 @@ fn copy_appears_for_the_hovered_or_focused_message_only() {
         ..Default::default()
     });
     chrome(&mut world);
-    assert_eq!((opacity(&world, rows[0]), opacity(&world, rows[1])), (1., 0.));
+    assert_eq!(
+        (opacity(&world, rows[0]), opacity(&world, rows[1])),
+        (1., 0.)
+    );
 }

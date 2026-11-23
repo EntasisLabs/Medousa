@@ -1477,11 +1477,7 @@ fn sync_status_line(w: &mut World, c: &Code) {
         let head = doc.selection().head.min(source.len());
         let before = source.get(..head)?;
         let row = before.matches('\n').count() + 1;
-        let col = before
-            .rsplit('\n')
-            .next()
-            .map_or(0, |l| l.chars().count())
-            + 1;
+        let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
         Some(match language(&key.1) {
             Some(language) => format!("Ln {row}, Col {col} · {language}"),
             None => format!("Ln {row}, Col {col}"),

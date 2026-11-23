@@ -1462,11 +1462,20 @@ fn status_line_follows_the_caret_and_names_the_language_only_with_a_file_open() 
     let line = app.world().resource::<Code>().unwrap().status_line.unwrap();
     sync(app.world_mut());
     assert!(app.world().has::<Hidden>(line));
-    load(app.world_mut(), "one", "src/a.rs", "fn main() {\n    run();\n}\n", "d1");
+    load(
+        app.world_mut(),
+        "one",
+        "src/a.rs",
+        "fn main() {\n    run();\n}\n",
+        "d1",
+    );
     sync(app.world_mut());
     assert!(!app.world().has::<Hidden>(line));
     // A freshly loaded document leaves the caret at its end.
-    assert_eq!(app.world().get::<Label>(line).unwrap().text, "Ln 4, Col 1 · Rust");
+    assert_eq!(
+        app.world().get::<Label>(line).unwrap().text,
+        "Ln 4, Col 1 · Rust"
+    );
     let id = app.world().resource::<Code>().unwrap().views[&key("one", "src/a.rs")].document;
     // Byte 16 is after "fn main() {\n    " on the second line.
     app.world_mut()
@@ -1474,10 +1483,16 @@ fn status_line_follows_the_caret_and_names_the_language_only_with_a_file_open() 
         .unwrap()
         .get_mut(id)
         .unwrap()
-        .set_selection(rndr_core::editing::SourceSelection { anchor: 16, head: 16 })
+        .set_selection(rndr_core::editing::SourceSelection {
+            anchor: 16,
+            head: 16,
+        })
         .unwrap();
     sync(app.world_mut());
-    assert_eq!(app.world().get::<Label>(line).unwrap().text, "Ln 2, Col 5 · Rust");
+    assert_eq!(
+        app.world().get::<Label>(line).unwrap().text,
+        "Ln 2, Col 5 · Rust"
+    );
     assert_eq!(language("notes/README"), None);
     assert_eq!(language("Dockerfile"), Some("Dockerfile"));
 }

@@ -155,7 +155,11 @@ pub(super) fn update(world: &mut World) {
     present(world, online);
     for event in rndr_core::events::<MenuPicked>(world).to_vec() {
         let state = world.resource_mut::<State>().unwrap();
-        if !state.menu.as_ref().is_some_and(|(m, _)| m.root == event.menu) {
+        if !state
+            .menu
+            .as_ref()
+            .is_some_and(|(m, _)| m.root == event.menu)
+        {
             continue;
         }
         let (_, work) = state.menu.take().unwrap();
@@ -193,7 +197,11 @@ fn present(world: &mut World, online: bool) {
             .map(|l| l.text.clone())
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "Not connected to Medousa".into());
-        set_name(world, connection.root, &format!("{status} · Open connection details"));
+        set_name(
+            world,
+            connection.root,
+            &format!("{status} · Open connection details"),
+        );
     }
     show(world, activity.root, active > 0);
     if active == 0 {
@@ -255,7 +263,12 @@ pub(super) fn action(world: &mut World, intent: &HostIntent) -> bool {
         HostIntent::Command(ACTIVITY) => {
             let anchor = state.activity.root;
             // Attention first, then the most recently created.
-            let mut work = state.work.iter().filter(|w| w.active()).cloned().collect::<Vec<_>>();
+            let mut work = state
+                .work
+                .iter()
+                .filter(|w| w.active())
+                .cloned()
+                .collect::<Vec<_>>();
             work.sort_by_key(|w| !w.attention());
             let entries = work
                 .iter()
@@ -379,7 +392,10 @@ mod tests {
     #[test]
     fn rail_foot_is_silent_when_online_and_idle() {
         let mut app = app(true);
-        set_work(app.world_mut(), vec![work("Done", WorkBoardColumn::Done, "s")]);
+        set_work(
+            app.world_mut(),
+            vec![work("Done", WorkBoardColumn::Done, "s")],
+        );
         app.update();
         let s = state(&app);
         assert!(app.world().has::<Hidden>(s.activity.root));

@@ -4,7 +4,9 @@
 //! over the jump-to and utility items medousa-home kept in its status bar.
 use super::*;
 use rndr_ui::collections::ItemId;
-use rndr_ui::palette::{CommandPalette, PaletteActivated, PaletteCommand, PaletteHandle, PaletteProps};
+use rndr_ui::palette::{
+    CommandPalette, PaletteActivated, PaletteCommand, PaletteHandle, PaletteProps,
+};
 
 const OPEN: &str = "palette.open";
 const WIDTH: f32 = 560.;
@@ -94,9 +96,24 @@ fn commands(world: &World) -> (Vec<PaletteCommand>, Vec<String>) {
         .resource::<Model>()
         .is_some_and(|m| m.commands.is_some());
     out.push(command(NEW_CHAT, "New chat", "Conversation", Icon::Plus));
-    out.push(command(SEARCH_CHATS, "Search conversations", "Conversation", Icon::Search));
-    out.push(command(TOGGLE_SIDEBAR, "Toggle conversation sidebar", "Conversation", Icon::PanelLeft));
-    let mut reload = command(RELOAD_CHAT, "Reload conversation", "Conversation", Icon::RefreshCw);
+    out.push(command(
+        SEARCH_CHATS,
+        "Search conversations",
+        "Conversation",
+        Icon::Search,
+    ));
+    out.push(command(
+        TOGGLE_SIDEBAR,
+        "Toggle conversation sidebar",
+        "Conversation",
+        Icon::PanelLeft,
+    ));
+    let mut reload = command(
+        RELOAD_CHAT,
+        "Reload conversation",
+        "Conversation",
+        Icon::RefreshCw,
+    );
     reload.enabled = online;
     out.push(reload);
     out.push(command(
@@ -129,7 +146,12 @@ fn commands(world: &World) -> (Vec<PaletteCommand>, Vec<String>) {
         } else {
             title
         };
-        out.push(command(CONVERSATION + i as u64, &title, "Conversations", Icon::MessageCircle));
+        out.push(command(
+            CONVERSATION + i as u64,
+            &title,
+            "Conversations",
+            Icon::MessageCircle,
+        ));
         ids.push(id);
     }
     (out, ids)
@@ -263,7 +285,12 @@ mod tests {
         assert!(palette.is_open(app.world()));
         let (catalog, sessions) = commands(app.world());
         let titles = catalog.iter().map(|c| c.title.as_str()).collect::<Vec<_>>();
-        for expected in ["Go to Notes", "New chat", "Ship the palette", "Untitled chat"] {
+        for expected in [
+            "Go to Notes",
+            "New chat",
+            "Ship the palette",
+            "Untitled chat",
+        ] {
             assert!(titles.contains(&expected), "{expected} in {titles:?}");
         }
         assert_eq!(sessions, ["alpha", "beta"]);
