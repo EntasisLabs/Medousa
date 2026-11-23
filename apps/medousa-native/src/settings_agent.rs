@@ -38,6 +38,8 @@ pub(crate) enum Patch {
     Depth(String),
     /// The main profile's provider and model, mirrored into the flat fields.
     Model(String, String),
+    /// One top-level field, as Runtime Controls sets them.
+    Field(&'static str, Value),
 }
 
 /// A stance as offered: id, name, description.
@@ -106,6 +108,7 @@ pub(crate) fn apply(defaults: &mut Value, patch: &Patch) {
     match patch {
         Patch::Stance(id) => defaults["active_voice_id"] = json!(id),
         Patch::Depth(mode) => defaults["response_depth_mode"] = json!(mode),
+        Patch::Field(key, value) => defaults[*key] = value.clone(),
         Patch::Model(provider, model) => {
             let changed = role(defaults, "main").is_none_or(|(p, _)| p != *provider);
             if !defaults["inference_profiles"].is_object() {

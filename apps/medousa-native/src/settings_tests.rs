@@ -188,7 +188,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -380,6 +380,23 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "external");
+        with_state(app.world_mut(), |_, s| {
+            s.section = Section::Runtime;
+            s.defaults = Some(serde_json::json!({
+                "tool_call_mode": "strict",
+                "host_turn_bus_mode": "auto",
+                "web_search_preferred_provider": "tavily",
+                "max_tool_rounds": 24,
+                "shell_agent_tools_enabled": true,
+                "shell_allowed_binaries": ["git", "rg"],
+            }));
+            s.open.insert("host_turn_bus_mode");
+            s.redraw = true;
+        });
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "runtime");
     }
 }
 
@@ -1087,4 +1104,104 @@ fn conversations_remove_on_a_second_press_and_rotate_shows_the_key_once() {
     click(&mut app, "Done");
     assert!(state(app.world()).unwrap().callback_key.is_none());
     assert!(!texts(app.world()).iter().any(|x| x == "cb-secret"));
+}
+
+fn runtime_open(defaults: serde_json::Value) -> App {
+    let mut app = app();
+    app.world_mut().insert_resource(Viewport::new(1200., 2400.));
+    click(&mut app, "Runtime Controls");
+    let w = app.world_mut();
+    let read = state(w).unwrap().defaults_reading.expect("read on open");
+    apply(
+        w,
+        Update {
+            serial: read,
+            result: Ok(Reply::Defaults(defaults)),
+        },
+    );
+    app.update();
+    app
+}
+
+/// Lets the change in flight land as the workshop wrote it.
+fn saved(app: &mut App) {
+    let w = app.world_mut();
+    let s = state(w).unwrap();
+    let (serial, _) = s.patching.clone().expect("a change in flight");
+    let written = s.defaults.clone().unwrap();
+    apply(
+        w,
+        Update {
+            serial,
+            result: Ok(Reply::Defaults(written)),
+        },
+    );
+    app.update();
+}
+
+#[test]
+fn runtime_controls_pick_toggle_and_step_one_field_at_a_time() {
+    let mut app = runtime_open(serde_json::json!({ "slice_hot_window_turns": 9 }));
+    let t = texts(app.world());
+    assert!(
+        t.iter()
+            .any(|x| x == "Flexible · When needed · Shell off · Versions off · 30 rounds"),
+        "{t:?}"
+    );
+    click(&mut app, "Tool posture: Flexible");
+    click(&mut app, "Careful");
+    let s = state(app.world()).unwrap();
+    assert_eq!(
+        s.patching.as_ref().map(|(_, p)| p.clone()),
+        Some(agent::Patch::Field("tool_call_mode", "strict".into()))
+    );
+    assert!(!s.open.contains("tool_call_mode"), "the picker closes");
+    saved(&mut app);
+    click(&mut app, "Raise General tool rounds");
+    assert_eq!(
+        state(app.world()).unwrap().defaults.as_ref().unwrap()["max_tool_rounds"],
+        31
+    );
+    saved(&mut app);
+    click(&mut app, "Telemetry export");
+    let d = state(app.world()).unwrap().defaults.clone().unwrap();
+    assert_eq!(d["stasis_otel_enabled"], true);
+    assert_eq!(d["slice_hot_window_turns"], 9, "other fields survive");
+    saved(&mut app);
+    // Budgets open behind their disclosure.
+    assert!(named(app.world(), "Raise Specialist rounds").is_none());
+    click(&mut app, "Tool budgets");
+    click(&mut app, "Lower Specialist rounds");
+    assert_eq!(
+        state(app.world()).unwrap().defaults.as_ref().unwrap()["host_bus_max_tool_rounds"],
+        7
+    );
+}
+
+#[test]
+fn shell_tools_with_no_allowlist_take_a_second_press() {
+    let mut app = runtime_open(serde_json::json!({}));
+    click(&mut app, "Agent shell tools");
+    let s = state(app.world()).unwrap();
+    assert!(s.shell_confirm && s.patching.is_none(), "asks first");
+    click(&mut app, "Keep off");
+    assert!(!state(app.world()).unwrap().shell_confirm);
+    click(&mut app, "Agent shell tools");
+    click(&mut app, "Turn on anyway");
+    let s = state(app.world()).unwrap();
+    assert!(!s.shell_confirm);
+    assert_eq!(
+        s.defaults.as_ref().unwrap()["shell_agent_tools_enabled"],
+        true
+    );
+    saved(&mut app);
+    assert!(
+        texts(app.world())
+            .iter()
+            .any(|t| t.starts_with("Agents are unlocked with an empty binary allowlist"))
+    );
+    // With binaries listed it turns on at once.
+    let mut app = runtime_open(serde_json::json!({ "shell_allowed_binaries": ["git"] }));
+    click(&mut app, "Agent shell tools");
+    assert!(state(app.world()).unwrap().patching.is_some());
 }

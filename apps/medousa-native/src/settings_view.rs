@@ -1657,6 +1657,382 @@ fn mcp(w: &mut World, s: &mut State, body: Entity) {
 }
 
 /// A thin progress bar `percent` full.
+/// A picker over one runtime field: its summary, and its choices when open.
+#[allow(clippy::too_many_arguments)]
+fn runtime_pick(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    d: &serde_json::Value,
+    pick: &super::runtime::Pick,
+    kicker: &str,
+    meta: Option<&str>,
+    idle: bool,
+) {
+    use super::agent::Patch;
+    let (chosen, name, hint) = *pick.chosen(d);
+    if summary(
+        w,
+        p,
+        s,
+        pick.key,
+        kicker,
+        name,
+        meta.unwrap_or(hint),
+        None,
+        idle,
+    ) {
+        let grid = panel(
+            w,
+            p,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 6.,
+                ..Layout::row()
+            },
+        );
+        w.insert(grid, Wrap { line_gap: 6. });
+        for (id, name, hint) in pick.choices {
+            choice(
+                w,
+                grid,
+                s,
+                name,
+                hint,
+                Action::Agent(Patch::Field(pick.key, (*id).into())),
+                *id == chosen,
+                idle,
+            );
+        }
+    }
+}
+
+/// A setting's name and what it does, with its control on the right.
+fn runtime_row(w: &mut World, p: Entity, label_: &str, hint: &str) -> Entity {
+    let (line, col) = split_row(w, p);
+    label(w, col, label_, Typography::Label);
+    quiet(w, col, hint);
+    let side = panel(
+        w,
+        line,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        side,
+        Align {
+            items: Items::Center,
+            justify: Justify::End,
+        },
+    );
+    side
+}
+
+fn runtime_flag(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    d: &serde_json::Value,
+    flag: &super::runtime::Flag,
+    idle: bool,
+) {
+    use super::agent::Patch;
+    let side = runtime_row(w, p, flag.label, flag.hint);
+    let on = flag.on(d);
+    let h = button(
+        w,
+        side,
+        s,
+        if on { "On" } else { "Off" },
+        Action::Agent(Patch::Field(flag.key, (!on).into())),
+        idle,
+    );
+    w.remove::<visual::FitLabel>(h.root);
+    w.get_mut::<Layout>(h.root).unwrap().width = Size::Px(64.);
+    if on {
+        mark(w, h.root);
+    }
+    if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+        sem.name = Some(flag.label.into());
+        sem.description = if on { "On".into() } else { "Off".into() };
+    }
+}
+
+fn runtime_num(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    d: &serde_json::Value,
+    num: &super::runtime::Num,
+    idle: bool,
+) {
+    use super::agent::Patch;
+    let side = runtime_row(w, p, num.label, num.hint);
+    for (dir, glyph, verb) in [(-1, "−", "Lower"), (1, "+", "Raise")] {
+        let next = num.stepped(d, dir);
+        let enabled = idle && next.is_some();
+        let a = Action::Agent(Patch::Field(
+            num.key,
+            next.unwrap_or(serde_json::Value::Null),
+        ));
+        if dir == 1 {
+            let slot = panel(
+                w,
+                side,
+                Layout {
+                    width: Size::Px(84.),
+                    height: Size::Hug,
+                    ..Layout::row()
+                },
+            );
+            w.insert(
+                slot,
+                Align {
+                    items: Items::Center,
+                    justify: Justify::Center,
+                },
+            );
+            text(w, slot, &num.shown(d), Typography::Label).unwrap();
+        }
+        named_button(
+            w,
+            side,
+            s,
+            glyph,
+            format!("{verb} {}", num.label),
+            a,
+            enabled,
+        );
+    }
+}
+
+fn runtime_section(w: &mut World, s: &mut State, body: Entity) {
+    use super::runtime as r;
+    let Some(d) = s.defaults.clone() else {
+        quiet(
+            w,
+            body,
+            if s.defaults_reading.is_some() {
+                "Reading…"
+            } else {
+                "The engine didn’t answer. Check the workshop, then come back."
+            },
+        );
+        return;
+    };
+    quiet(w, body, &r::summary(&d));
+    let idle = s.patching.is_none();
+
+    heading(w, body, "Reach");
+    quiet(w, body, "How she uses tools on a turn.");
+    runtime_pick(w, body, s, &d, &r::POSTURE, "Tool posture", None, idle);
+    runtime_pick(w, body, s, &d, &r::SPECIALIST, "Specialists", None, idle);
+    runtime_pick(
+        w,
+        body,
+        s,
+        &d,
+        &r::WEB_SEARCH,
+        "Web search",
+        Some("Preferred provider when she looks things up"),
+        idle,
+    );
+    runtime_flag(w, body, s, &d, &r::SEARCH_FALLBACKS, idle);
+    runtime_num(w, body, s, &d, &r::TOOL_ROUNDS, idle);
+    let modules = r::list(&d, "allowed_modules");
+    if more(
+        w,
+        body,
+        s,
+        "runtime.tools",
+        "Allowed tools",
+        if modules.is_empty() {
+            "Full catalog"
+        } else {
+            "Custom list"
+        },
+    ) {
+        quiet(
+            w,
+            body,
+            &if modules.is_empty() {
+                "Empty list means the full tool catalog is allowed.".to_string()
+            } else {
+                modules.join(", ")
+            },
+        );
+        quiet(
+            w,
+            body,
+            "Edit the list in the original Medousa app for now.",
+        );
+    }
+
+    heading(w, body, "Shell");
+    quiet(w, body, "Process sandbox — locked down until you open it.");
+    runtime_flag(w, body, s, &d, &r::SHELL_TOOLS, idle);
+    if s.shell_confirm {
+        label(
+            w,
+            body,
+            "No binaries are allowed-listed, so any command basename inside the jail can run. Turn agent shell tools on anyway?",
+            Typography::Label,
+        );
+        let row = panel(
+            w,
+            body,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 8.,
+                ..Layout::row()
+            },
+        );
+        button(
+            w,
+            row,
+            s,
+            "Turn on anyway",
+            Action::Agent(super::agent::Patch::Field(r::SHELL_TOOLS.key, true.into())),
+            idle,
+        );
+        button(w, row, s, "Keep off", Action::KeepShellOff, true);
+    } else if r::shell_unguarded(&d) {
+        quiet(
+            w,
+            body,
+            "Agents are unlocked with an empty binary allowlist — list trusted tools under Allowlists.",
+        );
+    }
+    runtime_flag(w, body, s, &d, &r::SHELL_NETWORK, idle);
+    runtime_num(w, body, s, &d, &r::SHELL_TIMEOUT, idle);
+    runtime_num(w, body, s, &d, &r::SHELL_OUTPUT, idle);
+    let binaries = r::list(&d, "shell_allowed_binaries");
+    let roots = r::list(&d, "shell_writable_roots");
+    if more(
+        w,
+        body,
+        s,
+        "runtime.allowlists",
+        "Allowlists",
+        if binaries.is_empty() {
+            "Any basename"
+        } else {
+            "Custom binaries"
+        },
+    ) {
+        let none = || "None".to_string();
+        fact(
+            w,
+            body,
+            "Allowed binaries",
+            &if binaries.is_empty() {
+                none()
+            } else {
+                binaries.join(", ")
+            },
+        );
+        fact(
+            w,
+            body,
+            "Writable roots",
+            &if roots.is_empty() {
+                none()
+            } else {
+                roots.join(", ")
+            },
+        );
+        quiet(
+            w,
+            body,
+            "Edit these lists in the original Medousa app for now.",
+        );
+    }
+
+    heading(w, body, "Engine");
+    quiet(w, body, "Diagnostics and where working memory lives.");
+    runtime_flag(w, body, s, &d, &r::THINKING, idle);
+    runtime_flag(w, body, s, &d, &r::TELEMETRY, idle);
+    runtime_num(w, body, s, &d, &r::THINKING_LINES, idle);
+    runtime_pick(w, body, s, &d, &r::BACKEND, "Host store", None, idle);
+    if more(
+        w,
+        body,
+        s,
+        "runtime.budgets",
+        "Tool budgets",
+        "Helpers, follow-ups, restricted mode",
+    ) {
+        quiet(
+            w,
+            body,
+            "Refine helper turns, follow-ups, and restricted mode. Per-turn cap is above.",
+        );
+        for num in &r::BUDGETS {
+            runtime_num(w, body, s, &d, num, idle);
+        }
+    }
+    if more(
+        w,
+        body,
+        s,
+        "runtime.quality",
+        "Quality",
+        "Retries and verifier floors",
+    ) {
+        for num in &r::QUALITY {
+            runtime_num(w, body, s, &d, num, idle);
+        }
+    }
+    let env = d["env_overrides"].as_str().unwrap_or_default();
+    let env_lines = env.lines().filter(|l| !l.trim().is_empty()).count();
+    if more(
+        w,
+        body,
+        s,
+        "runtime.env",
+        "Host env overrides",
+        &match env_lines {
+            0 => "None".to_string(),
+            1 => "1 variable".into(),
+            k => format!("{k} variables"),
+        },
+    ) {
+        // Only names: values may be secrets.
+        for line in env.lines().filter(|l| !l.trim().is_empty()) {
+            let name = line.split('=').next().unwrap_or_default().trim();
+            fact(w, body, name, "Set");
+        }
+        quiet(
+            w,
+            body,
+            "KEY=value per line, applied when a turn starts. Edit them in the original Medousa app for now.",
+        );
+    }
+    if s.patching.is_some() {
+        quiet(w, body, "Saving…");
+    }
+    if more(
+        w,
+        body,
+        s,
+        "runtime.more",
+        "More runtime settings",
+        "Computer control, activity, versions, capacity",
+    ) {
+        quiet(
+            w,
+            body,
+            "Computer control, world activity, Versions and worker capacity are coming to this app soon. Until then, change them in the original Medousa app.",
+        );
+    }
+}
+
 fn bar(w: &mut World, p: Entity, percent: f32) {
     let track = panel(
         w,
@@ -1860,6 +2236,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         Section::Mcp => mcp(w, s, body),
         Section::Accounts => accounts(w, s, body),
         Section::ExternalAgents => external_agents(w, s, body),
+        Section::Runtime => runtime_section(w, s, body),
         other => {
             debug_assert!(!other.ready());
             quiet(

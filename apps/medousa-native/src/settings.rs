@@ -15,6 +15,8 @@ use std::sync::{Arc, Mutex};
 pub(crate) mod agent;
 #[path = "settings_external.rs"]
 pub(crate) mod external;
+#[path = "settings_runtime.rs"]
+pub(crate) mod runtime;
 #[path = "settings_view.rs"]
 mod view;
 
@@ -89,6 +91,7 @@ impl Section {
             Section::Preferences
                 | Section::Accounts
                 | Section::Agent
+                | Section::Runtime
                 | Section::ExternalAgents
                 | Section::Packages
                 | Section::Mcp
@@ -130,6 +133,8 @@ enum Action {
     ConversationRotate(String),
     CopyCallbackKey,
     DismissCallbackKey,
+    /// Leaves agent shell tools off after the empty-allowlist warning.
+    KeepShellOff,
 }
 
 /// The active workshop as the registry describes it.
@@ -253,6 +258,9 @@ pub(crate) struct State {
     defaults: Option<serde_json::Value>,
     defaults_reading: Option<u64>,
     patching: Option<(u64, agent::Patch)>,
+    /// Agent shell tools were asked on with no binary allowlist; a second
+    /// press turns them on anyway.
+    shell_confirm: bool,
     /// The MCP gateway, its read, a change in flight, the server a Remove
     /// is waiting to be confirmed for, and edits that need a restart.
     mcp: Option<medousa_desktop_host::mcp::Status>,
@@ -377,6 +385,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         defaults: None,
         defaults_reading: None,
         patching: None,
+        shell_confirm: false,
         open: HashSet::new(),
         mcp: None,
         mcp_reading: None,
@@ -429,6 +438,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
     with_state(w, |w, s| {
         match a {
             Action::Section(section) => {
+                s.shell_confirm = false;
                 if section == Section::Connection && s.reading.is_empty() {
                     s.refresh();
                 }
@@ -448,7 +458,9 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                         s.refresh();
                     }
                 }
-                if section == Section::Agent && s.defaults_reading.is_none() {
+                if matches!(section, Section::Agent | Section::Runtime)
+                    && s.defaults_reading.is_none()
+                {
                     s.defaults_reading = Some(s.enqueue(Kind::Defaults));
                 }
                 s.section = section;
@@ -469,7 +481,22 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 }
             }
             Action::Agent(patch) => {
-                if s.patching.is_none() {
+                let unguarded = |s: &State| {
+                    s.defaults.as_ref().is_some_and(|d| {
+                        let mut d = d.clone();
+                        agent::apply(&mut d, &patch);
+                        runtime::shell_unguarded(&d)
+                    })
+                };
+                if s.patching.is_none()
+                    && patch == agent::Patch::Field(runtime::SHELL_TOOLS.key, true.into())
+                    && !s.shell_confirm
+                    && unguarded(s)
+                {
+                    // medousa-home asks before saving this; so does this app.
+                    s.shell_confirm = true;
+                } else if s.patching.is_none() {
+                    s.shell_confirm = false;
                     s.message.clear();
                     // Shown at once; the record confirms it.
                     if let Some(d) = s.defaults.as_mut() {
@@ -480,6 +507,8 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                         agent::Patch::Stance(_) => "stance",
                         agent::Patch::Depth(_) => "depth",
                         agent::Patch::Model(..) => "model",
+                        // A runtime picker is keyed by its field.
+                        agent::Patch::Field(key, _) => key,
                     });
                     let serial = s.enqueue(Kind::Patch(patch.clone()));
                     s.patching = Some((serial, patch));
@@ -620,11 +649,16 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 }
             }
             Action::Theme(id) => choose_theme(w, s, id),
+            Action::KeepShellOff => s.shell_confirm = false,
             Action::Refresh => {
                 if s.section == Section::Packages {
                     s.list_packages();
                 } else if s.section == Section::ExternalAgents {
                     s.read_agents();
+                } else if matches!(s.section, Section::Agent | Section::Runtime) {
+                    if s.defaults_reading.is_none() && s.patching.is_none() {
+                        s.defaults_reading = Some(s.enqueue(Kind::Defaults));
+                    }
                 } else {
                     s.refresh();
                 }
@@ -1125,7 +1159,7 @@ pub fn apply(w: &mut World, u: Update) {
             s.defaults_reading = None;
             match u.result {
                 Ok(Reply::Defaults(d)) if s.patching.is_none() => s.defaults = Some(d),
-                Err(e) => s.message = format!("Couldn’t read the agent settings: {e}"),
+                Err(e) => s.message = format!("Couldn’t read the workshop’s settings: {e}"),
                 _ => {}
             }
             s.redraw = true;
