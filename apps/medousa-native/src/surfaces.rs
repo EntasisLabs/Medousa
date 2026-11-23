@@ -17,7 +17,8 @@ const REVIEWS: u64 = 0x5355_0004;
 const CALENDAR: u64 = 0x5355_0005;
 const PEERS: u64 = 0x5355_0006;
 const CREATE: u64 = 0x5355_0007;
-const SURFACE_COUNT: usize = 7;
+const SETTINGS: u64 = 0x5355_0008;
+const SURFACE_COUNT: usize = 8;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SurfaceId {
     Chat,
@@ -27,6 +28,7 @@ pub enum SurfaceId {
     Reviews,
     Calendar,
     Peers,
+    Settings,
 }
 impl SurfaceId {
     fn index(self) -> usize {
@@ -38,6 +40,7 @@ impl SurfaceId {
             Self::Reviews => 4,
             Self::Calendar => 5,
             Self::Peers => 6,
+            Self::Settings => 7,
         }
     }
 }
@@ -90,7 +93,20 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         (REVIEWS, Icon::Check, "Reviews"),
         (CALENDAR, Icon::Clock, "Calendar"),
         (PEERS, Icon::MessageCircle, "Peers"),
+        (SETTINGS, Icon::Settings, "Settings"),
     ] {
+        // Settings sits at the foot of the rail, above the workshop glyph.
+        if command == SETTINGS {
+            panel(
+                world,
+                rail,
+                Layout {
+                    width: Size::Px(NAV_TARGET),
+                    height: Size::Fill,
+                    ..Layout::column()
+                },
+            );
+        }
         let tile = panel(
             world,
             rail,
@@ -170,7 +186,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         },
     );
     let roots = [
-        "Chat", "Notes", "Code", "Create", "Reviews", "Calendar", "Peers",
+        "Chat", "Notes", "Code", "Create", "Reviews", "Calendar", "Peers", "Settings",
     ]
     .map(|name| {
         let entity = panel(
@@ -191,6 +207,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     crate::reviews::mount(world, roots[4]);
     crate::calendar::mount(world, roots[5]);
     crate::peers::mount(world, roots[6]);
+    crate::settings::mount(world, roots[7]);
     for root in &roots[1..] {
         world.insert(*root, Hidden);
     }
@@ -261,6 +278,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Reviews => false,
         SurfaceId::Calendar => !crate::calendar::can_deactivate(world),
         SurfaceId::Peers => !crate::peers::can_deactivate(world),
+        SurfaceId::Settings => !crate::settings::can_deactivate(world),
     };
     if composing {
         return;
@@ -291,6 +309,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Reviews => crate::reviews::activate(world),
         SurfaceId::Calendar => crate::calendar::activate(world),
         SurfaceId::Peers => crate::peers::activate(world),
+        SurfaceId::Settings => crate::settings::activate(world),
     }
     frame_wake(world).wake();
 }
@@ -303,6 +322,7 @@ pub fn action(world: &mut World, intent: &HostIntent) -> bool {
         HostIntent::Command(REVIEWS) => SurfaceId::Reviews,
         HostIntent::Command(CALENDAR) => SurfaceId::Calendar,
         HostIntent::Command(PEERS) => SurfaceId::Peers,
+        HostIntent::Command(SETTINGS) => SurfaceId::Settings,
         _ => return false,
     };
     select(world, target);
@@ -431,6 +451,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4]) -> rndr_render::Raster {
         include_str!("nav_icons/reviews.svg"),
         include_str!("nav_icons/calendar.svg"),
         include_str!("nav_icons/users.svg"),
+        include_str!("nav_icons/settings.svg"),
     ][index];
     let color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
     let svg = source.replace("currentColor", &color).replace(
@@ -498,7 +519,8 @@ mod tests {
                     w.get::<Semantics>(button.root).unwrap().name.as_deref(),
                     Some(
                         [
-                            "Chat", "Notes", "Code", "Create", "Reviews", "Calendar", "Peers"
+                            "Chat", "Notes", "Code", "Create", "Reviews", "Calendar", "Peers",
+                            "Settings"
                         ][i]
                     )
                 );

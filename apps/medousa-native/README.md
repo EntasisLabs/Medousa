@@ -62,6 +62,12 @@ request or decision is retried with the same id. An open project re-reads
 itself every few seconds while nothing is unsaved, so edits from medousa-home
 or an accepted proposal appear without reopening it.
 
+**Settings** (the gear at the foot of the rail, or **⌘,**) has medousa-home's
+sections in the same groups. **Look** switches the theme at once and saves it
+for the active workshop, where medousa-home reads it too. **Connection** shows
+the active workshop, the engine's status and version, and this app's version.
+The other sections say they are still configured in the original app.
+
 The Chat surface contains a left conversation sidebar and native chat workspace.
 Session search/paging and mutations, model/mode/depth controls, source-document
 composition, typed history/stream rendering, attachments, runtime controls,

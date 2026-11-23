@@ -1,0 +1,416 @@
+//! Settings layout: medousa-home's section list on the left, the chosen
+//! section in a reading column on the right.
+use super::*;
+use crate::native_style as visual;
+use rndr_ui::{Token, Typography, UiColor, UiStyle, text};
+
+const TILE_W: f32 = 148.;
+const TILE_H: f32 = 76.;
+
+fn panel(w: &mut World, parent: Entity, layout: Layout) -> Entity {
+    let e = w.spawn((layout,));
+    set_parent(w, e, parent);
+    e
+}
+
+pub(super) fn mount(w: &mut World, root: Entity) -> (Entity, Entity) {
+    let nav = panel(
+        w,
+        root,
+        Layout {
+            width: Size::Px(232.),
+            height: Size::Fill,
+            gap: 2.,
+            ..Layout::column()
+        },
+    );
+    visual::navigation_frame(w, nav);
+    w.insert(nav, Scroll::default());
+    let scroll = panel(
+        w,
+        root,
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            min_width: 0.,
+            ..Layout::column()
+        },
+    );
+    w.insert(scroll, Scroll::default());
+    w.insert(
+        scroll,
+        Align {
+            items: Items::Center,
+            justify: Justify::Start,
+        },
+    );
+    let body = panel(
+        w,
+        scroll,
+        Layout {
+            width: Size::Px(720.),
+            height: Size::Hug,
+            padding: 28.,
+            gap: 10.,
+            ..Layout::column()
+        },
+    );
+    (nav, body)
+}
+
+fn label(w: &mut World, p: Entity, value: &str, kind: Typography) -> Entity {
+    let e = text(w, p, value, kind).unwrap();
+    w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+    w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Wrap;
+    e
+}
+
+fn quiet(w: &mut World, p: Entity, value: &str) -> Entity {
+    let e = label(w, p, value, Typography::Secondary);
+    w.insert(
+        e,
+        UiStyle {
+            foreground: Some(Token::Tertiary.into()),
+            ..Default::default()
+        },
+    );
+    e
+}
+
+fn heading(w: &mut World, p: Entity, value: &str) {
+    panel(
+        w,
+        p,
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(6.),
+            ..Layout::row()
+        },
+    );
+    label(w, p, value, Typography::Emphasis);
+}
+
+fn button(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    name: &str,
+    a: Action,
+    enabled: bool,
+) -> rndr_ui::controls::ControlHandle {
+    let id = next();
+    let h = visual::document_action(w, p, id, name, enabled);
+    s.actions.insert(id, a);
+    h
+}
+
+/// The chosen row or tile sits on the selected wash, face and border alike.
+fn mark(w: &mut World, root: Entity) {
+    if let Some(face) = visual::label_face(w, root) {
+        visual::plane(w, face, Token::Selected);
+        if let Some(border) = w.get::<Parent>(face).map(|p| p.entity)
+            && border != root
+        {
+            visual::plane(w, border, Token::Selected);
+        }
+    }
+    if let Some(sem) = w.get_mut::<Semantics>(root) {
+        sem.description = "Selected".into();
+    }
+}
+
+fn nav(w: &mut World, s: &mut State) {
+    let nav = s.nav;
+    label(w, nav, "Settings", Typography::Emphasis);
+    let mut group = None;
+    for section in Section::ALL {
+        if group != Some(section.machine()) {
+            group = Some(section.machine());
+            let name = if section.machine() {
+                "This Mac"
+            } else {
+                "Medousa"
+            };
+            let h = label(w, nav, name, Typography::Secondary);
+            visual::section_heading(w, h);
+        }
+        let h = button(w, nav, s, section.label(), Action::Section(section), true);
+        w.get_mut::<Layout>(h.root).unwrap().width = Size::Fill;
+        w.remove::<visual::FitLabel>(h.root);
+        if section == s.section {
+            mark(w, h.root);
+        }
+        if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+            sem.description = section.hint().into();
+        }
+    }
+}
+
+/// A theme tile: the theme's canvas, chrome and action colors over its name,
+/// drawn on a quiet button that keeps focus, hover and activation.
+fn tile(w: &mut World, p: Entity, s: &mut State, swatch: &crate::theme::Swatch, dark: bool) {
+    let h = button(
+        w,
+        p,
+        s,
+        &swatch.label,
+        Action::Theme(swatch.id.clone()),
+        true,
+    );
+    w.remove::<visual::FitLabel>(h.root);
+    *w.get_mut::<Layout>(h.root).unwrap() = Layout {
+        width: Size::Px(TILE_W),
+        height: Size::Px(TILE_H),
+        ..Layout::column()
+    };
+    // The name is drawn below; the label keeps only the accessible name.
+    w.insert(
+        h.label,
+        UiStyle {
+            foreground: Some(UiColor::Explicit(Color::rgba(0., 0., 0., 0.))),
+            ..Default::default()
+        },
+    );
+    // Every inner layer fills the tile, so hover and the selected wash cover
+    // all of it rather than a strip at the top.
+    let mut layers = children_of(w, h.root);
+    while let Some(layer) = layers.pop() {
+        if let Some(l) = w.get_mut::<Layout>(layer) {
+            l.width = Size::Fill;
+            l.height = Size::Fill;
+        }
+        layers.extend(children_of(w, layer));
+    }
+    if s.theme == swatch.id {
+        mark(w, h.root);
+    }
+    let colors = if dark { swatch.dark } else { swatch.light };
+    let strip = w.spawn((
+        Layout {
+            width: Size::Px(TILE_W - 20.),
+            height: Size::Px(26.),
+            gap: 0.,
+            ..Layout::row()
+        },
+        Absolute {
+            left: Some(10.),
+            top: Some(10.),
+            ..Default::default()
+        },
+        Radius(6.),
+        Border {
+            color: Color::rgba(0., 0., 0., 0.18),
+            width: 1.,
+        },
+    ));
+    set_parent(w, strip, h.root);
+    for (i, color) in colors.into_iter().enumerate() {
+        let block = w.spawn((
+            Layout {
+                width: if i == 2 { Size::Px(28.) } else { Size::Fill },
+                height: Size::Fill,
+                ..Layout::row()
+            },
+            color,
+        ));
+        set_parent(w, block, strip);
+    }
+    let name = text(w, h.root, &swatch.label, Typography::Secondary).unwrap();
+    w.insert(
+        name,
+        Absolute {
+            left: Some(10.),
+            top: Some(44.),
+            ..Default::default()
+        },
+    );
+    w.insert(name, LabelBox::CONTENT);
+}
+
+fn look(w: &mut World, s: &mut State, body: Entity) {
+    heading(w, body, "Look");
+    quiet(
+        w,
+        body,
+        "Applies at once and is saved for this workshop, so Medousa opens in it everywhere. Light and dark follow your system.",
+    );
+    let dark = w
+        .resource::<rndr_ui::UiTheme>()
+        .is_some_and(|t| t.appearance == rndr_ui::Appearance::Dark);
+    let grid = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 8.,
+            ..Layout::row()
+        },
+    );
+    w.insert(grid, Wrap { line_gap: 8. });
+    for swatch in crate::theme::swatches() {
+        tile(w, grid, s, &swatch, dark);
+    }
+    if s.saving.is_some() {
+        quiet(w, body, "Saving…");
+    }
+    heading(w, body, "More preferences");
+    quiet(
+        w,
+        body,
+        "Code, task activity, proofreading and everyday options are coming to this app soon. Until then, change them in the original Medousa app.",
+    );
+}
+
+/// One fact: a quiet name and its value on the same line.
+fn fact(w: &mut World, p: Entity, name: &str, value: &str) {
+    let row = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 12.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        row,
+        Align {
+            items: Items::Center,
+            justify: Justify::Start,
+        },
+    );
+    let n = text(w, row, name, Typography::Secondary).unwrap();
+    w.get_mut::<Layout>(n).unwrap().width = Size::Px(180.);
+    w.insert(
+        n,
+        UiStyle {
+            foreground: Some(Token::Tertiary.into()),
+            ..Default::default()
+        },
+    );
+    let v = text(w, row, value, Typography::Label).unwrap();
+    w.get_mut::<Layout>(v).unwrap().width = Size::Fill;
+    w.get_mut::<Label>(v).unwrap().overflow = TextOverflow::Wrap;
+}
+
+fn connection(w: &mut World, s: &mut State, body: Entity) {
+    let top = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 8.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        top,
+        Align {
+            items: Items::Center,
+            justify: Justify::SpaceBetween,
+        },
+    );
+    let h = text(w, top, "Workshop", Typography::Emphasis).unwrap();
+    w.get_mut::<Layout>(h).unwrap().width = Size::Fill;
+    let reading = !s.reading.is_empty();
+    button(w, top, s, "Refresh", Action::Refresh, !reading);
+    match s.workshop.clone() {
+        Some(ws) => {
+            fact(w, body, "Name", &ws.label);
+            let kind = if ws.kind == "local" {
+                "On this Mac".to_string()
+            } else {
+                format!("Remote ({})", ws.kind)
+            };
+            fact(w, body, "Where", &kind);
+            fact(w, body, "Address", &ws.url);
+            if let Some(dir) = ws.data_dir.filter(|d| !d.trim().is_empty()) {
+                fact(w, body, "Files", &dir);
+            }
+        }
+        None if reading => {
+            quiet(w, body, "Reading…");
+        }
+        None => {
+            quiet(w, body, "No active workshop is set up.");
+        }
+    }
+    heading(w, body, "Engine");
+    match s.health.clone() {
+        Some(h) => {
+            fact(w, body, "Status", &h.status);
+            let build = if h.runtime.build_revision.trim().is_empty() {
+                h.runtime.product_version.clone()
+            } else {
+                format!(
+                    "{} ({})",
+                    h.runtime.product_version, h.runtime.build_revision
+                )
+            };
+            fact(w, body, "Version", &build);
+            if !h.active_profile_display_name.is_empty() {
+                fact(w, body, "Profile", &h.active_profile_display_name);
+            }
+            fact(w, body, "Tools", &h.tool_registry_count.to_string());
+            if let Some(ms) = h.last_agent_turn_latency_ms {
+                fact(w, body, "Last reply", &format!("{ms} ms"));
+            }
+            fact(w, body, "Backend", &h.backend);
+        }
+        None if reading => {
+            quiet(w, body, "Checking the engine…");
+        }
+        None => {
+            quiet(
+                w,
+                body,
+                "The engine didn’t answer. Check that the workshop is running, then refresh.",
+            );
+        }
+    }
+    heading(w, body, "This app");
+    fact(w, body, "Version", env!("CARGO_PKG_VERSION"));
+    quiet(
+        w,
+        body,
+        "Switching, adding or repairing workshops still happens in the original Medousa app for now.",
+    );
+}
+
+pub(super) fn render(w: &mut World, s: &mut State) {
+    if w.resource::<Focus>()
+        .and_then(|f| f.entity)
+        .is_some_and(|e| crate::surfaces::descendant(w, e, s.root))
+    {
+        w.resource_mut::<Focus>().unwrap().entity = None;
+    }
+    for root in [s.nav, s.body] {
+        for e in children_of(w, root) {
+            despawn(w, e);
+        }
+    }
+    s.actions.clear();
+    nav(w, s);
+    let body = s.body;
+    label(w, body, s.section.label(), Typography::Title);
+    quiet(w, body, s.section.hint());
+    if !s.message.is_empty() {
+        let m = s.message.clone();
+        label(w, body, &m, Typography::Secondary);
+    }
+    match s.section {
+        Section::Preferences => look(w, s, body),
+        Section::Connection => connection(w, s, body),
+        other => {
+            debug_assert!(!other.ready());
+            quiet(
+                w,
+                body,
+                "Coming to this app soon. Until then, change these in the original Medousa app.",
+            );
+        }
+    }
+}

@@ -160,6 +160,59 @@ pub fn resolve(id: &str) -> MedousaTheme {
     }
 }
 
+/// One catalog theme as a picker shows it: id, name, and canvas, chrome and
+/// action colors for each appearance.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Swatch {
+    pub id: String,
+    pub label: String,
+    pub dark: [Color; 3],
+    pub light: [Color; 3],
+}
+
+/// Every catalog theme, in medousa-home's order.
+pub fn swatches() -> Vec<Swatch> {
+    let catalog = catalog();
+    let colors = |v: &Value| {
+        let v = Variant(v);
+        [v.role("canvas"), v.role("chrome"), v.role("action")]
+    };
+    catalog["themes"]
+        .as_array()
+        .expect("theme list")
+        .iter()
+        .map(|t| Swatch {
+            id: t["id"].as_str().unwrap_or_default().to_string(),
+            label: t["label"].as_str().unwrap_or_default().to_string(),
+            dark: colors(&t["dark"]),
+            light: colors(&t["light"]),
+        })
+        .collect()
+}
+
+/// Saves `id` as the active workshop's theme in the registry medousa-home
+/// reads, so both shells open in it. Blocking file IO: run off the frame.
+pub fn save_active_id(id: &str) -> Result<(), String> {
+    use medousa_desktop_host::workshop_registry::{load_registry, save_registry};
+    let mut registry = load_registry()?;
+    let active = registry.active_workshop_id.clone();
+    let workshop = registry
+        .workshops
+        .iter_mut()
+        .find(|w| w.id == active)
+        .ok_or("No active workshop to save the theme for")?;
+    let mut state = workshop.client_state.clone().unwrap_or(
+        medousa_desktop_host::workshop_registry::WorkshopClientState {
+            last_session_id: None,
+            color_theme_id: None,
+        },
+    );
+    state.color_theme_id = Some(id.to_string());
+    workshop.client_state = Some(state);
+    workshop.updated_at = medousa_desktop_host::workshop_registry::now_iso();
+    save_registry(&registry)
+}
+
 /// The theme chosen in Medousa for the active workshop, shared with
 /// medousa-home through the workshop registry. Read-only: this never migrates
 /// or saves the registry. Unreadable or unset → default.

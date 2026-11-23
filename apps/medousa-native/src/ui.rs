@@ -202,6 +202,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Update, update);
     app.add_system(Schedule::Update, workshop_status::update);
     app.add_system(Schedule::Update, command_palette::update);
+    app.add_system(Schedule::Update, crate::settings::update);
     app.add_system(Schedule::Layout, workspace::chrome);
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
     app.add_system(Schedule::Layout, crate::calendar::chrome);
@@ -1345,6 +1346,12 @@ fn update(world: &mut World) {
                 }
                 continue;
             }
+            crate::surfaces::SurfaceId::Settings => {
+                if let Some(host) = host {
+                    crate::settings::action(world, &host);
+                }
+                continue;
+            }
             crate::surfaces::SurfaceId::Peers => {
                 if let Some(host) = host {
                     crate::peers::action(world, &host);
@@ -1400,6 +1407,7 @@ fn update(world: &mut World) {
     crate::reviews::sync(world);
     crate::calendar::sync(world);
     crate::create::sync(world);
+    crate::settings::sync(world);
     crate::peers::sync(world);
     auxiliary::dispatch(world);
     // Every adapter above reads canonical SourceSession text/revision, not its

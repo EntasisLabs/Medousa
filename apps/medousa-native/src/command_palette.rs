@@ -20,7 +20,7 @@ const CONVERSATION: u64 = 0x504c_1000;
 /// Recent conversations offered without typing a search.
 const RECENT: usize = 50;
 
-const DESTINATIONS: [(crate::surfaces::SurfaceId, Icon, &str); 7] = {
+const DESTINATIONS: [(crate::surfaces::SurfaceId, Icon, &str); 8] = {
     use crate::surfaces::SurfaceId::*;
     [
         (Chat, Icon::MessageCircle, "Go to Chat"),
@@ -30,6 +30,7 @@ const DESTINATIONS: [(crate::surfaces::SurfaceId, Icon, &str); 7] = {
         (Reviews, Icon::Check, "Go to Reviews"),
         (Calendar, Icon::Calendar, "Go to Calendar"),
         (Peers, Icon::Users, "Go to Peers"),
+        (Settings, Icon::Settings, "Open Settings"),
     ]
 };
 

@@ -376,6 +376,17 @@ pub fn sync(w: &mut World) {
         {
             f.entity = None;
         }
+        // Follow the theme, including a switch from Settings or the system.
+        let backdrop = crate::native_style::color(w, crate::native_style::canvas());
+        let overlay = w
+            .resource::<rndr_ui::UiTheme>()
+            .map(rndr_canvas_ui::overlay::OverlayTheme::from_theme);
+        if let Some(v) = w.resource_mut::<CanvasView>() {
+            v.backdrop = backdrop;
+            if let Some(overlay) = overlay {
+                v.overlay = overlay;
+            }
+        }
         let elsewhere = w.resource::<Focus>().and_then(|f| f.entity).is_some();
         let held = if elsewhere {
             w.resource_mut::<Input>()

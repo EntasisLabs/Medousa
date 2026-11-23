@@ -16,6 +16,7 @@ mod peers;
 mod provider_timeline;
 mod reviews;
 mod runtimes;
+mod settings;
 mod surfaces;
 mod terminal;
 mod theme;
