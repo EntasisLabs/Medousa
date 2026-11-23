@@ -1014,3 +1014,158 @@ fn a_proposal_from_a_conversation_waits_on_the_canvas() {
         (ask::Source::Proposal, "p1", false)
     );
 }
+
+/// Presses and releases the pointer at the center of the control named `name`.
+fn click_named(app: &mut App, name: &str) {
+    for _ in 0..3 {
+        app.update();
+    }
+    let w = app.world();
+    let target = w
+        .entities_with::<Semantics>()
+        .into_iter()
+        .filter(|e| !hidden(w, *e) && w.has::<Focusable>(*e))
+        .find(|e| w.get::<Semantics>(*e).and_then(|s| s.name.as_deref()) == Some(name))
+        .unwrap_or_else(|| panic!("{name} shown"));
+    let r = *w.get::<Rect>(target).unwrap();
+    let at = [r.x + r.w / 2., r.y + r.h / 2.];
+    let input = app.world_mut().resource_mut::<Input>().unwrap();
+    input.pointer.position = at;
+    input.pointer.press_at = Some(at);
+    input.pointer.pressed = true;
+    input.pointer.down = true;
+    input.pointer.button = PointerButton::Left;
+    app.update();
+    let input = app.world_mut().resource_mut::<Input>().unwrap();
+    input.pointer.pressed = false;
+    input.pointer.down = false;
+    input.pointer.released = true;
+    app.update();
+    let input = app.world_mut().resource_mut::<Input>().unwrap();
+    input.pointer.released = false;
+    app.update();
+}
+
+#[test]
+fn canvas_controls_answer_real_clicks() {
+    let mut app = opened();
+    click_named(&mut app, "Draw (P)");
+    assert_eq!(editor(app.world()).tool(), Tool::Pen);
+    click_named(&mut app, "Style");
+    assert!(
+        shown(app.world()).iter().any(|n| n == "Blue"),
+        "palette opened"
+    );
+    click_named(&mut app, "Zoom in");
+    assert!(editor(app.world()).camera.zoom > 1.0);
+    click_named(&mut app, "Shapes (R)");
+    click_named(&mut app, "Ellipse");
+    assert_eq!(editor(app.world()).tool(), Tool::Ellipse);
+    click_named(&mut app, "Details");
+    assert!(shown(app.world()).iter().any(|n| n == "Hide layer"));
+    click_named(&mut app, "Ask Medousa");
+    assert!(state(app.world()).unwrap().ask.open);
+    click_named(&mut app, "Close Ask Medousa");
+    assert!(!state(app.world()).unwrap().ask.open);
+    // A selection-bar action edits the document.
+    click_named(&mut app, "Select (V)");
+    let frame = editor(app.world()).nodes()[0].id.clone();
+    app.world_mut()
+        .resource_mut::<CanvasView>()
+        .unwrap()
+        .editor
+        .select(std::slice::from_ref(&frame));
+    click_named(&mut app, "Duplicate selection");
+    assert_eq!(editor(app.world()).nodes().len(), 2);
+}
+
+#[test]
+fn a_click_on_bare_canvas_still_takes_focus_from_the_sidebar() {
+    let mut app = opened();
+    let sidebar = state(app.world()).unwrap().sidebar;
+    app.world_mut().resource_mut::<Focus>().unwrap().entity = Some(sidebar);
+    let slot = state(app.world()).unwrap().slot;
+    let r = *app.world().get::<Rect>(slot).unwrap();
+    // Middle of the canvas, clear of every floating control.
+    let at = [r.x + r.w / 2., r.y + r.h / 2.];
+    assert_eq!(hit_test(app.world(), at[0], at[1]), Some(slot));
+    let input = app.world_mut().resource_mut::<Input>().unwrap();
+    input.pointer.position = at;
+    input.pointer.press_at = Some(at);
+    input.pointer.pressed = true;
+    input.pointer.down = true;
+    app.update();
+    assert_eq!(app.world().resource::<Focus>().unwrap().entity, None);
+}
+
+fn pointer(app: &mut App, at: [f32; 2], pressed: bool, down: bool, released: bool) {
+    let input = app.world_mut().resource_mut::<Input>().unwrap();
+    input.pointer.position = at;
+    if pressed {
+        input.pointer.press_at = Some(at);
+    }
+    input.pointer.pressed = pressed;
+    input.pointer.down = down;
+    input.pointer.released = released;
+    input.pointer.button = PointerButton::Left;
+    app.update();
+}
+
+#[test]
+fn drawing_and_selecting_on_the_canvas_with_the_pointer() {
+    let mut app = opened();
+    click_named(&mut app, "Shapes (R)");
+    click_named(&mut app, "Rectangle");
+    assert_eq!(editor(app.world()).tool(), Tool::Rectangle);
+    let slot = state(app.world()).unwrap().slot;
+    let r = *app.world().get::<Rect>(slot).unwrap();
+    let a = [r.x + r.w * 0.3, r.y + r.h * 0.3];
+    let b = [r.x + r.w * 0.5, r.y + r.h * 0.5];
+    let before = editor(app.world()).nodes().len();
+    pointer(&mut app, a, true, true, false);
+    pointer(&mut app, b, false, true, false);
+    pointer(&mut app, b, false, false, true);
+    pointer(&mut app, b, false, false, false);
+    let e = editor(app.world());
+    eprintln!(
+        "tool {:?} nodes {} sel {:?} err {:?}",
+        e.tool(),
+        e.nodes().len(),
+        e.selection(),
+        e.last_error()
+    );
+    assert_eq!(e.nodes().len(), before + 1, "a rectangle was drawn");
+    // Clicking the new shape with Select picks it, even as one fast click.
+    click_named(&mut app, "Select (V)");
+    app.world_mut()
+        .resource_mut::<CanvasView>()
+        .unwrap()
+        .editor
+        .select(&[]);
+    // On the left edge: an unfilled shape is picked by its outline.
+    let mid = [a[0], (a[1] + b[1]) / 2.];
+    let input = app.world_mut().resource_mut::<Input>().unwrap();
+    input.pointer.position = mid;
+    input.pointer.press_at = Some(mid);
+    input.pointer.pressed = true;
+    input.pointer.down = false;
+    input.pointer.released = true;
+    app.update();
+    let e = editor(app.world());
+    eprintln!("after click sel {:?}", e.selection());
+    assert_eq!(e.selection().len(), 1, "fast click selects");
+}
+
+#[test]
+fn canvas_controls_survive_a_sidebar_redraw() {
+    let mut app = opened();
+    for _ in 0..3 {
+        app.update();
+    }
+    // The sidebar redraws on its own, as after each background re-read,
+    // without the canvas controls rebuilding.
+    state_mut(app.world_mut()).unwrap().redraw = true;
+    app.update();
+    click_named(&mut app, "Draw (P)");
+    assert_eq!(editor(app.world()).tool(), Tool::Pen);
+}

@@ -362,15 +362,16 @@ pub fn take_wheel(w: &mut World) {
 pub fn sync(w: &mut World) {
     let active = crate::surfaces::active(w) == crate::surfaces::SurfaceId::Create;
     if active && w.resource::<CanvasView>().is_some() {
-        // A press on the canvas takes keyboard focus from the sidebar.
+        // A press on the canvas itself takes keyboard focus from the
+        // sidebar. Not a press on the controls floating over it: clearing
+        // focus there cancels the button's own press before it activates.
         let pressed = w.resource::<Input>().and_then(|i| {
             let p = &i.pointer;
             p.pressed.then_some(p.position)
         });
         let slot = state(w).map(|s| s.slot);
         if let (Some([x, y]), Some(slot)) = (pressed, slot)
-            && w.get::<Rect>(slot)
-                .is_some_and(|r| x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h)
+            && hit_test(w, x, y) == Some(slot)
             && let Some(f) = w.resource_mut::<Focus>()
         {
             f.entity = None;

@@ -170,7 +170,10 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     {
         despawn(w, e);
     }
-    s.actions.clear();
+    // Only the sidebar's own actions: the canvas controls share this table and
+    // are rebuilt on their own schedule, so clearing them here left every
+    // floating button pointing at an id that no longer did anything.
+    s.actions.retain(|_, a| matches!(a, Action::Canvas(_)));
     let sidebar = s.sidebar;
     let header = panel(
         w,

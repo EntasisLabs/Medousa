@@ -1087,6 +1087,12 @@ fn ask_panel(w: &mut World, s: &mut State, bottom: Entity, n: &Snapshot, typing:
             k => format!("{k} objects selected"),
         },
     );
+    // The caption takes what the close button leaves and wraps; at its
+    // natural width a long one pushed the button out of the panel.
+    if let Some(text) = children_of(w, header).last().copied() {
+        w.get_mut::<Layout>(text).unwrap().width = Size::Fill;
+        w.get_mut::<Label>(text).unwrap().overflow = TextOverflow::Wrap;
+    }
     icon(
         w,
         header,
