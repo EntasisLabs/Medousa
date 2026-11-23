@@ -176,7 +176,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -279,6 +279,35 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "packages");
+        crate::ui::set_models(
+            app.world_mut(),
+            vec![
+                ("anthropic".into(), "claude-opus-5-5".into()),
+                ("anthropic".into(), "claude-sonnet-5-5".into()),
+                ("openai".into(), "gpt-6".into()),
+            ],
+        );
+        with_state(app.world_mut(), |_, s| {
+            s.section = Section::Agent;
+            s.busy = None;
+            s.defaults_reading = None;
+            s.models_open = true;
+            s.defaults = Some(serde_json::json!({
+                "active_voice_id": "direct",
+                "response_depth_mode": "deep",
+                "provider": "anthropic",
+                "model": "claude-opus-5-5",
+                "inference_profiles": {
+                    "main": {"provider": "anthropic", "model": "claude-opus-5-5", "fallbacks": []},
+                    "stt": {"provider": "openai", "model": "whisper-2", "fallbacks": []}
+                }
+            }));
+            s.redraw = true;
+        });
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "agent");
     }
 }
 
@@ -393,4 +422,78 @@ fn installing_shows_progress_then_reads_the_catalog_again() {
         s.listing.is_some(),
         "installed state is read from disk again"
     );
+}
+
+fn agent_open() -> App {
+    let mut app = app();
+    crate::ui::set_models(
+        app.world_mut(),
+        vec![
+            ("anthropic".into(), "claude-opus-5-5".into()),
+            ("openai".into(), "gpt-6".into()),
+        ],
+    );
+    click(&mut app, "Medousa Agent");
+    let w = app.world_mut();
+    let read = state(w).unwrap().defaults_reading.expect("read on open");
+    apply(
+        w,
+        Update {
+            serial: read,
+            result: Ok(Reply::Defaults(serde_json::json!({
+                "active_voice_id": "default",
+                "response_depth_mode": "standard",
+                "provider": "anthropic",
+                "model": "claude-opus-5-5",
+                "inference_profiles": {"main": {"provider": "anthropic", "model": "claude-opus-5-5", "fallbacks": []}}
+            }))),
+        },
+    );
+    app.update();
+    app
+}
+
+#[test]
+fn stance_and_depth_save_to_the_workshop_defaults() {
+    let mut app = agent_open();
+    let t = texts(app.world());
+    assert!(
+        t.iter()
+            .any(|x| x == "Default · Standard · claude-opus-5-5"),
+        "{t:?}"
+    );
+    click(&mut app, "Direct");
+    let s = state(app.world()).unwrap();
+    assert_eq!(
+        agent::stance(s.defaults.as_ref().unwrap()),
+        "direct",
+        "shown at once"
+    );
+    let (serial, patch) = s.patching.clone().expect("saved through the worker");
+    assert_eq!(patch, agent::Patch::Stance("direct".into()));
+    // A failed write re-reads what the record really holds.
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Err("409".into()),
+        },
+    );
+    let s = state(app.world()).unwrap();
+    assert!(s.message.starts_with("That change wasn’t saved"));
+    assert!(s.defaults_reading.is_some());
+}
+
+#[test]
+fn the_conversation_model_is_picked_from_the_engine_models() {
+    let mut app = agent_open();
+    click(&mut app, "Change");
+    click(&mut app, "gpt-6 · openai");
+    let s = state(app.world()).unwrap();
+    assert_eq!(
+        agent::role(s.defaults.as_ref().unwrap(), "main"),
+        Some(("openai".into(), "gpt-6".into()))
+    );
+    assert!(!s.models_open, "the list closes on a pick");
+    assert!(matches!(s.patching, Some((_, agent::Patch::Model(..)))));
 }

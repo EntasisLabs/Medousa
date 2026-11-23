@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+#[path = "settings_agent.rs"]
+pub(crate) mod agent;
 #[path = "settings_view.rs"]
 mod view;
 
@@ -82,7 +84,7 @@ impl Section {
     pub(crate) fn ready(self) -> bool {
         matches!(
             self,
-            Section::Preferences | Section::Packages | Section::Connection
+            Section::Preferences | Section::Agent | Section::Packages | Section::Connection
         )
     }
 }
@@ -95,6 +97,9 @@ enum Action {
     Install(String),
     Remove(String),
     OpenInstaller,
+    Agent(agent::Patch),
+    /// Shows or hides the conversation model list.
+    Models,
 }
 
 /// The active workshop as the registry describes it.
@@ -119,6 +124,8 @@ enum Kind {
     Install(String, Arc<Mutex<Option<Progress>>>),
     Remove(String),
     OpenInstaller,
+    Defaults,
+    Patch(agent::Patch),
 }
 pub struct Update {
     serial: u64,
@@ -130,6 +137,7 @@ enum Reply {
     Saved,
     Packages(Catalog),
     Done,
+    Defaults(serde_json::Value),
 }
 
 pub(crate) struct State {
@@ -152,6 +160,11 @@ pub(crate) struct State {
     progress: Arc<Mutex<Option<Progress>>>,
     /// Frames kept running while an install reports progress.
     animating: Option<bool>,
+    /// The workshop's runtime defaults, their read, and a change in flight.
+    defaults: Option<serde_json::Value>,
+    defaults_reading: Option<u64>,
+    patching: Option<(u64, agent::Patch)>,
+    models_open: bool,
     actions: HashMap<u64, Action>,
     queue: Vec<Command>,
     redraw: bool,
@@ -224,6 +237,10 @@ pub fn mount(w: &mut World, parent: Entity) {
         busy: None,
         progress: Arc::new(Mutex::new(None)),
         animating: None,
+        defaults: None,
+        defaults_reading: None,
+        patching: None,
+        models_open: false,
         actions: HashMap::new(),
         queue: vec![],
         redraw: true,
@@ -264,6 +281,9 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 if section == Section::Packages && s.packages.is_none() && s.listing.is_none() {
                     s.list_packages();
                 }
+                if section == Section::Agent && s.defaults_reading.is_none() {
+                    s.defaults_reading = Some(s.enqueue(Kind::Defaults));
+                }
                 s.section = section;
             }
             Action::Install(id) => {
@@ -281,6 +301,21 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     s.busy = Some((serial, id));
                 }
             }
+            Action::Agent(patch) => {
+                if s.patching.is_none() {
+                    s.message.clear();
+                    // Shown at once; the record confirms it.
+                    if let Some(d) = s.defaults.as_mut() {
+                        agent::apply(d, &patch);
+                    }
+                    if matches!(patch, agent::Patch::Model(..)) {
+                        s.models_open = false;
+                    }
+                    let serial = s.enqueue(Kind::Patch(patch.clone()));
+                    s.patching = Some((serial, patch));
+                }
+            }
+            Action::Models => s.models_open = !s.models_open,
             Action::OpenInstaller => {
                 if s.busy.is_none() {
                     s.message.clear();
@@ -393,6 +428,8 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
                 .map_err(|e| e.to_string())
                 .and_then(|r| r.map(|()| Reply::Saved))
         }
+        Kind::Defaults => agent::read(client).await.map(Reply::Defaults),
+        Kind::Patch(patch) => agent::write(client, &patch).await.map(Reply::Defaults),
         Kind::Packages => Ok(Reply::Packages(
             medousa_desktop_host::packages::catalog().await,
         )),
@@ -422,6 +459,33 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
 
 pub fn apply(w: &mut World, u: Update) {
     with_state(w, |_, s| {
+        if s.defaults_reading == Some(u.serial) {
+            s.defaults_reading = None;
+            match u.result {
+                Ok(Reply::Defaults(d)) if s.patching.is_none() => s.defaults = Some(d),
+                Err(e) => s.message = format!("Couldn’t read the agent settings: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.patching
+            .as_ref()
+            .is_some_and(|(serial, _)| *serial == u.serial)
+        {
+            s.patching = None;
+            match u.result {
+                Ok(Reply::Defaults(d)) => s.defaults = Some(d),
+                Err(e) => {
+                    s.message = format!("That change wasn’t saved: {e}");
+                    // Show what the record really holds.
+                    s.defaults_reading = Some(s.enqueue(Kind::Defaults));
+                }
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
         if s.listing == Some(u.serial) {
             s.listing = None;
             match u.result {
@@ -458,7 +522,7 @@ pub fn apply(w: &mut World, u: Update) {
         match u.result {
             Ok(Reply::Health(h)) => s.health = Some(*h),
             Ok(Reply::Workshop(w)) => s.workshop = w,
-            Ok(Reply::Saved | Reply::Packages(_) | Reply::Done) => {}
+            Ok(Reply::Saved | Reply::Packages(_) | Reply::Done | Reply::Defaults(_)) => {}
             Err(e) if reading => s.message = format!("Couldn’t read the connection: {e}"),
             Err(e) => {
                 s.message = format!("The theme is applied here but wasn’t saved for next time: {e}")

@@ -382,6 +382,221 @@ fn connection(w: &mut World, s: &mut State, body: Entity) {
     );
 }
 
+/// A titled choice with a hint, as medousa-home's preference choices.
+#[allow(clippy::too_many_arguments)]
+fn choice(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    name: &str,
+    hint: &str,
+    a: Action,
+    chosen: bool,
+    enabled: bool,
+) {
+    let h = button(w, p, s, name, a, enabled);
+    w.remove::<visual::FitLabel>(h.root);
+    w.get_mut::<Layout>(h.root).unwrap().width = Size::Px(200.);
+    if chosen {
+        mark(w, h.root);
+    }
+    if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+        sem.description = if chosen {
+            format!("Selected. {hint}")
+        } else {
+            hint.to_string()
+        };
+    }
+}
+
+fn agent_section(w: &mut World, s: &mut State, body: Entity) {
+    use super::agent::{self as a, Patch};
+    let Some(defaults) = s.defaults.clone() else {
+        quiet(
+            w,
+            body,
+            if s.defaults_reading.is_some() {
+                "Reading…"
+            } else {
+                "The engine didn’t answer. Check the workshop, then come back."
+            },
+        );
+        return;
+    };
+    let stance = a::stance(&defaults);
+    let depth = a::depth(&defaults);
+    let stances = a::stances(&defaults);
+    let main = a::role(&defaults, "main");
+    let stance_name = stances
+        .iter()
+        .find(|(id, ..)| *id == stance)
+        .map_or(stance.clone(), |(_, n, _)| n.clone());
+    let depth_name = a::DEPTHS
+        .iter()
+        .find(|(id, ..)| *id == depth)
+        .map_or(depth.clone(), |(_, n, _)| n.to_string());
+    let model_name = main
+        .as_ref()
+        .map_or("No model chosen".into(), |(_, m)| m.clone());
+    quiet(
+        w,
+        body,
+        &format!("{stance_name} · {depth_name} · {model_name}"),
+    );
+    let idle = s.patching.is_none();
+
+    heading(w, body, "Answers");
+    quiet(
+        w,
+        body,
+        "Stance and how deep she goes. Saved for this workshop.",
+    );
+    let grid = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    w.insert(grid, Wrap { line_gap: 6. });
+    for (id, name, hint) in &stances {
+        choice(
+            w,
+            grid,
+            s,
+            name,
+            hint,
+            Action::Agent(Patch::Stance(id.clone())),
+            *id == stance,
+            idle,
+        );
+    }
+    let stance_hint = stances
+        .iter()
+        .find(|(id, ..)| *id == stance)
+        .map(|(_, _, h)| h.clone())
+        .unwrap_or_default();
+    if !stance_hint.is_empty() {
+        quiet(w, body, &stance_hint);
+    }
+    let grid = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    w.insert(grid, Wrap { line_gap: 6. });
+    for (id, name, hint) in a::DEPTHS {
+        choice(
+            w,
+            grid,
+            s,
+            name,
+            hint,
+            Action::Agent(Patch::Depth(id.into())),
+            id == depth,
+            idle,
+        );
+    }
+    quiet(
+        w,
+        body,
+        a::DEPTHS
+            .iter()
+            .find(|(id, ..)| *id == depth)
+            .map_or("", |(_, _, h)| h),
+    );
+
+    heading(w, body, "Conversation model");
+    let row = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 8.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        row,
+        Align {
+            items: Items::Center,
+            justify: Justify::Start,
+        },
+    );
+    let current = match &main {
+        Some((p, m)) => format!("{m} · {p}"),
+        None => "No model chosen".into(),
+    };
+    let v = text(w, row, &current, Typography::Label).unwrap();
+    w.get_mut::<Layout>(v).unwrap().width = Size::Fill;
+    let open = s.models_open;
+    button(
+        w,
+        row,
+        s,
+        if open { "Close" } else { "Change" },
+        Action::Models,
+        idle,
+    );
+    if open {
+        let models = crate::ui::models(w);
+        if models.is_empty() {
+            quiet(
+                w,
+                body,
+                "No models are available yet. Connect a provider in the original Medousa app.",
+            );
+        }
+        for (provider, model) in models {
+            let chosen = main
+                .as_ref()
+                .is_some_and(|(p, m)| *p == provider && *m == model);
+            let h = button(
+                w,
+                body,
+                s,
+                &format!("{model} · {provider}"),
+                Action::Agent(Patch::Model(provider.clone(), model.clone())),
+                idle,
+            );
+            w.get_mut::<Layout>(h.root).unwrap().width = Size::Fill;
+            w.remove::<visual::FitLabel>(h.root);
+            if chosen {
+                mark(w, h.root);
+            }
+        }
+    }
+
+    heading(w, body, "Other roles");
+    for (key, name) in [
+        ("vision", "Sees images"),
+        ("imageGeneration", "Makes images"),
+        ("stt", "Listens"),
+    ] {
+        let value = a::role(&defaults, key)
+            .map_or("Same as conversation".into(), |(p, m)| format!("{m} · {p}"));
+        fact(w, body, name, &value);
+    }
+    if s.patching.is_some() {
+        quiet(w, body, "Saving…");
+    }
+    heading(w, body, "More agent settings");
+    quiet(
+        w,
+        body,
+        "Provider keys, fallbacks, stage routing, coding runtime, mode suggestions and retention are coming to this app soon. Until then, change them in the original Medousa app.",
+    );
+}
+
 /// A thin progress bar `percent` full.
 fn bar(w: &mut World, p: Entity, percent: f32) {
     let track = panel(
@@ -574,6 +789,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         Section::Preferences => look(w, s, body),
         Section::Connection => connection(w, s, body),
         Section::Packages => packages(w, s, body),
+        Section::Agent => agent_section(w, s, body),
         other => {
             debug_assert!(!other.ready());
             quiet(

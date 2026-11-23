@@ -26,12 +26,12 @@ mod chat_sidebar;
 pub(crate) mod chrome;
 #[path = "collaboration.rs"]
 pub(crate) mod collaboration;
+#[path = "command_palette.rs"]
+mod command_palette;
 #[path = "conversations.rs"]
 mod conversations;
 #[path = "workshop_status.rs"]
 pub(crate) mod workshop_status;
-#[path = "command_palette.rs"]
-mod command_palette;
 
 const BEHAVIOR: u64 = 33;
 const TOGGLE_SEARCH: u64 = 34;
@@ -1104,7 +1104,11 @@ fn bound_composer_triggers(world: &mut World) {
     let fixed: f32 = visible
         .iter()
         .filter(|&&e| !world.has::<visual::FitLabel>(e))
-        .filter(|&&e| world.get::<Layout>(e).is_some_and(|l| l.width != Size::Fill))
+        .filter(|&&e| {
+            world
+                .get::<Layout>(e)
+                .is_some_and(|l| l.width != Size::Fill)
+        })
         .filter(|&&e| !descendant(world, ui.model, e))
         .filter_map(|&e| world.get::<Rect>(e).map(|r| r.w))
         .sum();
@@ -1123,7 +1127,10 @@ fn bound_composer_triggers(world: &mut World) {
         .iter()
         .map(|&e| {
             let label = world.get::<visual::FitLabel>(e).unwrap().label;
-            let text = world.get::<Label>(label).map(|l| l.text.clone()).unwrap_or_default();
+            let text = world
+                .get::<Label>(label)
+                .map(|l| l.text.clone())
+                .unwrap_or_default();
             let style = world
                 .get::<TextStyle>(label)
                 .cloned()
@@ -2801,6 +2808,19 @@ mod tests {
         assert!(value["stage_routing"]["orchestrator"].is_object());
         assert_eq!(value["persist_user_turn"], true);
     }
+}
+
+/// The models the engine offers, as `(provider, model)`.
+pub(crate) fn models(world: &World) -> Vec<(String, String)> {
+    world
+        .resource::<Model>()
+        .map(|m| m.models.clone())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+pub(crate) fn set_models(world: &mut World, models: Vec<(String, String)>) {
+    world.resource_mut::<Model>().unwrap().models = models;
 }
 
 /// Shows conversation `session` in Chat, as from another surface.
