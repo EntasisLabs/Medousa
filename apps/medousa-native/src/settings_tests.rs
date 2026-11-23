@@ -188,7 +188,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -333,6 +333,41 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "mcp");
+        with_state(app.world_mut(), |_, s| {
+            s.section = Section::Accounts;
+            s.accounts_reading = None;
+            s.accounts =
+                Some(Accounts {
+                    providers: vec![
+                        serde_json::from_value(serde_json::json!({
+                            "protocol_version": 1, "id": "github", "label": "GitHub",
+                            "hosts": ["github.com"], "operations": ["device_auth"]
+                        }))
+                        .unwrap(),
+                    ],
+                    connections: vec![serde_json::from_value(serde_json::json!({
+                    "connection_id": format!("conn_{}", "a".repeat(32)), "kind": "github",
+                    "label": "octocat", "base_url": "https://github.com",
+                    "created_at": "2026-11-01T00:00:00Z", "updated_at": "2026-11-01T00:00:00Z"
+                }))
+                .unwrap()],
+                });
+            s.sign_in = Some(SignIn {
+                provider: "github".into(),
+                flow: "flow-1".into(),
+                code: "ABCD-1234".into(),
+                url: "https://github.com/login/device".into(),
+                interval: 600,
+                paused: false,
+                copied: false,
+                next: std::time::Instant::now() + std::time::Duration::from_secs(600),
+            });
+            s.redraw = true;
+        });
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "accounts");
     }
 }
 
@@ -641,4 +676,169 @@ fn a_workshop_elsewhere_manages_its_own_servers() {
             .iter()
             .any(|x| x == "This workshop manages its own MCP servers.")
     );
+}
+
+fn accounts_open() -> App {
+    let mut app = app();
+    click(&mut app, "Accounts");
+    let w = app.world_mut();
+    let read = state(w)
+        .unwrap()
+        .accounts_reading
+        .expect("accounts read on open");
+    let accounts = Accounts {
+        providers: vec![
+            serde_json::from_value(serde_json::json!({
+                "protocol_version": 1,
+                "id": "github",
+                "label": "GitHub",
+                "hosts": ["github.com"],
+                "operations": ["device_auth", "list"]
+            }))
+            .unwrap(),
+        ],
+        connections: vec![
+            serde_json::from_value(serde_json::json!({
+                "connection_id": format!("conn_{}", "a".repeat(32)),
+                "kind": "github",
+                "label": "octocat",
+                "base_url": "https://github.com",
+                "created_at": "2026-11-01T00:00:00Z",
+                "updated_at": "2026-11-01T00:00:00Z"
+            }))
+            .unwrap(),
+        ],
+    };
+    apply(
+        w,
+        Update {
+            serial: read,
+            result: Ok(Reply::Accounts(Box::new(accounts))),
+        },
+    );
+    app.update();
+    app
+}
+
+#[test]
+fn accounts_sign_in_with_a_device_code_and_reread_when_approved() {
+    use medousa_types::{ReviewProviderAuthRequest as Q, ReviewProviderAuthResponse as R};
+    let mut app = accounts_open();
+    let t = texts(app.world());
+    assert!(
+        t.iter().any(|x| x == "octocat") && t.iter().any(|x| x == "github.com"),
+        "{t:?}"
+    );
+    click(&mut app, "Sign in with GitHub");
+    let (serial, who) = state(app.world())
+        .unwrap()
+        .account_busy
+        .clone()
+        .expect("begin sent");
+    assert_eq!(who, "github");
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::Auth(R::Pending {
+                flow_id: "flow-1".into(),
+                user_code: "ABCD-1234".into(),
+                verification_uri: "https://github.com/login/device".into(),
+                expires_in: 900,
+                interval: 5,
+            })),
+        },
+    );
+    // The page opens once, with the code shown to type there.
+    let commands = take_commands(app.world_mut());
+    assert!(
+        commands
+            .iter()
+            .any(|c| matches!(&c.kind, Kind::OpenUrl(u) if u == "https://github.com/login/device"))
+    );
+    app.update();
+    assert!(texts(app.world()).iter().any(|x| x == "ABCD-1234"));
+    click(&mut app, "Copy code");
+    assert_eq!(
+        app.world().resource::<Clipboard>().unwrap().text,
+        "ABCD-1234"
+    );
+    // Checked at the provider's interval.
+    state_mut(app.world_mut())
+        .unwrap()
+        .sign_in
+        .as_mut()
+        .unwrap()
+        .next = std::time::Instant::now();
+    sync(app.world_mut());
+    let (serial, _) = state(app.world())
+        .unwrap()
+        .account_busy
+        .clone()
+        .expect("check sent");
+    let commands = take_commands(app.world_mut());
+    assert!(
+        commands
+            .iter()
+            .any(|c| matches!(&c.kind, Kind::Auth(Q::Poll { flow_id }) if flow_id == "flow-1"))
+    );
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::Auth(R::Connected {
+                connection_id: format!("conn_{}", "b".repeat(32)),
+                account: "octocat".into(),
+            })),
+        },
+    );
+    let s = state(app.world()).unwrap();
+    assert!(s.sign_in.is_none());
+    assert_eq!(s.notice, "Connected as octocat.");
+    assert!(s.accounts_reading.is_some(), "accounts read again");
+}
+
+#[test]
+fn a_failed_check_waits_for_retry_and_accounts_disconnect() {
+    let mut app = accounts_open();
+    state_mut(app.world_mut()).unwrap().sign_in = Some(SignIn {
+        provider: "github".into(),
+        flow: "flow-1".into(),
+        code: "ABCD-1234".into(),
+        url: "https://github.com/login/device".into(),
+        interval: 5,
+        paused: false,
+        copied: false,
+        next: std::time::Instant::now(),
+    });
+    sync(app.world_mut());
+    let (serial, _) = state(app.world()).unwrap().account_busy.clone().unwrap();
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Err("connection reset".into()),
+        },
+    );
+    assert!(state(app.world()).unwrap().sign_in.as_ref().unwrap().paused);
+    sync(app.world_mut());
+    assert!(
+        state(app.world()).unwrap().account_busy.is_none(),
+        "no repeat until Retry"
+    );
+    click(&mut app, "Cancel");
+    assert!(state(app.world()).unwrap().sign_in.is_none());
+    click(&mut app, "Disconnect octocat");
+    let (_, id) = state(app.world())
+        .unwrap()
+        .account_busy
+        .clone()
+        .expect("disconnect sent");
+    assert!(id.starts_with("conn_"));
+}
+
+#[test]
+fn only_https_pages_are_opened() {
+    assert!(open_url("file:///etc/passwd").is_err());
+    assert!(open_url("javascript:alert(1)").is_err());
 }

@@ -910,6 +910,185 @@ fn agent_section(w: &mut World, s: &mut State, body: Entity) {
     }
 }
 
+fn accounts(w: &mut World, s: &mut State, body: Entity) {
+    quiet(w, body, "Connect the services you use with this workshop.");
+    let Some(accounts) = s.accounts.clone() else {
+        quiet(
+            w,
+            body,
+            if s.accounts_reading.is_some() {
+                "Loading accounts…"
+            } else {
+                ""
+            },
+        );
+        return;
+    };
+    if accounts.providers.is_empty() {
+        quiet(
+            w,
+            body,
+            "Install a review provider in Packages to connect an account.",
+        );
+    }
+    let idle = s.account_busy.is_none() && s.sign_in.is_none();
+    for provider in &accounts.providers {
+        heading(w, body, &provider.label);
+        let top = panel(
+            w,
+            body,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 8.,
+                ..Layout::row()
+            },
+        );
+        w.insert(
+            top,
+            Align {
+                items: Items::Center,
+                justify: Justify::Start,
+            },
+        );
+        let lead = text(
+            w,
+            top,
+            "Browse and share reviews in Medousa.",
+            Typography::Secondary,
+        )
+        .unwrap();
+        w.get_mut::<Layout>(lead).unwrap().width = Size::Fill;
+        let host = provider.hosts.first().cloned().unwrap_or_default();
+        let starting = s
+            .account_busy
+            .as_ref()
+            .is_some_and(|(_, who)| *who == provider.id)
+            && s.sign_in.is_none();
+        let verb = if starting {
+            "Waiting for browser…".to_string()
+        } else {
+            format!("Sign in with {}", provider.label)
+        };
+        button(
+            w,
+            top,
+            s,
+            &verb,
+            Action::SignIn(provider.id.clone(), host),
+            idle,
+        );
+        for account in accounts
+            .connections
+            .iter()
+            .filter(|a| a.kind == provider.id)
+        {
+            let line = panel(
+                w,
+                body,
+                Layout {
+                    width: Size::Fill,
+                    height: Size::Hug,
+                    padding: 6.,
+                    gap: 12.,
+                    ..Layout::row()
+                },
+            );
+            w.insert(
+                line,
+                Align {
+                    items: Items::Center,
+                    justify: Justify::Start,
+                },
+            );
+            let col = panel(
+                w,
+                line,
+                Layout {
+                    width: Size::Fill,
+                    height: Size::Hug,
+                    gap: 2.,
+                    ..Layout::column()
+                },
+            );
+            let name = account
+                .label
+                .clone()
+                .unwrap_or_else(|| provider.label.clone());
+            label(w, col, &name, Typography::Emphasis);
+            if let Some(url) = &account.base_url {
+                quiet(w, col, url.trim_start_matches("https://"));
+            }
+            let id = account.connection_id.to_string();
+            let h = button(
+                w,
+                line,
+                s,
+                "Disconnect",
+                Action::Disconnect(id),
+                s.account_busy.is_none(),
+            );
+            if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+                sem.name = Some(format!("Disconnect {name}"));
+            }
+        }
+        if let Some(flow) = s.sign_in.clone().filter(|f| f.provider == provider.id) {
+            quiet(
+                w,
+                body,
+                &format!(
+                    "Enter this code on {} to connect your account.",
+                    provider.label
+                ),
+            );
+            let code = text(w, body, &flow.code, Typography::Title).unwrap();
+            w.insert(
+                code,
+                TextStyle {
+                    family: "monospace".into(),
+                    size: 22.,
+                    letter_spacing: 2.5,
+                    ..Default::default()
+                },
+            );
+            let row = panel(
+                w,
+                body,
+                Layout {
+                    width: Size::Fill,
+                    height: Size::Hug,
+                    gap: 6.,
+                    ..Layout::row()
+                },
+            );
+            w.insert(row, Wrap { line_gap: 6. });
+            button(
+                w,
+                row,
+                s,
+                if flow.copied { "Copied" } else { "Copy code" },
+                Action::CopyCode,
+                true,
+            );
+            button(w, row, s, "Open sign-in page", Action::OpenSignIn, true);
+            button(w, row, s, "Cancel", Action::CancelSignIn, true);
+            if flow.paused {
+                button(w, row, s, "Retry connection", Action::RetrySignIn, true);
+            } else {
+                quiet(
+                    w,
+                    body,
+                    "Waiting for approval… This page updates automatically.",
+                );
+            }
+        }
+    }
+    if !s.notice.is_empty() {
+        let n = s.notice.clone();
+        quiet(w, body, &n);
+    }
+}
+
 fn mcp(w: &mut World, s: &mut State, body: Entity) {
     quiet(
         w,
@@ -1314,6 +1493,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         Section::Packages => packages(w, s, body),
         Section::Agent => agent_section(w, s, body),
         Section::Mcp => mcp(w, s, body),
+        Section::Accounts => accounts(w, s, body),
         other => {
             debug_assert!(!other.ready());
             quiet(

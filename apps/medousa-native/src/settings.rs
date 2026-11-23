@@ -85,6 +85,7 @@ impl Section {
         matches!(
             self,
             Section::Preferences
+                | Section::Accounts
                 | Section::Agent
                 | Section::Packages
                 | Section::Mcp
@@ -108,6 +109,13 @@ enum Action {
     /// First press asks; a second on the same server removes it.
     McpRemove(String),
     McpRestart,
+    /// Starts a device sign-in with a review provider on its first host.
+    SignIn(String, String),
+    OpenSignIn,
+    CopyCode,
+    CancelSignIn,
+    RetrySignIn,
+    Disconnect(String),
 }
 
 /// The active workshop as the registry describes it.
@@ -138,6 +146,10 @@ enum Kind {
     McpEnable(String, bool),
     McpRemove(String),
     McpRestart,
+    Accounts,
+    Auth(medousa_types::ReviewProviderAuthRequest),
+    Disconnect(String),
+    OpenUrl(String),
 }
 pub struct Update {
     serial: u64,
@@ -153,6 +165,30 @@ enum Reply {
     Mcp(Box<medousa_desktop_host::mcp::Status>),
     /// A gateway change went through, with its message.
     McpDone(String),
+    Accounts(Box<Accounts>),
+    Auth(medousa_types::ReviewProviderAuthResponse),
+}
+
+/// Review providers that sign in with a device code, and the connected
+/// accounts on this workshop.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Accounts {
+    pub providers: Vec<medousa_types::ReviewProviderDescriptor>,
+    pub connections: Vec<medousa_types::IntegrationConnection>,
+}
+
+/// A device sign-in in progress.
+#[derive(Clone, Debug)]
+pub(crate) struct SignIn {
+    pub provider: String,
+    pub flow: String,
+    pub code: String,
+    pub url: String,
+    pub interval: u64,
+    /// The last check failed; checking waits for Retry.
+    pub paused: bool,
+    pub copied: bool,
+    pub next: std::time::Instant,
 }
 
 pub(crate) struct State {
@@ -187,6 +223,12 @@ pub(crate) struct State {
     mcp_busy: Option<(u64, bool)>,
     mcp_confirm: Option<String>,
     mcp_restart_needed: bool,
+    accounts: Option<Accounts>,
+    accounts_reading: Option<u64>,
+    /// A begin, check, cancel or disconnect in flight, and for whom.
+    account_busy: Option<(u64, String)>,
+    sign_in: Option<SignIn>,
+    notice: String,
     /// Disclosures open on this visit, by key.
     open: HashSet<&'static str>,
     actions: HashMap<u64, Action>,
@@ -270,6 +312,11 @@ pub fn mount(w: &mut World, parent: Entity) {
         mcp_busy: None,
         mcp_confirm: None,
         mcp_restart_needed: false,
+        accounts: None,
+        accounts_reading: None,
+        account_busy: None,
+        sign_in: None,
+        notice: String::new(),
         actions: HashMap::new(),
         queue: vec![],
         redraw: true,
@@ -309,6 +356,9 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 }
                 if section == Section::Packages && s.packages.is_none() && s.listing.is_none() {
                     s.list_packages();
+                }
+                if section == Section::Accounts && s.accounts_reading.is_none() {
+                    s.accounts_reading = Some(s.enqueue(Kind::Accounts));
                 }
                 if section == Section::Mcp && s.mcp_reading.is_none() {
                     s.mcp_reading = Some(s.enqueue(Kind::McpStatus));
@@ -373,6 +423,58 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     s.message.clear();
                     s.mcp_confirm = None;
                     s.mcp_busy = Some((s.enqueue(Kind::McpRestart), true));
+                }
+            }
+            Action::SignIn(provider, host) => {
+                if s.account_busy.is_none() && s.sign_in.is_none() {
+                    s.message.clear();
+                    s.notice.clear();
+                    let serial = s.enqueue(Kind::Auth(
+                        medousa_types::ReviewProviderAuthRequest::Begin {
+                            provider_id: provider.clone(),
+                            host,
+                            client_id: None,
+                        },
+                    ));
+                    s.account_busy = Some((serial, provider));
+                }
+            }
+            Action::OpenSignIn => {
+                if let Some(url) = s.sign_in.as_ref().map(|f| f.url.clone()) {
+                    s.enqueue(Kind::OpenUrl(url));
+                }
+            }
+            Action::CopyCode => {
+                if let Some(flow) = s.sign_in.as_mut() {
+                    if let Some(clipboard) = w.resource_mut::<Clipboard>() {
+                        clipboard.text = flow.code.clone();
+                        clipboard.html.clear();
+                        clipboard.html_text.clear();
+                        clipboard.dirty = true;
+                    }
+                    flow.copied = true;
+                }
+            }
+            Action::CancelSignIn => {
+                if let Some(flow) = s.sign_in.take() {
+                    s.account_busy = None;
+                    s.enqueue(Kind::Auth(
+                        medousa_types::ReviewProviderAuthRequest::Cancel { flow_id: flow.flow },
+                    ));
+                }
+            }
+            Action::RetrySignIn => {
+                if let Some(flow) = s.sign_in.as_mut() {
+                    flow.paused = false;
+                    flow.next = std::time::Instant::now();
+                }
+            }
+            Action::Disconnect(id) => {
+                if s.account_busy.is_none() {
+                    s.message.clear();
+                    s.notice.clear();
+                    let serial = s.enqueue(Kind::Disconnect(id.clone()));
+                    s.account_busy = Some((serial, id));
                 }
             }
             Action::Toggle(key) => {
@@ -449,6 +551,21 @@ pub fn sync(w: &mut World) {
         if installing && active {
             s.redraw = true;
         }
+        // A device sign-in is checked at the provider's interval until it is
+        // approved, refused or cancelled.
+        if let Some(flow) = s.sign_in.as_mut()
+            && !flow.paused
+            && s.account_busy.is_none()
+            && std::time::Instant::now() >= flow.next
+        {
+            flow.next =
+                std::time::Instant::now() + std::time::Duration::from_secs(flow.interval.max(5));
+            let (provider, id) = (flow.provider.clone(), flow.flow.clone());
+            let serial = s.enqueue(Kind::Auth(medousa_types::ReviewProviderAuthRequest::Poll {
+                flow_id: id,
+            }));
+            s.account_busy = Some((serial, provider));
+        }
         if s.redraw && active {
             view::render(w, s);
             s.redraw = false;
@@ -460,6 +577,31 @@ pub fn take_commands(w: &mut World) -> Vec<Command> {
     state_mut(w)
         .map(|s| std::mem::take(&mut s.queue))
         .unwrap_or_default()
+}
+
+/// Opens an https page in the default browser. Only https: the address
+/// comes from the workshop, so nothing else is handed to the system.
+fn open_url(url: &str) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("Only https sign-in pages can be opened".into());
+    }
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", ""]);
+        c
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut command = std::process::Command::new("xdg-open");
+    command.arg(url);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    command.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 fn workshop() -> Result<Option<Workshop>, String> {
@@ -493,6 +635,45 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
                 .and_then(|r| r.map(|()| Reply::Saved))
         }
         Kind::Defaults => agent::read(client).await.map(Reply::Defaults),
+        Kind::Accounts => {
+            let providers = client
+                .reviews()
+                .providers()
+                .await
+                .map_err(|e| e.to_string());
+            let connections: Result<medousa_types::IntegrationConnectionListResponse, _> = client
+                .http()
+                .get("/v1/integrations")
+                .await
+                .map_err(|e| e.to_string());
+            match (providers, connections) {
+                (Ok(p), Ok(c)) => Ok(Reply::Accounts(Box::new(Accounts {
+                    providers: p
+                        .providers
+                        .into_iter()
+                        .filter(|p| p.operations.iter().any(|o| o == "device_auth"))
+                        .collect(),
+                    connections: c.connections,
+                }))),
+                (Err(e), _) | (_, Err(e)) => Err(e),
+            }
+        }
+        Kind::Auth(request) => client
+            .reviews()
+            .authenticate(&request)
+            .await
+            .map(Reply::Auth)
+            .map_err(|e| e.to_string()),
+        Kind::Disconnect(id) => client
+            .http()
+            .delete::<serde_json::Value>(&format!("/v1/integrations/{}", urlencoding::encode(&id)))
+            .await
+            .map(|_| Reply::Done)
+            .map_err(|e| e.to_string()),
+        Kind::OpenUrl(url) => tokio::task::spawn_blocking(move || open_url(&url))
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.map(|()| Reply::Done)),
         Kind::McpStatus => Ok(Reply::Mcp(Box::new(
             medousa_desktop_host::mcp::status(client).await,
         ))),
@@ -559,6 +740,74 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
 
 pub fn apply(w: &mut World, u: Update) {
     with_state(w, |_, s| {
+        if s.accounts_reading == Some(u.serial) {
+            s.accounts_reading = None;
+            match u.result {
+                Ok(Reply::Accounts(a)) => s.accounts = Some(*a),
+                Err(e) => s.message = format!("Couldn’t load accounts: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.account_busy
+            .as_ref()
+            .is_some_and(|(serial, _)| *serial == u.serial)
+        {
+            let (_, who) = s.account_busy.take().unwrap();
+            use medousa_types::ReviewProviderAuthResponse as R;
+            match u.result {
+                Ok(Reply::Auth(R::Pending {
+                    flow_id,
+                    user_code,
+                    verification_uri,
+                    interval,
+                    ..
+                })) => {
+                    let first = s.sign_in.is_none();
+                    let copied = s.sign_in.as_ref().is_some_and(|f| f.copied);
+                    s.sign_in = Some(SignIn {
+                        provider: who,
+                        flow: flow_id,
+                        code: user_code,
+                        url: verification_uri.clone(),
+                        interval,
+                        paused: false,
+                        copied,
+                        next: std::time::Instant::now()
+                            + std::time::Duration::from_secs(interval.max(5)),
+                    });
+                    // The provider's page opens once, as the sign-in starts.
+                    if first {
+                        s.enqueue(Kind::OpenUrl(verification_uri));
+                    }
+                }
+                Ok(Reply::Auth(R::Connected { account, .. })) => {
+                    if let Some(flow) = s.sign_in.take() {
+                        s.enqueue(Kind::Auth(
+                            medousa_types::ReviewProviderAuthRequest::Cancel { flow_id: flow.flow },
+                        ));
+                    }
+                    s.notice = format!("Connected as {account}.");
+                    s.accounts_reading = Some(s.enqueue(Kind::Accounts));
+                }
+                Ok(Reply::Auth(R::Cancelled)) => s.sign_in = None,
+                Ok(Reply::Done) => {
+                    // A disconnect: read the accounts again.
+                    s.accounts_reading = Some(s.enqueue(Kind::Accounts));
+                }
+                Err(e) => {
+                    s.message = e;
+                    // A failed check waits for Retry instead of repeating.
+                    if let Some(flow) = s.sign_in.as_mut() {
+                        flow.paused = true;
+                    }
+                }
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
         if s.mcp_reading == Some(u.serial) {
             s.mcp_reading = None;
             match u.result {
@@ -657,7 +906,9 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Done
                 | Reply::Defaults(_)
                 | Reply::Mcp(_)
-                | Reply::McpDone(_),
+                | Reply::McpDone(_)
+                | Reply::Accounts(_)
+                | Reply::Auth(_),
             ) => {}
             Err(e) if reading => s.message = format!("Couldn’t read the connection: {e}"),
             Err(e) => {
