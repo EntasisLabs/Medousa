@@ -2,6 +2,7 @@
 //! section in a reading column on the right.
 use super::*;
 use crate::native_style as visual;
+use medousa_types::ExternalProvider;
 use rndr_ui::{Token, Typography, UiColor, UiStyle, text};
 
 const TILE_W: f32 = 148.;
@@ -1089,6 +1090,370 @@ fn accounts(w: &mut World, s: &mut State, body: Entity) {
     }
 }
 
+/// A row with its content column on the left and controls on the right.
+fn split_row(w: &mut World, p: Entity) -> (Entity, Entity) {
+    let line = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            padding: 6.,
+            gap: 12.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        line,
+        Align {
+            items: Items::Center,
+            justify: Justify::Start,
+        },
+    );
+    let col = panel(
+        w,
+        line,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 2.,
+            ..Layout::column()
+        },
+    );
+    (line, col)
+}
+
+/// A button whose spoken name says what it acts on.
+fn named_button(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    shown: &str,
+    spoken: String,
+    a: Action,
+    enabled: bool,
+) {
+    let h = button(w, p, s, shown, a, enabled);
+    if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+        sem.name = Some(spoken);
+    }
+}
+
+fn agent_row(
+    w: &mut World,
+    s: &mut State,
+    p: Entity,
+    agents: &external::Agents,
+    agent: &'static external::Agent,
+) {
+    use external::Status;
+    let local = s.local();
+    let status = agents.status(agent);
+    let waiting = s
+        .waiting
+        .as_ref()
+        .is_some_and(|x| x.account == agent.account);
+    let busy = s
+        .agent_busy
+        .as_ref()
+        .is_some_and(|(_, who)| who == agent.account);
+    let idle = s.agent_busy.is_none();
+    let (line, col) = split_row(w, p);
+    label(w, col, agent.label, Typography::Emphasis);
+    let note = if status == Status::Missing {
+        if local && agent.managed {
+            format!(
+                "{} isn’t on this workshop. Install it with the vendor’s official installer.",
+                agent.cli
+            )
+        } else {
+            format!(
+                "{} isn’t on this workshop. Install and set it up on the workshop host, then refresh.",
+                agent.cli
+            )
+        }
+    } else if waiting {
+        "Finish signing in in the browser or terminal. This updates when the CLI reports you’re signed in.".into()
+    } else if status == Status::SignedOut {
+        agents.detail(agent)
+    } else if agents.ready(agent) {
+        external::use_hint(agent)
+    } else {
+        agent.hint.into()
+    };
+    quiet(w, col, &note);
+    let state = if waiting {
+        "Waiting…"
+    } else {
+        match status {
+            Status::Missing => "Not installed",
+            Status::SignedIn => "Signed in",
+            Status::SignedOut => "Signed out",
+            Status::Unknown => "Installed",
+        }
+    };
+    // Status and controls sit in fixed columns so rows line up.
+    let pill = text(w, line, state, Typography::Secondary).unwrap();
+    w.get_mut::<Layout>(pill).unwrap().width = Size::Px(96.);
+    let controls = panel(
+        w,
+        line,
+        Layout {
+            width: Size::Px(200.),
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        controls,
+        Align {
+            items: Items::Center,
+            justify: Justify::End,
+        },
+    );
+    if status != Status::SignedIn {
+        w.insert(
+            pill,
+            UiStyle {
+                foreground: Some(Token::Tertiary.into()),
+                ..Default::default()
+            },
+        );
+    }
+    let name = agent.label;
+    if status == Status::Missing {
+        if local && agent.managed {
+            named_button(
+                w,
+                controls,
+                s,
+                if busy { "Installing…" } else { "Install" },
+                format!("Install {name}"),
+                Action::AgentInstall(agent.account),
+                idle,
+            );
+        }
+    } else if agents.ready(agent) {
+        named_button(
+            w,
+            controls,
+            s,
+            "Open Chat",
+            format!("Open Chat with {name}"),
+            Action::OpenChat,
+            true,
+        );
+        if local && let Some(out) = agent.sign_out {
+            named_button(
+                w,
+                controls,
+                s,
+                out,
+                format!("{out} {name}"),
+                Action::AgentSignOut(agent.account),
+                idle,
+            );
+        }
+    } else if local && agent.managed {
+        let verb = if waiting {
+            "Waiting…"
+        } else if busy {
+            "Signing in…"
+        } else {
+            "Sign in"
+        };
+        named_button(
+            w,
+            controls,
+            s,
+            verb,
+            format!("Sign in to {name}"),
+            Action::AgentSignIn(agent.account),
+            idle && !waiting,
+        );
+    }
+}
+
+fn external_agents(w: &mut World, s: &mut State, body: Entity) {
+    quiet(
+        w,
+        body,
+        "Connect independent agent runtimes and provider-hosted conversations. Their accounts stay separate from the Medousa Agent and its model providers.",
+    );
+    let top = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 8.,
+            ..Layout::row()
+        },
+    );
+    button(
+        w,
+        top,
+        s,
+        if s.agents_reading.is_some() {
+            "Refreshing…"
+        } else {
+            "Refresh"
+        },
+        Action::Refresh,
+        s.agents_reading.is_none(),
+    );
+    let Some(agents) = s.agents.clone() else {
+        quiet(w, body, "Loading external agents…");
+        return;
+    };
+    if !s.local() && s.started && s.reading.is_empty() {
+        quiet(
+            w,
+            body,
+            "This workshop runs on another machine. Set agents up on its host, then refresh here.",
+        );
+    }
+    heading(w, body, "Coding agents");
+    // Agents Medousa can set up, and any the workshop has, lead; the rest
+    // wait behind a disclosure.
+    let (lead, rest): (Vec<_>, Vec<_>) = external::AGENTS
+        .iter()
+        .partition(|a| a.managed || agents.status(a) != external::Status::Missing);
+    for agent in lead {
+        agent_row(w, s, body, &agents, agent);
+    }
+    if !rest.is_empty() {
+        let meta = format!("{} not on this workshop", rest.len());
+        if more(w, body, s, "agents.more", "More agents", &meta) {
+            for agent in rest {
+                agent_row(w, s, body, &agents, agent);
+            }
+        }
+    }
+    if !s.agent_note.is_empty() {
+        let n = s.agent_note.clone();
+        label(w, body, &n, Typography::Secondary);
+    }
+
+    heading(w, body, "Connected conversations");
+    if let Some((id, key)) = s.callback_key.clone() {
+        label(
+            w,
+            body,
+            "Save this callback key now. It is shown once.",
+            Typography::Emphasis,
+        );
+        quiet(
+            w,
+            body,
+            &format!(
+                "The agent VM sends authenticated events to /v1/external-conversations/{id}/events with x-medousa-bridge-key and a paired workshop credential."
+            ),
+        );
+        let k = label(w, body, &key, Typography::Label);
+        w.insert(
+            k,
+            TextStyle {
+                family: "monospace".into(),
+                ..Default::default()
+            },
+        );
+        let row = panel(
+            w,
+            body,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 6.,
+                ..Layout::row()
+            },
+        );
+        button(w, row, s, "Copy key", Action::CopyCallbackKey, true);
+        button(w, row, s, "Done", Action::DismissCallbackKey, true);
+    }
+    if let Some(e) = &agents.conversations_error {
+        quiet(w, body, &format!("Couldn’t load conversations: {e}"));
+    }
+    let meta = match agents.conversations.len() {
+        0 => "None yet".to_string(),
+        1 => "1 connected".to_string(),
+        n => format!("{n} connected"),
+    };
+    if !more(
+        w,
+        body,
+        s,
+        "conversations",
+        "Muse, Instinct, Dots & Grok",
+        &meta,
+    ) {
+        return;
+    }
+    let idle = s.agent_busy.is_none();
+    for (provider, title, what) in external::PROVIDERS {
+        let list = agents.of(provider);
+        let (_, col) = split_row(w, body);
+        label(w, col, title, Typography::Emphasis);
+        quiet(
+            w,
+            col,
+            &if list.is_empty() {
+                format!("{what} · none connected")
+            } else {
+                what.to_string()
+            },
+        );
+        for c in list {
+            let (line, col) = split_row(w, body);
+            w.get_mut::<Layout>(line).unwrap().padding = 6.;
+            label(w, col, &c.label, Typography::Label);
+            quiet(w, col, &external::place(c));
+            if provider == ExternalProvider::GrokBot {
+                named_button(
+                    w,
+                    line,
+                    s,
+                    "Rotate key",
+                    format!("Rotate callback key for {}", c.label),
+                    Action::ConversationRotate(c.id.clone()),
+                    idle,
+                );
+            }
+            let confirming = s.conversation_confirm.as_deref() == Some(c.id.as_str());
+            named_button(
+                w,
+                line,
+                s,
+                if confirming {
+                    "Confirm removal"
+                } else {
+                    "Remove"
+                },
+                format!(
+                    "{} {}",
+                    if confirming {
+                        "Confirm removal of"
+                    } else {
+                        "Remove"
+                    },
+                    c.label
+                ),
+                Action::ConversationRemove(c.id.clone()),
+                idle,
+            );
+            if confirming {
+                button(w, line, s, "Cancel", Action::CancelRemove, true);
+            }
+        }
+    }
+    quiet(
+        w,
+        body,
+        "Adding a conversation isn’t in this app yet; add one in the original Medousa app.",
+    );
+}
+
 fn mcp(w: &mut World, s: &mut State, body: Entity) {
     quiet(
         w,
@@ -1494,6 +1859,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         Section::Agent => agent_section(w, s, body),
         Section::Mcp => mcp(w, s, body),
         Section::Accounts => accounts(w, s, body),
+        Section::ExternalAgents => external_agents(w, s, body),
         other => {
             debug_assert!(!other.ready());
             quiet(

@@ -9,7 +9,7 @@ description = "Shared non-Tauri desktop connection and local engine policy"
 default = []
 # Compatibility for the existing Tauri portal client only. Native delegates peers
 # to its daemon; embedding that daemon on mobile does not change ownership.
-legacy-client-network = ["dep:medousa-sdk-iroh", "dep:medousa-iroh-http", "dep:medousa-secrets", "dep:medousa-local-credential", "dep:base64", "dep:ed25519-dalek", "dep:rand", "dep:uuid", "dep:url", "dep:bytes"]
+legacy-client-network = ["dep:medousa-sdk-iroh", "dep:medousa-iroh-http", "dep:medousa-secrets", "dep:medousa-local-credential", "dep:base64", "dep:ed25519-dalek", "dep:rand", "dep:uuid", "dep:bytes"]
 
 [dependencies]
 medousa-types = { path = "../medousa-types" }
@@ -30,7 +30,7 @@ base64 = { version = "0.22", optional = true }
 ed25519-dalek = { version = "2", optional = true, features = ["rand_core"] }
 rand = { version = "0.8", optional = true }
 uuid = { version = "1", optional = true, features = ["v4"] }
-url = { version = "2", optional = true }
+url = "2"
 urlencoding = "2"
 bytes = { version = "1", optional = true }
 

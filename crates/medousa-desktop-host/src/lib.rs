@@ -2,6 +2,8 @@
 pub mod connection;
 pub mod defaults;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod external_agents;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod mcp;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod packages;

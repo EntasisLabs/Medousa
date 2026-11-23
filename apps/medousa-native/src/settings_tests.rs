@@ -188,7 +188,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -368,6 +368,18 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "accounts");
+        with_state(app.world_mut(), |_, s| {
+            s.section = Section::ExternalAgents;
+            s.sign_in = None;
+            s.agents = Some(sample_agents());
+            s.agent_note = "Signed in. Ready. In Chat, pick Codex from the runtime control under the composer.".into();
+            s.open.insert("conversations");
+            s.redraw = true;
+        });
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "external");
     }
 }
 
@@ -841,4 +853,238 @@ fn a_failed_check_waits_for_retry_and_accounts_disconnect() {
 fn only_https_pages_are_opened() {
     assert!(open_url("file:///etc/passwd").is_err());
     assert!(open_url("javascript:alert(1)").is_err());
+}
+
+fn runtime(id: &str, present: bool, auth: Option<&str>) -> medousa_types::AgentRuntimeInfo {
+    serde_json::from_value(serde_json::json!({
+        "runtime": id,
+        "available": present,
+        "binary_present": present,
+        "auth_status": auth,
+    }))
+    .unwrap()
+}
+
+fn conversation(
+    id: &str,
+    provider: &str,
+    label: &str,
+    target: &str,
+) -> medousa_types::ExternalConversationView {
+    serde_json::from_value(serde_json::json!({
+        "id": id,
+        "provider": provider,
+        "label": label,
+        "target": target,
+        "created_at": "2026-11-01T00:00:00Z",
+        "updated_at": "2026-11-01T00:00:00Z",
+        "events": []
+    }))
+    .unwrap()
+}
+
+fn sample_agents() -> external::Agents {
+    external::Agents {
+        runtimes: vec![
+            runtime("codex", true, Some("signed_in")),
+            runtime("cursor", true, Some("signed_out")),
+            runtime("claude", true, None),
+        ],
+        conversations: vec![
+            conversation("grok-1", "grok_bot", "Ops bot", "opsbot"),
+            conversation(
+                "inst-1",
+                "instinct",
+                "Instinct",
+                "15551234567@s.whatsapp.net",
+            ),
+        ],
+        conversations_error: None,
+    }
+}
+
+fn agents_reply(app: &mut App, agents: external::Agents) {
+    let w = app.world_mut();
+    let serial = state(w).unwrap().agents_reading.expect("agents read");
+    apply(
+        w,
+        Update {
+            serial,
+            result: Ok(Reply::Agents(Box::new(agents))),
+        },
+    );
+    app.update();
+}
+
+fn external_open(kind: &str) -> App {
+    let mut app = app();
+    click(&mut app, "External Agents");
+    with_state(app.world_mut(), |_, s| {
+        s.reading.clear();
+        s.workshop = Some(Workshop {
+            label: "Studio".into(),
+            kind: kind.into(),
+            url: "http://127.0.0.1:7878".into(),
+            data_dir: None,
+        });
+    });
+    agents_reply(&mut app, sample_agents());
+    take_commands(app.world_mut());
+    app
+}
+
+#[test]
+fn external_agents_lead_with_what_can_be_set_up() {
+    let mut app = external_open("local");
+    let t = texts(app.world());
+    for shown in [
+        "Codex",
+        "Cursor",
+        "Hermes",
+        "Claude Code",
+        "Signed in",
+        "Signed out",
+    ] {
+        assert!(t.iter().any(|x| x == shown), "{shown} in {t:?}");
+    }
+    // Agents not on this workshop wait behind a disclosure.
+    assert!(!t.iter().any(|x| x == "Devin"));
+    assert!(named(app.world(), "Open Chat with Codex").is_some());
+    click(&mut app, "More agents");
+    assert!(texts(app.world()).iter().any(|x| x == "Devin"));
+    // Hermes isn't installed: Install runs the vendor's installer.
+    click(&mut app, "Install Hermes");
+    let (serial, who) = state(app.world()).unwrap().agent_busy.clone().unwrap();
+    assert_eq!(who, "hermes", "sent");
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::AgentNote(
+                "Hermes Agent CLI installed — you can sign in now.".into(),
+            )),
+        },
+    );
+    let s = state(app.world()).unwrap();
+    assert!(s.agents_reading.is_some(), "read again after install");
+    assert!(s.agent_note.starts_with("Hermes Agent CLI installed"));
+}
+
+#[test]
+fn signing_in_waits_for_the_cli_to_report_it() {
+    let mut app = external_open("local");
+    click(&mut app, "Sign in to Cursor");
+    let (serial, who) = state(app.world()).unwrap().agent_busy.clone().unwrap();
+    assert_eq!(who, "cursor", "sent");
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::SigningIn(
+                "Sign in in the terminal that opened.".into(),
+            )),
+        },
+    );
+    assert!(state(app.world()).unwrap().waiting.is_some());
+    app.update();
+    assert!(texts(app.world()).iter().any(|x| x == "Waiting…"));
+    // Read again on the wait's interval, until the CLI says signed in.
+    state_mut(app.world_mut())
+        .unwrap()
+        .waiting
+        .as_mut()
+        .unwrap()
+        .next = std::time::Instant::now();
+    sync(app.world_mut());
+    let mut signed = sample_agents();
+    signed.runtimes[1] = runtime("cursor", true, Some("signed_in"));
+    agents_reply(&mut app, signed);
+    let s = state(app.world()).unwrap();
+    assert!(s.waiting.is_none());
+    assert!(
+        s.agent_note
+            .starts_with("Signed in. Ready. In Chat, pick Cursor")
+    );
+    assert!(named(app.world(), "Sign out Cursor").is_some());
+
+    // A wait that runs out says how to finish.
+    with_state(app.world_mut(), |_, s| {
+        let past = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        s.waiting = Some(Waiting {
+            account: "chatgpt",
+            until: past,
+            next: past,
+        });
+    });
+    sync(app.world_mut());
+    let s = state(app.world()).unwrap();
+    assert!(s.waiting.is_none());
+    assert!(s.agent_note.starts_with("Still waiting for sign-in"));
+}
+
+#[test]
+fn a_workshop_elsewhere_sets_agents_up_on_its_host() {
+    let app = external_open("remote");
+    let t = texts(app.world());
+    assert!(
+        t.iter()
+            .any(|x| x.starts_with("This workshop runs on another machine"))
+    );
+    for setup in ["Install Hermes", "Sign in to Cursor", "Sign out Codex"] {
+        assert!(named(app.world(), setup).is_none(), "{setup} hidden");
+    }
+    assert!(named(app.world(), "Open Chat with Codex").is_some());
+}
+
+#[test]
+fn conversations_remove_on_a_second_press_and_rotate_shows_the_key_once() {
+    let mut app = external_open("local");
+    // Tall enough that the conversations sit on screen.
+    app.world_mut().insert_resource(Viewport::new(1200., 1600.));
+    assert!(
+        named(app.world(), "Remove Ops bot").is_none(),
+        "behind a disclosure"
+    );
+    click(&mut app, "Muse, Instinct, Dots & Grok");
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "WhatsApp · +15551234567"), "{t:?}");
+    assert!(t.iter().any(|x| x == "Bot · opsbot"));
+    click(&mut app, "Remove Ops bot");
+    assert!(
+        state(app.world()).unwrap().agent_busy.is_none(),
+        "asks first"
+    );
+    click(&mut app, "Confirm removal of Ops bot");
+    let (serial, who) = state(app.world()).unwrap().agent_busy.clone().unwrap();
+    assert_eq!(who, "grok-1", "sent");
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::Done),
+        },
+    );
+    assert!(state(app.world()).unwrap().agents_reading.is_some());
+    agents_reply(&mut app, sample_agents());
+
+    click(&mut app, "Rotate callback key for Ops bot");
+    let (serial, who) = state(app.world()).unwrap().agent_busy.clone().unwrap();
+    assert_eq!(who, "grok-1");
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::CallbackKey("cb-secret".into())),
+        },
+    );
+    app.update();
+    assert!(texts(app.world()).iter().any(|x| x == "cb-secret"));
+    click(&mut app, "Copy key");
+    assert_eq!(
+        app.world().resource::<Clipboard>().unwrap().text,
+        "cb-secret"
+    );
+    click(&mut app, "Done");
+    assert!(state(app.world()).unwrap().callback_key.is_none());
+    assert!(!texts(app.world()).iter().any(|x| x == "cb-secret"));
 }

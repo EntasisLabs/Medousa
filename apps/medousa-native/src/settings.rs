@@ -13,6 +13,8 @@ use std::sync::{Arc, Mutex};
 
 #[path = "settings_agent.rs"]
 pub(crate) mod agent;
+#[path = "settings_external.rs"]
+pub(crate) mod external;
 #[path = "settings_view.rs"]
 mod view;
 
@@ -87,6 +89,7 @@ impl Section {
             Section::Preferences
                 | Section::Accounts
                 | Section::Agent
+                | Section::ExternalAgents
                 | Section::Packages
                 | Section::Mcp
                 | Section::Connection
@@ -116,6 +119,17 @@ enum Action {
     CancelSignIn,
     RetrySignIn,
     Disconnect(String),
+    /// Sets up an external agent by account: install, sign in, sign out.
+    AgentInstall(&'static str),
+    AgentSignIn(&'static str),
+    AgentSignOut(&'static str),
+    OpenChat,
+    /// First press asks; a second on the same conversation removes it.
+    ConversationRemove(String),
+    CancelRemove,
+    ConversationRotate(String),
+    CopyCallbackKey,
+    DismissCallbackKey,
 }
 
 /// The active workshop as the registry describes it.
@@ -150,6 +164,12 @@ enum Kind {
     Auth(medousa_types::ReviewProviderAuthRequest),
     Disconnect(String),
     OpenUrl(String),
+    Agents,
+    AgentInstall(String),
+    AgentSignIn(String),
+    AgentSignOut(String),
+    ConversationRemove(String),
+    ConversationRotate(String),
 }
 pub struct Update {
     serial: u64,
@@ -167,7 +187,25 @@ enum Reply {
     McpDone(String),
     Accounts(Box<Accounts>),
     Auth(medousa_types::ReviewProviderAuthResponse),
+    Agents(Box<external::Agents>),
+    /// An agent setup step went through, with what to tell the user.
+    AgentNote(String),
+    /// A sign-in started; its CLI is waited for.
+    SigningIn(String),
+    CallbackKey(String),
 }
+
+/// Waiting for an agent's CLI to report it signed in.
+#[derive(Clone, Debug)]
+pub(crate) struct Waiting {
+    pub account: &'static str,
+    pub until: std::time::Instant,
+    pub next: std::time::Instant,
+}
+
+/// How often, and how long, a sign-in is waited for (medousa-home's).
+const WAIT_EVERY: std::time::Duration = std::time::Duration::from_millis(2500);
+const WAIT_FOR: std::time::Duration = std::time::Duration::from_secs(180);
 
 /// Review providers that sign in with a device code, and the connected
 /// accounts on this workshop.
@@ -229,6 +267,17 @@ pub(crate) struct State {
     account_busy: Option<(u64, String)>,
     sign_in: Option<SignIn>,
     notice: String,
+    /// External agents and conversations, their read, the setup step or
+    /// conversation change in flight (and for whom), a sign-in being waited
+    /// for, the last step's note, the conversation a Remove waits on, and a
+    /// callback key shown once.
+    agents: Option<external::Agents>,
+    agents_reading: Option<u64>,
+    agent_busy: Option<(u64, String)>,
+    waiting: Option<Waiting>,
+    agent_note: String,
+    conversation_confirm: Option<String>,
+    callback_key: Option<(String, String)>,
     /// Disclosures open on this visit, by key.
     open: HashSet<&'static str>,
     actions: HashMap<u64, Action>,
@@ -263,6 +312,28 @@ impl State {
         if self.listing.is_none() {
             self.listing = Some(self.enqueue(Kind::Packages));
             self.redraw = true;
+        }
+    }
+    fn read_agents(&mut self) {
+        if self.agents_reading.is_none() {
+            self.agents_reading = Some(self.enqueue(Kind::Agents));
+            self.redraw = true;
+        }
+    }
+    /// Setup runs the vendor's CLI here, so only for a workshop on this
+    /// machine: a local one, or none registered (the built-in engine).
+    pub(crate) fn local(&self) -> bool {
+        self.started
+            && self.reading.is_empty()
+            && self.workshop.as_ref().is_none_or(|w| w.kind == "local")
+    }
+    fn agent_step(&mut self, account: &'static str, kind: Kind) {
+        if self.agent_busy.is_none() && self.local() {
+            self.message.clear();
+            self.agent_note.clear();
+            self.waiting = None;
+            let serial = self.enqueue(kind);
+            self.agent_busy = Some((serial, account.to_string()));
         }
     }
     fn refresh(&mut self) {
@@ -317,6 +388,13 @@ pub fn mount(w: &mut World, parent: Entity) {
         account_busy: None,
         sign_in: None,
         notice: String::new(),
+        agents: None,
+        agents_reading: None,
+        agent_busy: None,
+        waiting: None,
+        agent_note: String::new(),
+        conversation_confirm: None,
+        callback_key: None,
         actions: HashMap::new(),
         queue: vec![],
         redraw: true,
@@ -362,6 +440,13 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 }
                 if section == Section::Mcp && s.mcp_reading.is_none() {
                     s.mcp_reading = Some(s.enqueue(Kind::McpStatus));
+                }
+                if section == Section::ExternalAgents {
+                    s.read_agents();
+                    // Setup is offered by where the workshop runs.
+                    if s.workshop.is_none() && s.reading.is_empty() {
+                        s.refresh();
+                    }
                 }
                 if section == Section::Agent && s.defaults_reading.is_none() {
                     s.defaults_reading = Some(s.enqueue(Kind::Defaults));
@@ -477,6 +562,51 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     s.account_busy = Some((serial, id));
                 }
             }
+            Action::AgentInstall(account) => {
+                s.agent_step(account, Kind::AgentInstall(account.into()))
+            }
+            Action::AgentSignIn(account) => {
+                s.agent_step(account, Kind::AgentSignIn(account.into()))
+            }
+            Action::AgentSignOut(account) => {
+                s.agent_step(account, Kind::AgentSignOut(account.into()))
+            }
+            Action::OpenChat => {
+                crate::surfaces::select(w, crate::surfaces::SurfaceId::Chat);
+            }
+            Action::ConversationRemove(id) => {
+                if s.agent_busy.is_none() {
+                    if s.conversation_confirm.as_deref() == Some(id.as_str()) {
+                        s.conversation_confirm = None;
+                        s.message.clear();
+                        let serial = s.enqueue(Kind::ConversationRemove(id.clone()));
+                        s.agent_busy = Some((serial, id));
+                    } else {
+                        s.conversation_confirm = Some(id);
+                    }
+                }
+            }
+            Action::CancelRemove => s.conversation_confirm = None,
+            Action::ConversationRotate(id) => {
+                if s.agent_busy.is_none() {
+                    s.message.clear();
+                    s.conversation_confirm = None;
+                    let serial = s.enqueue(Kind::ConversationRotate(id.clone()));
+                    s.agent_busy = Some((serial, id));
+                }
+            }
+            Action::CopyCallbackKey => {
+                if let Some((_, key)) = &s.callback_key
+                    && let Some(clipboard) = w.resource_mut::<Clipboard>()
+                {
+                    clipboard.text = key.clone();
+                    clipboard.html.clear();
+                    clipboard.html_text.clear();
+                    clipboard.dirty = true;
+                    s.agent_note = "Callback key copied.".into();
+                }
+            }
+            Action::DismissCallbackKey => s.callback_key = None,
             Action::Toggle(key) => {
                 if !s.open.remove(key) {
                     s.open.insert(key);
@@ -493,6 +623,8 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             Action::Refresh => {
                 if s.section == Section::Packages {
                     s.list_packages();
+                } else if s.section == Section::ExternalAgents {
+                    s.read_agents();
                 } else {
                     s.refresh();
                 }
@@ -566,6 +698,19 @@ pub fn sync(w: &mut World) {
             }));
             s.account_busy = Some((serial, provider));
         }
+        // After a sign-in starts, the agents are read again until its CLI
+        // reports it signed in, or medousa-home's three minutes pass.
+        if let Some(wait) = s.waiting.as_mut() {
+            let now = std::time::Instant::now();
+            if now >= wait.until {
+                s.waiting = None;
+                s.agent_note = "Still waiting for sign-in — finish in the browser or terminal, then press Refresh here.".into();
+                s.redraw = true;
+            } else if now >= wait.next && s.agents_reading.is_none() {
+                wait.next = now + WAIT_EVERY;
+                s.read_agents();
+            }
+        }
         if s.redraw && active {
             view::render(w, s);
             s.redraw = false;
@@ -602,6 +747,33 @@ fn open_url(url: &str) -> Result<(), String> {
         command.creation_flags(0x0800_0000);
     }
     command.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Starts signing an agent in. Codex tries its device sign-in first and opens
+/// the verified page; otherwise, or if that isn't available, the vendor's
+/// login runs in a terminal window, as in medousa-home.
+fn agent_sign_in(account: &str) -> Result<Reply, String> {
+    use medousa_desktop_host::external_agents as agents;
+    if account == "chatgpt" {
+        match agents::begin_device_login() {
+            Ok(start) => {
+                open_url(&start.url)?;
+                return Ok(Reply::SigningIn(match start.code {
+                    Some(code) => format!(
+                        "Approve in the browser — enter code {code} if asked. Waiting for Codex to finish…"
+                    ),
+                    None => {
+                        "Approve in the browser that opened. Waiting for Codex to finish…".into()
+                    }
+                }));
+            }
+            Err(e) if e.to_lowercase().contains("already signed in") => {
+                return Ok(Reply::AgentNote("Already signed in.".into()));
+            }
+            Err(_) => {}
+        }
+    }
+    agents::begin_terminal_login(account).map(Reply::SigningIn)
 }
 
 fn workshop() -> Result<Option<Workshop>, String> {
@@ -674,6 +846,64 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
             .await
             .map_err(|e| e.to_string())
             .and_then(|r| r.map(|()| Reply::Done)),
+        Kind::Agents => {
+            let runtimes = client
+                .agents()
+                .list_runtimes()
+                .await
+                .map_err(|e| e.to_string());
+            let conversations: Result<medousa_types::ExternalConversationListResponse, String> =
+                client
+                    .http()
+                    .get("/v1/external-conversations")
+                    .await
+                    .map_err(|e| e.to_string());
+            runtimes.map(|r| {
+                let (conversations, conversations_error) = match conversations {
+                    Ok(c) => (c.conversations, None),
+                    Err(e) => (vec![], Some(e)),
+                };
+                Reply::Agents(Box::new(external::Agents {
+                    runtimes: r.runtimes,
+                    conversations,
+                    conversations_error,
+                }))
+            })
+        }
+        Kind::AgentInstall(account) => tokio::task::spawn_blocking(move || {
+            medousa_desktop_host::external_agents::install_cli(&account)
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.map(|done| Reply::AgentNote(done.detail))),
+        Kind::AgentSignIn(account) => tokio::task::spawn_blocking(move || agent_sign_in(&account))
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r),
+        Kind::AgentSignOut(account) => tokio::task::spawn_blocking(move || {
+            medousa_desktop_host::external_agents::sign_out(&account)
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.map(Reply::AgentNote)),
+        Kind::ConversationRemove(id) => client
+            .http()
+            .delete::<serde_json::Value>(&format!(
+                "/v1/external-conversations/{}",
+                urlencoding::encode(&id)
+            ))
+            .await
+            .map(|_| Reply::Done)
+            .map_err(|e| e.to_string()),
+        Kind::ConversationRotate(id) => client
+            .http()
+            .post_empty::<medousa_types::RotateExternalCallbackResponse>(&format!(
+                "/v1/external-conversations/{}/callback-key/rotate",
+                urlencoding::encode(&id)
+            ))
+            .await
+            .map(|r| Reply::CallbackKey(r.callback_key))
+            .map_err(|e| e.to_string()),
         Kind::McpStatus => Ok(Reply::Mcp(Box::new(
             medousa_desktop_host::mcp::status(client).await,
         ))),
@@ -740,6 +970,60 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
 
 pub fn apply(w: &mut World, u: Update) {
     with_state(w, |_, s| {
+        if s.agents_reading == Some(u.serial) {
+            s.agents_reading = None;
+            match u.result {
+                Ok(Reply::Agents(a)) => {
+                    if let Some(wait) = &s.waiting
+                        && let Some(agent) = external::by_account(wait.account)
+                        && a.status(agent) == external::Status::SignedIn
+                    {
+                        s.waiting = None;
+                        s.agent_note = format!("Signed in. {}", external::use_hint(agent));
+                    }
+                    s.agents = Some(*a);
+                }
+                Err(e) => s.message = format!("Couldn’t load external agents: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.agent_busy
+            .as_ref()
+            .is_some_and(|(serial, _)| *serial == u.serial)
+        {
+            let (_, who) = s.agent_busy.take().unwrap();
+            match u.result {
+                Ok(Reply::SigningIn(note)) => {
+                    if let Some(agent) = external::by_account(&who) {
+                        let now = std::time::Instant::now();
+                        s.waiting = Some(Waiting {
+                            account: agent.account,
+                            until: now + WAIT_FOR,
+                            next: now + WAIT_EVERY,
+                        });
+                    }
+                    s.agent_note = note;
+                }
+                Ok(Reply::AgentNote(note)) => {
+                    s.agent_note = note;
+                    s.read_agents();
+                }
+                Ok(Reply::CallbackKey(key)) => s.callback_key = Some((who, key)),
+                Ok(Reply::Done) => {
+                    // A conversation was removed; its key goes with it.
+                    if s.callback_key.as_ref().is_some_and(|(id, _)| *id == who) {
+                        s.callback_key = None;
+                    }
+                    s.read_agents();
+                }
+                Err(e) => s.message = e,
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
         if s.accounts_reading == Some(u.serial) {
             s.accounts_reading = None;
             match u.result {
@@ -908,7 +1192,11 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Mcp(_)
                 | Reply::McpDone(_)
                 | Reply::Accounts(_)
-                | Reply::Auth(_),
+                | Reply::Auth(_)
+                | Reply::Agents(_)
+                | Reply::AgentNote(_)
+                | Reply::SigningIn(_)
+                | Reply::CallbackKey(_),
             ) => {}
             Err(e) if reading => s.message = format!("Couldn’t read the connection: {e}"),
             Err(e) => {
