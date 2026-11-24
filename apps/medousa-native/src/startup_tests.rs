@@ -95,7 +95,9 @@ fn server() -> (Arc<MedousaClient>, Arc<Mutex<Vec<String>>>) {
             let request = String::from_utf8_lossy(&buffer[..count]);
             let line = request.lines().next().unwrap_or("").to_string();
             log.lock().unwrap().push(line.clone());
-            let body = if line.contains("/health") {
+            let body = if line.starts_with("GET /health ") {
+                serde_json::json!({"status": "ok", "apiVersion": "v1"})
+            } else if line.starts_with("GET /v1/health ") {
                 serde_json::json!({"runtime": {"authority_id": format!("auth_{}", "a".repeat(64)), "product_version": "fixture", "build_revision": "fixture", "contract_revision": 1, "base_schema_revision": 1, "deployment_profile": "personal", "deployment_target": "desktop", "advertised_capabilities": []}, "status": "ok", "backend": "sqlite", "worker_id": "fixture", "now_utc": "2026-11-24T00:00:00Z", "tool_registry_count": 12})
             } else if line.contains("/v1/runtime/tui-defaults") {
                 serde_json::json!({"stance": "direct", "depth_charter": "deep", "provider": "preserved-provider", "model": "preserved-model", "unrelated_setting": 42})

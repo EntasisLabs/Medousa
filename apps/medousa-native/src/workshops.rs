@@ -416,16 +416,24 @@ fn client(plan: &ConnectionPlan) -> Result<MedousaClient, String> {
         }
     }
 }
+#[cfg(test)]
+#[path = "workshops_health_tests.rs"]
+mod health_tests;
+#[cfg(test)]
+pub(crate) async fn authority_fixture(client: &MedousaClient) -> Result<String, String> {
+    authority(client).await
+}
 async fn authority(client: &MedousaClient) -> Result<String, String> {
-    let value=client.transport().get_json(client.base_url(),"/health").await.map_err(|_|"Workshop offline or authentication unavailable. Reconnect this source; no fallback was attempted.".to_string())?;
-    let raw = value
-        .get("runtime")
-        .and_then(|r| r.get("authority_id"))
-        .and_then(|v| v.as_str())
-        .ok_or("Workshop did not advertise an authority identity")?;
-    medousa_types::AuthorityId::parse(raw)
-        .map(|id| id.to_string())
-        .map_err(|_| "Workshop advertised an invalid authority identity".into())
+    // /health is anonymous liveness only. Identity belongs to authenticated
+    // /v1/health, through the same local or pinned remote transport as all reads.
+    // The SDK validates the authority and runtime contract; never synthesize an
+    // owner from an origin or fall back to another source on failure.
+    client
+        .health()
+        .get()
+        .await
+        .map(|health| health.runtime.authority_id.to_string())
+        .map_err(|_| "Workshop runtime identity unavailable or incompatible. Check this source's connection and daemon version; no fallback was attempted.".into())
 }
 fn connect(w: &mut World, id: &str, start: bool) {
     let registry = match read_registry() {

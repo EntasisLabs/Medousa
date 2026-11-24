@@ -1,5 +1,141 @@
-//! Test-only loopback HTTP fixtures. Never contact a daemon/provider or keychain.
+//! Loopback HTTP fixtures; only the explicitly ignored, opt-in smoke test uses a live daemon.
 use super::*;
+
+/// No UI/bootstrap/process entry point: attach with the native read-only credential
+/// loader, then exercise the exact native handshake/catalog/history/settings readers.
+/// Never print identifiers, content, credentials, settings values or error bodies.
+#[tokio::test]
+#[ignore = "requires explicit MEDOUSA_NATIVE_READ_ONLY_LIVE=1 and an existing local daemon"]
+async fn configured_local_daemon_native_reads_read_only() {
+    assert_eq!(
+        std::env::var("MEDOUSA_NATIVE_READ_ONLY_LIVE").as_deref(),
+        Ok("1")
+    );
+    medousa_desktop_host::paths::load_env_overlay();
+    let connection = medousa_desktop_host::connection::discover(Default::default());
+    assert!(
+        connection.is_ok(),
+        "configured local connection resolution failed"
+    );
+    let connection = connection.ok().unwrap();
+    // discover is a pure read. In particular, do not call ensure_ready here.
+    // The shared loader may migrate legacy keyring records. Refuse those in
+    // this opt-in probe: user state must remain untouched, even for compatibility.
+    let credentials = medousa_local_credential::list_local_credentials(&connection.data_dir);
+    assert!(credentials.is_ok(), "credential metadata inspection failed");
+    assert!(
+        credentials
+            .ok()
+            .unwrap()
+            .iter()
+            .any(|c| c.name == medousa_local_credential::HOME_LOCAL_NAME
+                && c.secret_store == "owner_only_file"),
+        "read-only probe refuses legacy credential storage migration"
+    );
+    let mut paths = vec![
+        medousa_desktop_host::workshop_registry::workshops_registry_path(),
+        medousa_desktop_host::paths::medousa_config_dir().join("native-sources.json"),
+        medousa_desktop_host::paths::medousa_config_dir().join("native-workspace.json"),
+        connection.data_dir.join("tui_defaults.json"),
+    ];
+    paths.extend(
+        std::fs::read_dir(connection.data_dir.join("credentials"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|p| p.is_file()),
+    );
+    let snapshot = || {
+        use sha2::{Digest, Sha256};
+        paths
+            .iter()
+            .map(|p| {
+                std::fs::read(p)
+                    .ok()
+                    .map(|bytes| Sha256::digest(bytes).to_vec())
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = snapshot();
+    let client = super::client(&connection.origin, &connection.data_dir);
+    assert!(client.is_ok(), "native existing credential load failed");
+    let client = client.ok().unwrap();
+    let public = client
+        .transport()
+        .get_json(client.base_url(), "/health")
+        .await;
+    assert!(public.is_ok(), "public liveness read failed");
+    let public = public.ok().unwrap();
+    eprintln!(
+        "live public_health=ok keys={} runtime_present={}",
+        public.as_object().map_or(0, |v| v.len()),
+        public.get("runtime").is_some()
+    );
+    let owner = crate::workshops::authority_fixture(&client).await;
+    assert!(owner.is_ok(), "native runtime authority handshake failed");
+    let owner = owner.ok().unwrap();
+    eprintln!("live native_authority=ok");
+    let page = sessions(&client, "", None).await;
+    assert!(page.is_ok(), "native session catalog read failed");
+    let Update::SessionsPage { rows, .. } = page.ok().unwrap() else {
+        panic!("unexpected native catalog result")
+    };
+    eprintln!("live native_sessions=ok page_count={}", rows.len());
+    assert!(
+        !rows.is_empty(),
+        "no existing history available for live verification"
+    );
+    let id = rows[0].0.clone();
+    let history = read_history(&client, &id).await;
+    assert!(history.is_ok(), "native bracketed history read failed");
+    let Update::History(raw, observed, turns, _) = history.ok().unwrap() else {
+        panic!("history did not stabilize")
+    };
+    assert!(
+        observed == owner,
+        "history owner does not match runtime identity"
+    );
+    eprintln!(
+        "live native_history=ok turn_count={} owner_matches=true",
+        turns.len()
+    );
+    // Exercise the immutable source sink used by native UI replies, not merely SDK decoding.
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(16));
+    let sink = Sink::new(tx, owner.clone(), 100);
+    assert!(emit(&sink, 1, Update::History(raw, observed, turns, None)));
+    app.update();
+    let replies = rndr_core::events::<Reply>(app.world());
+    assert!(replies.iter().any(|r| matches!(&r.update, Update::History(s, a, ..)
+        if a == &owner && crate::routing::SessionKey::parse(s).is_some_and(|k| k.authority == owner))));
+    eprintln!("live native_source_sink=ok");
+    let first = crate::settings::agent::read(&client).await;
+    assert!(first.is_ok(), "native settings read failed");
+    let second = crate::settings::agent::read(&client).await;
+    assert!(second.is_ok(), "native settings re-read failed");
+    eprintln!(
+        "live native_settings=ok keys={} unchanged={}",
+        first
+            .as_ref()
+            .ok()
+            .and_then(|v| v.as_object())
+            .map_or(0, |v| v.len()),
+        first.ok() == second.ok()
+    );
+    let rechecked = crate::workshops::authority_fixture(&client).await;
+    assert!(
+        rechecked.is_ok_and(|a| a == owner),
+        "native authority recheck failed"
+    );
+    eprintln!("live native_authority_recheck=ok writes=0 bootstrap_calls=0");
+    assert!(
+        before == snapshot(),
+        "monitored local user state changed during probe"
+    );
+    eprintln!(
+        "live monitored_local_state=unchanged path_count={}",
+        paths.len()
+    );
+}
 
 #[tokio::test]
 async fn two_authorities_with_colliding_ids_fail_and_recover_without_fallback() {
