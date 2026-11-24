@@ -197,6 +197,13 @@ impl State {
 pub fn mount(w: &mut World, parent: Entity) {
     view::mount(w, parent);
 }
+/// Re-render Peers on the next sync, as its refresh timers do in the app.
+#[cfg(test)]
+pub(crate) fn redraw_fixture(w: &mut World) {
+    if let Some(s) = w.resource_mut::<State>() {
+        s.redraw = true;
+    }
+}
 pub fn activate(w: &mut World) {
     if let Some(s) = w.resource_mut::<State>() {
         if !s.started {

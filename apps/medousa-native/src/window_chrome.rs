@@ -230,9 +230,12 @@ fn navigation_edge(world: &World) -> f32 {
             None => return true,
         }
     };
+    // Every navigation sidebar: document sidebars, chat's, and the others
+    // marked as sidebars (Peers), so the band never covers one.
     let sidebars = world
         .entities_with::<visual::DocumentSidebar>()
         .into_iter()
+        .chain(world.entities_with::<visual::SidebarPane>())
         .chain(world.resource::<Ui>().map(|ui| ui.sidebar));
     let edge = crate::surfaces::rail(world)
         .into_iter()

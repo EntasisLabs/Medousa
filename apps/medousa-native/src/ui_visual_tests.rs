@@ -1288,14 +1288,29 @@ fn destination_sidebars_collapse_expand_and_resize_like_chat() {
                 .unwrap()
                 .pointer
                 .released = false;
-            for _ in 0..4 {
+            for _ in 0..2 {
+                app.update();
+            }
+            // A destination that re-renders on its own (Peers refreshes) must
+            // not bring a collapsed sidebar back.
+            crate::peers::redraw_fixture(app.world_mut());
+            for _ in 0..3 {
                 app.update();
             }
         };
         click(&mut app);
         assert!(sidebar_rect(&app).is_none(), "{surface:?} collapsed");
         click(&mut app);
-        assert!(sidebar_rect(&app).is_some(), "{surface:?} expanded");
+        let open = sidebar_rect(&app).expect("expanded");
+        // The band starts past an open sidebar, never over its header.
+        let band = *app
+            .world()
+            .get::<Rect>(chrome::band(app.world()).unwrap())
+            .unwrap();
+        assert!(
+            band.x >= open.x + open.w - 1.,
+            "{surface:?} band {band:?} over {open:?}"
+        );
         // Drag its divider 60pt wider.
         let w = app.world();
         let sash = w

@@ -65,6 +65,14 @@ pub fn available(world: &World) -> bool {
         && crate::surfaces::root(world, active).is_some_and(|root| find(world, root).is_some())
 }
 
+/// Whether `surface`'s sidebar is set to show. A destination that manages
+/// its own sidebar visibility (Peers) combines this with its own rules.
+pub fn open(world: &World, surface: SurfaceId) -> bool {
+    slot(surface)
+        .and_then(|i| Some(world.resource::<Workspace>()?.prefs.sides[i].open))
+        .unwrap_or(true)
+}
+
 /// Collapse or expand the active destination's sidebar.
 pub fn toggle(world: &mut World) {
     let Some(i) = slot(crate::surfaces::active(world)) else {
@@ -102,6 +110,15 @@ pub fn sync(world: &mut World) {
             continue;
         };
         let sash = ensure_sash(world, row, slot, i);
+        // A destination showing its sidebar as the whole page (Peers' narrow
+        // list) owns that layout: no divider, no width of ours.
+        if world
+            .get::<Layout>(sidebar)
+            .is_some_and(|l| l.width == Size::Fill)
+        {
+            world.insert(sash, Hidden);
+            continue;
+        }
         let mut state = side(world, i);
         // A drag writes the slot's width; adopt it as the remembered width.
         if let Some(Size::Px(w)) = world.get::<Layout>(slot).map(|l| l.width) {

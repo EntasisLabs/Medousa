@@ -186,7 +186,10 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         return;
     }
     let list_only = s.narrow && s.selected.is_none();
-    if s.narrow && !list_only {
+    // The band's toggle collapses the list beside a conversation; a narrow
+    // window showing only the list keeps it, since it is the whole page.
+    let collapsed = !crate::sidebars::open(w, crate::surfaces::SurfaceId::Peers);
+    if (s.narrow || collapsed) && !list_only {
         w.insert(s.sidebar, Hidden);
     } else {
         w.remove::<Hidden>(s.sidebar);
