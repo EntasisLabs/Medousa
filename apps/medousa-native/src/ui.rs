@@ -276,11 +276,8 @@ fn button(
         world.get_mut::<Layout>(h.root).unwrap().width = Size::Px(match id {
             SEND | STOP => 54.,
             DETAILS | SIDEBAR | CONVERSATION_MENU => {
-                if icon.is_some() {
-                    32.
-                } else {
-                    64.
-                }
+                // Square, like the band's other icon buttons.
+                if icon.is_some() { 28. } else { 64. }
             }
             40 | 41 | NEW | TOGGLE_SEARCH | BEHAVIOR => 28.,
             MODEL_PREV | MODEL_NEXT => 70.,

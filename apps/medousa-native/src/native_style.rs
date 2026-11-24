@@ -818,8 +818,66 @@ pub fn action_icons(world: &mut World) {
         if world.get::<LabelBox>(entity) != Some(&flush) {
             world.insert(entity, flush);
         }
+        // A fixed-size button: its inner layers fill it and centre the glyph,
+        // so the hover fill and the icon share one centre.
+        let mut node = world.get::<Parent>(entity).map(|p| p.entity);
+        let mut layers = Vec::new();
+        let mut fixed = false;
+        while let Some(e) = node {
+            if world.has::<rndr_core::Button>(e) {
+                fixed = world.get::<Layout>(e).is_some_and(|l| {
+                    matches!(l.height, Size::Px(_)) && matches!(l.width, Size::Px(_))
+                });
+                if fixed {
+                    world.insert(e, Align::center());
+                }
+                break;
+            }
+            layers.push(e);
+            node = world.get::<Parent>(e).map(|p| p.entity);
+        }
+        if fixed {
+            for e in layers {
+                if let Some(layout) = world.get_mut::<Layout>(e) {
+                    if layout.width != Size::Fill || layout.height != Size::Fill {
+                        layout.width = Size::Fill;
+                        layout.height = Size::Fill;
+                    }
+                }
+                if world.get::<Align>(e) != Some(&Align::center()) {
+                    world.insert(e, Align::center());
+                }
+            }
+        }
+        // One em square: some glyphs measure wider than they draw, and the
+        // sprite is drawn from the label's leading edge. Its face centres it.
+        if let Some(layout) = world.get_mut::<Layout>(entity) {
+            let em = Size::Px(ACTION_ICON);
+            if layout.width != em || layout.height != em {
+                layout.width = em;
+                layout.height = em;
+            }
+        }
+        if let Some(face) = world.get::<Parent>(entity).map(|p| p.entity) {
+            if world.get::<Align>(face) != Some(&Align::center()) {
+                world.insert(face, Align::center());
+            }
+        }
+        // Centred on a one-em line, as the rail's icons are: the glyph sits in
+        // the middle of its face and the face stays square, not text-tall.
+        let fit = |style: &mut TextStyle| {
+            style.size = ACTION_ICON;
+            style.align = TextAlign::Center;
+            style.line_height = Some(1.);
+        };
         match world.get_mut::<TextStyle>(entity) {
-            Some(style) if style.size != ACTION_ICON => style.size = ACTION_ICON,
+            Some(style)
+                if style.size != ACTION_ICON
+                    || style.align != TextAlign::Center
+                    || style.line_height != Some(1.) =>
+            {
+                fit(style)
+            }
             Some(_) => {}
             None => {
                 let mut style = world
@@ -827,7 +885,7 @@ pub fn action_icons(world: &mut World) {
                     .cloned()
                     .unwrap_or_default()
                     .typography(rndr_ui::Typography::Label);
-                style.size = ACTION_ICON;
+                fit(&mut style);
                 world.insert(entity, style);
             }
         }

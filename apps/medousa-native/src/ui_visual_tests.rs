@@ -1136,3 +1136,59 @@ fn command_palette_visual_acceptance() {
         .unwrap();
     }
 }
+
+#[test]
+fn icon_buttons_centre_their_glyph_in_the_hover_face() {
+    let (mut app, _rx) = fixture();
+    for surface in [
+        crate::surfaces::SurfaceId::Chat,
+        crate::surfaces::SurfaceId::Notes,
+        crate::surfaces::SurfaceId::Code,
+        crate::surfaces::SurfaceId::Calendar,
+    ] {
+        crate::surfaces::select(app.world_mut(), surface);
+        for _ in 0..8 {
+            app.update();
+        }
+        let w = app.world();
+        let mut checked = 0;
+        for (e, label) in w.query::<Label>().iter() {
+            let mut chars = label.text.chars();
+            let (Some(ch), None) = (chars.next(), chars.next()) else {
+                continue;
+            };
+            if !rndr_core::is_icon_scalar(ch) {
+                continue;
+            }
+            let (mut node, mut root, mut shown) = (*e, None, true);
+            loop {
+                shown &= !w.has::<Hidden>(node);
+                if root.is_none() && w.has::<Button>(node) {
+                    root = Some(node);
+                }
+                match w.get::<Parent>(node) {
+                    Some(p) => node = p.entity,
+                    None => break,
+                }
+            }
+            let (Some(root), true) = (root, shown) else {
+                continue;
+            };
+            let (r, l) = (*w.get::<Rect>(root).unwrap(), *w.get::<Rect>(*e).unwrap());
+            // Full-width rows (disclosures) lead with their glyph by design.
+            if r.w > 48. || r.w < 1. {
+                continue;
+            }
+            assert_eq!((l.w, l.h), (visual::ACTION_ICON, visual::ACTION_ICON));
+            let dx = (l.x + l.w / 2.) - (r.x + r.w / 2.);
+            let dy = (l.y + l.h / 2.) - (r.y + r.h / 2.);
+            assert!(
+                dx.abs() < 0.6 && dy.abs() < 0.6,
+                "{surface:?} {:?} off centre by ({dx}, {dy})",
+                w.get::<Semantics>(root).and_then(|s| s.name.clone())
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "{surface:?} has icon buttons");
+    }
+}
