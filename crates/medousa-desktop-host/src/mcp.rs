@@ -160,6 +160,173 @@ pub fn remove_server(server_id: &str) -> Result<(), String> {
     save_config(&config).map(|_| ())
 }
 
+/// How a server is reached.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Transport {
+    #[default]
+    Stdio,
+    Http,
+    Sse,
+}
+
+/// A server to add or replace, as medousa-home's form sends it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Upsert {
+    pub id: String,
+    pub title: String,
+    pub transport: Transport,
+    pub command: String,
+    pub args: Vec<String>,
+    pub url: String,
+    /// A new bearer token; `None` keeps the stored one.
+    pub bearer_token: Option<String>,
+    pub clear_bearer_token: bool,
+}
+
+/// A saved server as the form shows it, and whether it has a token.
+/// Blocking file IO.
+pub fn server_config(server_id: &str) -> Result<Option<(Upsert, bool)>, String> {
+    let (config, _) = load_config()?;
+    Ok(config
+        .servers
+        .iter()
+        .find(|s| s.id.eq_ignore_ascii_case(server_id.trim()))
+        .map(|s| {
+            let transport = match s.transport.trim().to_ascii_lowercase().as_str() {
+                "sse" | "http-sse" => Transport::Sse,
+                "http" | "https" | "streamable" | "streamable-http" => Transport::Http,
+                _ => Transport::Stdio,
+            };
+            (
+                Upsert {
+                    id: s.id.clone(),
+                    title: s.title.clone(),
+                    transport,
+                    command: s.command.clone().unwrap_or_default(),
+                    args: s.args.clone(),
+                    url: s.url.clone().unwrap_or_default(),
+                    bearer_token: None,
+                    clear_bearer_token: false,
+                },
+                s.bearer_token_configured,
+            )
+        }))
+}
+
+/// medousa-home's `validate_server`, keeping what an existing server had
+/// that the form doesn't edit: whether it is on, tool tags and disabled
+/// tools.
+fn config_from(
+    u: &Upsert,
+    existing: Option<&medousa_mcp_gateway::McpServerConfig>,
+) -> Result<medousa_mcp_gateway::McpServerConfig, String> {
+    let id = normalize_server_id(&u.id)?;
+    let title = u.title.trim();
+    if title.is_empty() {
+        return Err("Title is required".to_string());
+    }
+    let token = u
+        .bearer_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+    let (transport, command, args, url) = match u.transport {
+        Transport::Http | Transport::Sse => {
+            let url = u.url.trim();
+            if url.is_empty() {
+                return Err("URL is required for remote MCP servers".to_string());
+            }
+            let has_token = token.is_some()
+                || (!u.clear_bearer_token
+                    && existing.is_some_and(|e| e.bearer_token_configured));
+            medousa_mcp_gateway::validate_remote_server_url(url, has_token)?;
+            let name = if u.transport == Transport::Sse {
+                "sse"
+            } else {
+                "http"
+            };
+            (name, None, Vec::new(), Some(url.to_string()))
+        }
+        Transport::Stdio => {
+            let command = u.command.trim();
+            if command.is_empty() {
+                return Err("Command is required for stdio MCP servers".to_string());
+            }
+            let args = u
+                .args
+                .iter()
+                .map(|a| a.trim().to_string())
+                .filter(|a| !a.is_empty())
+                .collect();
+            ("stdio", Some(command.to_string()), args, None)
+        }
+    };
+    let remote = transport != "stdio";
+    Ok(medousa_mcp_gateway::McpServerConfig {
+        id,
+        title: title.to_string(),
+        enabled: existing.is_none_or(|e| e.enabled),
+        transport: transport.to_string(),
+        command,
+        args,
+        url,
+        bearer_token: None,
+        bearer_token_configured: remote
+            && (token.is_some()
+                || (!u.clear_bearer_token
+                    && existing.is_some_and(|e| e.bearer_token_configured))),
+        allowed_lanes: existing.map_or_else(
+            || vec!["interactive".into(), "scheduled".into()],
+            |e| e.allowed_lanes.clone(),
+        ),
+        allowed_effect_classes: existing.map_or_else(
+            || {
+                vec![
+                    "external_read".into(),
+                    "external_write".into(),
+                    "external_side_effect".into(),
+                ]
+            },
+            |e| e.allowed_effect_classes.clone(),
+        ),
+        tool_tags: existing.map(|e| e.tool_tags.clone()).unwrap_or_default(),
+        disabled_tools: existing
+            .map(|e| e.disabled_tools.clone())
+            .unwrap_or_default(),
+        use_mock: false,
+    })
+}
+
+/// Adds or replaces a server, keeping its bearer token in secure storage.
+/// Applies on the next restart. Blocking file IO.
+pub fn upsert_server(u: &Upsert) -> Result<(), String> {
+    require_local()?;
+    let (mut config, _) = load_config()?;
+    let id = normalize_server_id(&u.id)?;
+    let at = config
+        .servers
+        .iter()
+        .position(|s| s.id.eq_ignore_ascii_case(&id));
+    let server = config_from(u, at.map(|i| &config.servers[i]))?;
+    let credentials = SecureMcpOAuthBundleStore::new(data_dir())
+        .map_err(|error| format!("initialize MCP credential storage: {error}"))?;
+    let token = u
+        .bearer_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+    if server.transport == "stdio" || u.clear_bearer_token {
+        credentials.save_bearer_token(&server.id, None)?;
+    } else if let Some(token) = token {
+        credentials.save_bearer_token(&server.id, Some(token))?;
+    }
+    match at {
+        Some(i) => config.servers[i] = server,
+        None => config.servers.push(server),
+    }
+    save_config(&config).map(|_| ())
+}
+
 fn servers_from_config(config: &McpGatewayFileConfig, connected: bool) -> Vec<Server> {
     config
         .servers
@@ -381,6 +548,41 @@ pub async fn restart() -> Result<(String, bool), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_server_is_checked_like_medousa_home_and_keeps_what_the_form_skips() {
+        let stdio = Upsert {
+            id: "Files".into(),
+            title: " Files ".into(),
+            command: "npx".into(),
+            args: vec!["-y".into(), " ".into(), "server".into()],
+            ..Upsert::default()
+        };
+        let made = config_from(&stdio, None).unwrap();
+        assert_eq!((made.id.as_str(), made.title.as_str()), ("files", "Files"));
+        assert_eq!(made.args, ["-y", "server"]);
+        assert!(made.enabled && made.allowed_lanes.len() == 2);
+
+        let mut existing = made.clone();
+        existing.enabled = false;
+        existing.disabled_tools = vec!["delete".into()];
+        let edited = config_from(&stdio, Some(&existing)).unwrap();
+        assert!(!edited.enabled, "editing keeps a server off");
+        assert_eq!(edited.disabled_tools, ["delete"]);
+
+        assert!(config_from(&Upsert { command: String::new(), ..stdio.clone() }, None).is_err());
+        assert!(config_from(&Upsert { title: " ".into(), ..stdio.clone() }, None).is_err());
+        let remote = Upsert {
+            transport: Transport::Sse,
+            url: "https://mcp.example/sse".into(),
+            bearer_token: Some("t".into()),
+            ..stdio
+        };
+        let made = config_from(&remote, None).unwrap();
+        assert_eq!(made.transport, "sse");
+        assert!(made.bearer_token_configured && made.bearer_token.is_none());
+        assert!(config_from(&Upsert { url: " ".into(), ..remote }, None).is_err());
+    }
 
     #[test]
     fn server_ids_follow_medousa_home_rules() {

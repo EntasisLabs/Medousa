@@ -107,6 +107,13 @@ enum Action {
     /// First press asks; a second on the same server removes it.
     McpRemove(String),
     McpRestart,
+    /// Opens the server form empty, or filled from a saved server.
+    McpAdd,
+    McpEdit(String),
+    McpTransport(medousa_desktop_host::mcp::Transport),
+    McpForgetToken,
+    McpSave,
+    McpCancel,
     /// Starts a device sign-in with a review provider on its first host.
     SignIn(String, String),
     OpenSignIn,
@@ -186,6 +193,9 @@ enum Kind {
     McpEnable(String, bool),
     McpRemove(String),
     McpRestart,
+    McpServer(String),
+    /// Saves a server, then restarts the gateway so it applies.
+    McpSave(Box<medousa_desktop_host::mcp::Upsert>),
     Accounts,
     Auth(medousa_types::ReviewProviderAuthRequest),
     Disconnect(String),
@@ -239,7 +249,31 @@ enum Reply {
     Lan(serde_json::Value),
     Channels(Box<medousa_desktop_host::channels::Summary>),
     Providers(Box<providers::Read>),
+    McpServer(Box<Option<(medousa_desktop_host::mcp::Upsert, bool)>>),
 }
+
+/// The MCP server form: which server it edits (none when adding), how it
+/// is reached, whether a token is kept and marked to forget, the read that
+/// fills it, a save in flight, and its note.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct McpForm {
+    pub editing: Option<String>,
+    pub transport: medousa_desktop_host::mcp::Transport,
+    pub has_token: bool,
+    pub forget_token: bool,
+    pub loading: Option<u64>,
+    pub saving: Option<u64>,
+    pub note: String,
+}
+
+const MCP_FIELDS: [&str; 6] = [
+    "mcp.id",
+    "mcp.title",
+    "mcp.command",
+    "mcp.args",
+    "mcp.url",
+    "mcp.token",
+];
 
 /// Waiting for an agent's CLI to report it signed in.
 #[derive(Clone, Debug)]
@@ -313,6 +347,7 @@ pub(crate) struct State {
     mcp_busy: Option<(u64, bool)>,
     mcp_confirm: Option<String>,
     mcp_restart_needed: bool,
+    mcp_form: Option<McpForm>,
     accounts: Option<Accounts>,
     accounts_reading: Option<u64>,
     /// A begin, check, cancel or disconnect in flight, and for whom.
@@ -528,6 +563,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         mcp_busy: None,
         mcp_confirm: None,
         mcp_restart_needed: false,
+        mcp_form: None,
         accounts: None,
         accounts_reading: None,
         account_busy: None,
@@ -714,6 +750,47 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                         s.mcp_busy = Some((s.enqueue(Kind::McpRemove(id)), false));
                     } else {
                         s.mcp_confirm = Some(id);
+                    }
+                }
+            }
+            Action::McpAdd => {
+                s.forget_fields(&MCP_FIELDS);
+                s.mcp_form = Some(McpForm::default());
+            }
+            Action::McpEdit(id) => {
+                s.forget_fields(&MCP_FIELDS);
+                let loading = s.enqueue(Kind::McpServer(id.clone()));
+                s.mcp_form = Some(McpForm {
+                    editing: Some(id),
+                    loading: Some(loading),
+                    ..McpForm::default()
+                });
+            }
+            Action::McpTransport(transport) => {
+                if let Some(f) = s.mcp_form.as_mut() {
+                    f.transport = transport;
+                }
+            }
+            Action::McpForgetToken => {
+                if let Some(f) = s.mcp_form.as_mut() {
+                    f.forget_token = !f.forget_token;
+                }
+            }
+            Action::McpCancel => {
+                s.forget_fields(&MCP_FIELDS);
+                s.mcp_form = None;
+            }
+            Action::McpSave => {
+                if s.mcp_busy.is_none()
+                    && let Some(form) = s.mcp_form.clone()
+                    && form.loading.is_none()
+                {
+                    let upsert = mcp_upsert(s, &form);
+                    let serial = s.enqueue(Kind::McpSave(Box::new(upsert)));
+                    s.mcp_busy = Some((serial, true));
+                    if let Some(f) = s.mcp_form.as_mut() {
+                        f.saving = Some(serial);
+                        f.note.clear();
                     }
                 }
             }
@@ -1442,16 +1519,25 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
                 .map_err(|e| e.to_string())
                 .and_then(|r| r.map(|()| Reply::McpDone("Server removed".into())))
         }
-        Kind::McpRestart => match medousa_desktop_host::mcp::restart().await {
-            Ok((message, ready)) => {
-                // Medousa learns the gateway's tools once it is up.
-                if ready {
-                    let _ = client.capabilities().reindex().await;
-                }
-                Ok(Reply::McpDone(message))
+        Kind::McpRestart => restart_mcp(client).await,
+        Kind::McpServer(id) => {
+            tokio::task::spawn_blocking(move || medousa_desktop_host::mcp::server_config(&id))
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map(|c| Reply::McpServer(Box::new(c))))
+        }
+        Kind::McpSave(upsert) => {
+            let saved = tokio::task::spawn_blocking(move || {
+                medousa_desktop_host::mcp::upsert_server(&upsert)
+            })
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r);
+            match saved {
+                Ok(()) => restart_mcp(client).await,
+                Err(e) => Err(e),
             }
-            Err(e) => Err(e),
-        },
+        }
         Kind::Patch(patch) => agent::write(client, &patch).await.map(Reply::Defaults),
         Kind::Packages => Ok(Reply::Packages(
             medousa_desktop_host::packages::catalog().await,
@@ -1478,6 +1564,30 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
         serial: command.serial,
         result,
     }
+}
+
+/// The server the form describes.
+fn mcp_upsert(s: &State, form: &McpForm) -> medousa_desktop_host::mcp::Upsert {
+    let d = |k: &str| s.drafts.get(k).cloned().unwrap_or_default();
+    medousa_desktop_host::mcp::Upsert {
+        id: form.editing.clone().unwrap_or_else(|| d("mcp.id")),
+        title: d("mcp.title"),
+        transport: form.transport,
+        command: d("mcp.command"),
+        args: d("mcp.args").split_whitespace().map(String::from).collect(),
+        url: d("mcp.url"),
+        bearer_token: Some(d("mcp.token")).filter(|t| !t.trim().is_empty()),
+        clear_bearer_token: form.forget_token,
+    }
+}
+
+/// Restarts the gateway; Medousa learns its tools once it is up.
+async fn restart_mcp(client: &MedousaClient) -> Result<Reply, String> {
+    let (message, ready) = medousa_desktop_host::mcp::restart().await?;
+    if ready {
+        let _ = client.capabilities().reindex().await;
+    }
+    Ok(Reply::McpDone(message))
 }
 
 async fn connections(
@@ -1944,10 +2054,52 @@ pub fn apply(w: &mut World, u: Update) {
             s.redraw = true;
             return;
         }
+        if let Some(form) = s.mcp_form.as_mut()
+            && form.loading == Some(u.serial)
+        {
+            form.loading = None;
+            match u.result {
+                Ok(Reply::McpServer(found)) => {
+                    if let Some((c, has_token)) = *found {
+                        form.transport = c.transport;
+                        form.has_token = has_token;
+                        s.drafts.insert("mcp.title", c.title);
+                        s.drafts.insert("mcp.command", c.command);
+                        s.drafts.insert("mcp.args", c.args.join(" "));
+                        s.drafts.insert("mcp.url", c.url);
+                    }
+                }
+                Err(e) => form.note = format!("Couldn’t read this server: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
         if let Some((serial, restart)) = s.mcp_busy
             && serial == u.serial
         {
             s.mcp_busy = None;
+            // A save closes its form; a refusal is shown in it.
+            if let Some(form) = s.mcp_form.as_mut()
+                && form.saving == Some(serial)
+            {
+                form.saving = None;
+                match &u.result {
+                    Ok(_) => {
+                        s.forget_fields(&MCP_FIELDS);
+                        s.mcp_form = None;
+                    }
+                    Err(e) => {
+                        form.note = e.clone();
+                        // It may have saved before the restart failed.
+                        if s.mcp_reading.is_none() {
+                            s.mcp_reading = Some(s.enqueue(Kind::McpStatus));
+                        }
+                        s.redraw = true;
+                        return;
+                    }
+                }
+            }
             match u.result {
                 Ok(Reply::McpDone(message)) => {
                     // A restart applies every edit; any other edit waits for one.
@@ -2044,7 +2196,8 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Qr(_)
                 | Reply::Lan(_)
                 | Reply::Channels(_)
-                | Reply::Providers(_),
+                | Reply::Providers(_)
+                | Reply::McpServer(_),
             ) => {}
             Err(e) if reading => s.message = format!("Couldn’t read the connection: {e}"),
             Err(e) => {

@@ -197,7 +197,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime,runtime-lists,sharing,channels,providers}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,mcp-add,accounts,external,runtime,runtime-lists,sharing,channels,providers}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -362,6 +362,32 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "mcp");
+        with_state(app.world_mut(), |_, s| {
+            s.mcp_confirm = None;
+            s.mcp_restart_needed = false;
+            s.mcp_form = Some(McpForm {
+                transport: medousa_desktop_host::mcp::Transport::Http,
+                ..McpForm::default()
+            });
+            s.drafts.insert("mcp.id", "linear".into());
+            s.drafts.insert("mcp.title", "Linear".into());
+            s.drafts.insert("mcp.url", "https://mcp.linear.app/mcp".into());
+            s.drafts.insert("mcp.token", "lin_api_secret".into());
+            s.redraw = true;
+        });
+        rndr_paint::frame(&mut app);
+        let body = state(app.world()).unwrap().body;
+        let scroll = app.world().get::<Parent>(body).unwrap().entity;
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., -300.];
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "mcp-add");
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., 0.];
+        with_state(app.world_mut(), |_, s| {
+            s.mcp_form = None;
+            s.forget_fields(&MCP_FIELDS);
+        });
         with_state(app.world_mut(), |_, s| {
             s.section = Section::Accounts;
             s.accounts_reading = None;
@@ -1770,4 +1796,124 @@ fn env_overrides_add_a_masked_value_and_remove_on_a_second_press() {
         patch,
         agent::Patch::Field("env_overrides", "TOKEN=s3cret".into())
     );
+}
+
+#[test]
+fn adding_an_mcp_server_saves_it_and_restarts_the_gateway() {
+    use medousa_desktop_host::mcp::{Transport, Upsert};
+    let mut app = mcp_open(true);
+    app.world_mut().insert_resource(Viewport::new(1200., 1600.));
+    click(&mut app, "Add a server");
+    for (name, text) in [
+        ("Server id", "files"),
+        ("Title", "Files"),
+        ("Command", "npx"),
+        ("Arguments", "-y server /tmp"),
+    ] {
+        click(&mut app, name);
+        type_text(&mut app, text);
+    }
+    click(&mut app, "Save server");
+    let s = state(app.world()).unwrap();
+    let form = s.mcp_form.clone().unwrap();
+    let serial = form.saving.expect("saving");
+    assert_eq!(s.mcp_busy, Some((serial, true)), "a save restarts");
+    assert_eq!(
+        mcp_upsert(s, &form),
+        Upsert {
+            id: "files".into(),
+            title: "Files".into(),
+            transport: Transport::Stdio,
+            command: "npx".into(),
+            args: vec!["-y".into(), "server".into(), "/tmp".into()],
+            ..Upsert::default()
+        }
+    );
+    // A refusal stays in the form; success closes it.
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Err("Title is required".into()),
+        },
+    );
+    app.update();
+    assert_eq!(
+        state(app.world()).unwrap().mcp_form.as_ref().unwrap().note,
+        "Title is required"
+    );
+    click(&mut app, "Save server");
+    let serial = state(app.world()).unwrap().mcp_busy.unwrap().0;
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::McpDone("Gateway restarted".into())),
+        },
+    );
+    let s = state(app.world()).unwrap();
+    assert!(s.mcp_form.is_none() && !s.drafts.contains_key("mcp.title"));
+    assert_eq!(s.message, "Gateway restarted");
+}
+
+#[test]
+fn editing_a_remote_server_fills_the_form_and_keeps_its_token_hidden() {
+    use medousa_desktop_host::mcp::{Transport, Upsert};
+    let mut app = mcp_open(true);
+    app.world_mut().insert_resource(Viewport::new(1200., 1600.));
+    click(&mut app, "Edit GitHub");
+    let loading = state(app.world())
+        .unwrap()
+        .mcp_form
+        .as_ref()
+        .unwrap()
+        .loading
+        .expect("read");
+    apply(
+        app.world_mut(),
+        Update {
+            serial: loading,
+            result: Ok(Reply::McpServer(Box::new(Some((
+                Upsert {
+                    id: "github".into(),
+                    title: "GitHub".into(),
+                    transport: Transport::Http,
+                    url: "https://api.githubcopilot.com/mcp".into(),
+                    ..Upsert::default()
+                },
+                true,
+            ))))),
+        },
+    );
+    app.update();
+    assert_eq!(
+        field_text(app.world(), "URL"),
+        "https://api.githubcopilot.com/mcp"
+    );
+    assert_eq!(field_text(app.world(), "Bearer token"), "");
+    assert!(
+        app.world()
+            .has::<Secure>(named(app.world(), "Bearer token").unwrap())
+    );
+    click(&mut app, "Forget saved token");
+    assert!(
+        state(app.world())
+            .unwrap()
+            .mcp_form
+            .as_ref()
+            .unwrap()
+            .forget_token
+    );
+    click(&mut app, "Local command");
+    assert_eq!(
+        state(app.world())
+            .unwrap()
+            .mcp_form
+            .as_ref()
+            .unwrap()
+            .transport,
+        Transport::Stdio
+    );
+    click(&mut app, "Cancel server");
+    assert!(state(app.world()).unwrap().mcp_form.is_none());
 }

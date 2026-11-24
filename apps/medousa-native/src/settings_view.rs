@@ -1777,6 +1777,15 @@ fn mcp(w: &mut World, s: &mut State, body: Entity) {
                 justify: Justify::End,
             },
         );
+        named_button(
+            w,
+            side,
+            s,
+            "Edit",
+            format!("Edit {}", server.title),
+            Action::McpEdit(server.id.clone()),
+            idle,
+        );
         let verb = if server.enabled {
             "Turn off"
         } else {
@@ -1818,11 +1827,26 @@ fn mcp(w: &mut World, s: &mut State, body: Entity) {
             );
         }
     }
-    if status.local && more(w, body, s, "mcp-add", "Add a server", "stdio, HTTP or SSE") {
+    if status.local {
+        match s.mcp_form.clone() {
+            Some(form) => mcp_form(w, s, body, &form),
+            None => {
+                let row = panel(
+                    w,
+                    body,
+                    Layout {
+                        width: Size::Hug,
+                        height: Size::Hug,
+                        ..Layout::row()
+                    },
+                );
+                button(w, row, s, "Add a server", Action::McpAdd, idle);
+            }
+        }
         quiet(
             w,
             body,
-            "Adding servers, per-tool settings and sign-in are coming to this app soon. Until then, add them in the original Medousa app.",
+            "Per-tool settings and server sign-in are still set up in the original Medousa app.",
         );
     }
     if more(
@@ -1845,6 +1869,164 @@ fn mcp(w: &mut World, s: &mut State, body: Entity) {
                 &medousa_desktop_host::mcp::log_path().display().to_string(),
             );
         }
+    }
+}
+
+/// Adds or edits one server: how it is reached, then saves and restarts.
+fn mcp_form(w: &mut World, s: &mut State, body: Entity, form: &super::McpForm) {
+    use medousa_desktop_host::mcp::Transport;
+    let form_panel = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            padding: 12.,
+            ..Layout::column()
+        },
+    );
+    let p = form_panel;
+    match &form.editing {
+        Some(id) => {
+            label(w, p, &format!("Edit {id}"), Typography::Emphasis);
+        }
+        None => {
+            label(w, p, "Add a server", Typography::Emphasis);
+            field(
+                w,
+                p,
+                s,
+                "mcp.id",
+                "Server id",
+                "Letters, numbers, hyphens and underscores.",
+                "files",
+                false,
+            );
+        }
+    }
+    if form.loading.is_some() {
+        quiet(w, p, "Reading…");
+        return;
+    }
+    field(w, p, s, "mcp.title", "Title", "", "Files", false);
+    label(w, p, "Connection", Typography::Label);
+    let row = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    for (t, name, hint) in [
+        (Transport::Stdio, "Local command", "Runs on this Mac"),
+        (Transport::Http, "HTTP", "Streamable HTTP endpoint"),
+        (Transport::Sse, "SSE", "Server-sent events endpoint"),
+    ] {
+        choice(
+            w,
+            row,
+            s,
+            name,
+            hint,
+            Action::McpTransport(t),
+            form.transport == t,
+            true,
+        );
+    }
+    match form.transport {
+        Transport::Stdio => {
+            field(
+                w,
+                p,
+                s,
+                "mcp.command",
+                "Command",
+                "The program to start.",
+                "npx",
+                false,
+            );
+            field(
+                w,
+                p,
+                s,
+                "mcp.args",
+                "Arguments",
+                "Separated by spaces.",
+                "-y @modelcontextprotocol/server-filesystem /Users/you",
+                false,
+            );
+        }
+        Transport::Http | Transport::Sse => {
+            field(
+                w,
+                p,
+                s,
+                "mcp.url",
+                "URL",
+                "",
+                "https://mcp.example.com/mcp",
+                false,
+            );
+            let hint = match (form.forget_token, form.has_token) {
+                (true, _) => "Forgotten when you save",
+                (false, true) => "Kept on this Mac — paste again only to replace",
+                (false, false) => "Optional",
+            };
+            field(w, p, s, "mcp.token", "Bearer token", hint, "", true);
+            if form.has_token {
+                switch_row(
+                    w,
+                    p,
+                    s,
+                    "Forget saved token",
+                    "Clears it when you save, unless a new one is pasted",
+                    form.forget_token,
+                    Action::McpForgetToken,
+                    true,
+                );
+            }
+        }
+    }
+    let row = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    let saving = form.saving.is_some();
+    named_button(
+        w,
+        row,
+        s,
+        if saving {
+            "Saving…"
+        } else {
+            "Save & restart"
+        },
+        "Save server".into(),
+        Action::McpSave,
+        s.mcp_busy.is_none(),
+    );
+    named_button(
+        w,
+        row,
+        s,
+        "Cancel",
+        "Cancel server".into(),
+        Action::McpCancel,
+        !saving,
+    );
+    if !form.note.is_empty() {
+        let note = form.note.clone();
+        label(w, p, &note, Typography::Label);
     }
 }
 
