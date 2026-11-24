@@ -325,7 +325,7 @@ pub fn dispatch(world: &mut World) {
     }
 }
 /// Capture one session owner or one view's immutable binding for this request.
-pub(crate) fn send(world: &World, command: Command) {
+pub(crate) fn send(world: &World, mut command: Command) {
     use crate::surfaces::SurfaceId as V;
     if let Some(s) = world.resource::<crate::workshops::Workshops>() {
         let view = match &command {
@@ -358,6 +358,9 @@ pub(crate) fn send(world: &World, command: Command) {
             };
             (key.authority, None)
         };
+        if let Command::Settings(c) = &mut command {
+            crate::settings::bind_workshop(c, crate::workshops::settings_workshop(world, &owner));
+        }
         if let Some(aux) = s.auxiliaries.get(&owner) {
             let _ = aux.tx.send((stamp, command));
         }

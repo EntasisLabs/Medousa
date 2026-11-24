@@ -10,7 +10,9 @@ cargo run
 Uses the sibling RNDR checkout at `../../../../rndr`, shared
 `medousa-app-core`, and the shared desktop-host saved-connection and trusted-pairing
 paths. On launch it attaches to saved sources concurrently, without a global
-active-workshop selection. **Workshops / setup** adds a trusted pairing, reconnects
+active-workshop switch. The prior configured workshop seeds missing view defaults
+once; existing native destinations win. There is no persistent source toolbar.
+**Settings → Connection** adds a trusted pairing, reconnects
 one source, or deliberately starts the bundled Personal daemon. It does **not**
 start, install, or restart a daemon merely on launch. The explicit, confirmed
 Peers LAN control can restart only the managed personal engine.
@@ -22,7 +24,7 @@ Colors come from the same theme catalog as the Tauri shell. The native app
 embeds `themes/medousa-themes.json`, generated from `apps/medousa-home/themes`
 with `npm run themes:native` (CI checks it with `npm run check:native-themes`
 and the vitest catalog test). At launch it uses the native device-local color
-theme, falling back to Obsidian, and follows
+theme, then the prior workshop's saved theme, then Obsidian, and follows
 the system light/dark setting. `src/theme.rs` maps Medousa's roles onto RNDR
 tokens; RNDR's high-contrast palette still takes precedence.
 
@@ -129,7 +131,8 @@ daemon-index search, vault listing/linking/switching, and clean document closure
 Vault switches require all documents closed; drafts cannot silently cross roots.
 Editing remains retained Markdown source, not inline rich-text.
 It uses the Notes view's explicit workshop binding, independent of chats and
-other artifact views. Native trusted pairing is available in Workshops / setup.
+other artifact views. Native trusted pairing and optional view-local source changes are available in
+Settings → Connection.
 
 ## Code
 

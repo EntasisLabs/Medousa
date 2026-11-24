@@ -234,9 +234,6 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Layout::column()
         },
     );
-    if world.resource::<crate::workshops::Workshops>().is_some() {
-        crate::workshops::mount(world, content);
-    }
     let roots = [
         "Chat", "Notes", "Code", "Create", "Reviews", "Calendar", "Peers", "Settings",
     ]

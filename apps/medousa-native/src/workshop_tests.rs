@@ -35,14 +35,40 @@ fn boot() -> (
     app.update();
     (app, dir, channels)
 }
+fn choose(app: &mut App, view: SurfaceId, source: u64) {
+    crate::surfaces::select(app.world_mut(), SurfaceId::Settings);
+    crate::settings::show_connection_fixture(app.world_mut());
+    app.update();
+    let index = match view {
+        SurfaceId::Chat => 0,
+        SurfaceId::Notes => 1,
+        SurfaceId::Code => 2,
+        SurfaceId::Create => 3,
+        SurfaceId::Reviews => 4,
+        SurfaceId::Calendar => 5,
+        SurfaceId::Peers => 6,
+        SurfaceId::Settings => 7,
+    };
+    assert!(workshops::action(
+        app.world_mut(),
+        &HostIntent::Command(0x5753_4000 + index)
+    ));
+    assert!(workshops::action(
+        app.world_mut(),
+        &HostIntent::Command(0x5753_3000 + source)
+    ));
+    app.update();
+}
 #[test]
-#[ignore = "Offscreen GPU workshop setup acceptance"]
+#[ignore = "Offscreen GPU quiet workshop acceptance"]
 fn workshop_setup_visual_acceptance() {
     let (mut app, _dir, _channels) = boot();
     let engine: std::sync::Arc<dyn TextEngine> =
         std::sync::Arc::new(rndr_render::ParleyText::new());
     app.world_mut().insert_resource(engine);
-    workshops::action(app.world_mut(), &HostIntent::Command(0x5753_3000));
+    choose(&mut app, SurfaceId::Notes, 0);
+    choose(&mut app, SurfaceId::Chat, 0);
+    crate::surfaces::select(app.world_mut(), SurfaceId::Chat);
     let kb = qualify("authority-b", "s");
     conversations::open(app.world_mut(), Some(kb.clone()));
     let generation = app.world().resource::<Model>().unwrap().generation;
@@ -60,11 +86,14 @@ fn workshop_setup_visual_acceptance() {
             ),
         },
     );
+    std::fs::create_dir_all(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/verification-inputs/native"),
+    )
+    .unwrap();
     let mut exporter = rndr_render::Exporter::new().unwrap();
-    for setup in [false, true] {
-        if setup {
-            workshops::action(app.world_mut(), &HostIntent::Command(0x5753_0001));
-        }
+    for surface in [SurfaceId::Chat, SurfaceId::Notes] {
+        crate::surfaces::select(app.world_mut(), surface);
         for _ in 0..4 {
             app.update();
         }
@@ -75,7 +104,11 @@ fn workshop_setup_visual_acceptance() {
         });
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
             "../../target/verification-inputs/native/workshops-{}.png",
-            if setup { "setup" } else { "chat" }
+            if surface == SurfaceId::Notes {
+                "notes"
+            } else {
+                "chat"
+            }
         ));
         image::save_buffer(
             path,
@@ -175,27 +208,17 @@ fn colliding_chat_ids_keep_owners_replies_actions_and_offline_recovery_separate(
 #[test]
 fn vault_and_canvas_destinations_are_view_local_and_epoch_fenced() {
     let (mut app, _dir, _channels) = boot();
-    crate::surfaces::select(app.world_mut(), SurfaceId::Notes);
-    app.update();
-    assert!(workshops::action(
-        app.world_mut(),
-        &HostIntent::Command(0x5753_3000)
-    ));
+    choose(&mut app, SurfaceId::Notes, 0);
     let notes = workshops::binding(app.world(), SurfaceId::Notes).unwrap();
     assert_eq!(notes.authority, "authority-a");
-    crate::surfaces::select(app.world_mut(), SurfaceId::Create);
-    app.update();
-    assert!(workshops::action(
-        app.world_mut(),
-        &HostIntent::Command(0x5753_3001)
-    ));
+    choose(&mut app, SurfaceId::Create, 1);
     let old = workshops::binding(app.world(), SurfaceId::Create).unwrap();
     assert_eq!(old.authority, "authority-b");
     assert_eq!(
         workshops::binding(app.world(), SurfaceId::Notes).unwrap(),
         notes
     );
-    workshops::action(app.world_mut(), &HostIntent::Command(0x5753_3000));
+    choose(&mut app, SurfaceId::Create, 0);
     let now = workshops::binding(app.world(), SurfaceId::Create).unwrap();
     assert_eq!(now.authority, "authority-a");
     assert!(!now.accepts(&old));

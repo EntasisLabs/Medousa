@@ -21,7 +21,17 @@ use rndr_ui::{
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 
-const MANAGE: u64 = 0x5753_0001;
+const VIEW: u64 = 0x5753_4000;
+const VIEWS: [SurfaceId; 8] = [
+    SurfaceId::Chat,
+    SurfaceId::Notes,
+    SurfaceId::Code,
+    SurfaceId::Create,
+    SurfaceId::Reviews,
+    SurfaceId::Calendar,
+    SurfaceId::Peers,
+    SurfaceId::Settings,
+];
 const PAIR: u64 = 0x5753_0002;
 const RELOAD: u64 = 0x5753_0003;
 const CONNECT: u64 = 0x5753_1000;
@@ -49,6 +59,11 @@ pub struct Workshops {
     catalogs: HashMap<String, Catalog>,
     pub(crate) bindings: HashMap<SurfaceId, Binding>,
     destination: Option<String>,
+    // Captured once at launch. Never follows later registry selection changes.
+    initial_id: Option<String>,
+    restore_defaults: bool,
+    source_view: SurfaceId,
+    notice: String,
     backend_sender: feed::Sender<Reply>,
     setup_sender: feed::Sender<Setup>,
     _backend_feed: feed::Feed<Reply>,
@@ -74,14 +89,12 @@ struct Toolbar {
     root: Entity,
     summary: Entity,
     body: Entity,
-    expanded: bool,
     dirty: bool,
     address: Option<Entity>,
     qr: Option<Entity>,
     address_draft: String,
     qr_draft: String,
     source_buttons: HashMap<u64, String>,
-    note: String,
     pairing: bool,
 }
 fn panel(w: &mut World, parent: Entity, layout: Layout) -> Entity {
@@ -100,6 +113,9 @@ fn button(w: &mut World, p: Entity, id: u64, s: &str, on: bool) {
         Size::Px((s.chars().count() as f32 * 7. + 28.).clamp(110., 320.));
 }
 pub fn mount(w: &mut World, parent: Entity) {
+    let previous = w
+        .resource::<Toolbar>()
+        .map(|t| (t.address_draft.clone(), t.qr_draft.clone(), t.pairing));
     let surface = rndr_ui::Surface::Content
         .mount(w, parent, UiId(0x5753_ffff))
         .unwrap();
@@ -116,7 +132,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         gap: 6.,
         ..Layout::column()
     };
-    let summary = label(w, root, "Workshops — connect a source to begin");
+    let summary = label(w, root, "Connections");
     let bar = panel(
         w,
         root,
@@ -127,7 +143,11 @@ pub fn mount(w: &mut World, parent: Entity) {
             ..Layout::row()
         },
     );
-    button(w, bar, MANAGE, "Workshops / setup", true);
+    label(
+        w,
+        bar,
+        "Saved connections are available together; changes below affect only the chosen view.",
+    );
     let body = panel(
         w,
         root,
@@ -142,16 +162,15 @@ pub fn mount(w: &mut World, parent: Entity) {
         root,
         summary,
         body,
-        expanded: false,
         dirty: true,
         address: None,
         qr: None,
-        address_draft: String::new(),
-        qr_draft: String::new(),
+        address_draft: previous.as_ref().map(|p| p.0.clone()).unwrap_or_default(),
+        qr_draft: previous.as_ref().map(|p| p.1.clone()).unwrap_or_default(),
         source_buttons: HashMap::new(),
-        note: String::new(),
-        pairing: false,
+        pairing: previous.is_some_and(|p| p.2),
     });
+    redraw(w);
 }
 fn read_registry() -> Result<WorkshopRegistry, String> {
     match std::fs::read(saved::workshops_registry_path()) {
@@ -196,6 +215,10 @@ pub(crate) fn install_fixture(
         catalogs: HashMap::new(),
         bindings: HashMap::new(),
         destination: None,
+        initial_id: None,
+        restore_defaults: true,
+        source_view: SurfaceId::Chat,
+        notice: String::new(),
         backend_sender,
         setup_sender,
         _backend_feed: backend_feed,
@@ -207,6 +230,38 @@ pub(crate) fn install_fixture(
     receivers
 }
 #[cfg(test)]
+pub(crate) fn restore_fixture(w: &mut World, path: std::path::PathBuf, registry: WorkshopRegistry) {
+    restore(w, path, Ok(registry));
+}
+#[cfg(test)]
+pub(crate) fn connected_fixture(
+    w: &mut World,
+    id: &str,
+    owner: &str,
+    client: Arc<MedousaClient>,
+) -> mpsc::UnboundedReceiver<Request> {
+    let (commands, receiver) = mpsc::unbounded_channel();
+    w.resource::<Workshops>()
+        .unwrap()
+        .setup_sender
+        .send(Setup::Connected {
+            id: id.into(),
+            owner: owner.into(),
+            client,
+            commands,
+        })
+        .unwrap();
+    receiver
+}
+#[cfg(test)]
+pub(crate) fn fail_fixture(w: &mut World, id: &str) {
+    w.resource::<Workshops>()
+        .unwrap()
+        .setup_sender
+        .send(Setup::Failed(id.into(), "Fixture offline".into()))
+        .unwrap();
+}
+#[cfg(test)]
 pub(crate) fn recover_fixture(w: &mut World, owner: &str) -> mpsc::UnboundedReceiver<Request> {
     let (tx, rx) = mpsc::unbounded_channel();
     w.resource_mut::<Workshops>()
@@ -216,9 +271,25 @@ pub(crate) fn recover_fixture(w: &mut World, owner: &str) -> mpsc::UnboundedRece
     rx
 }
 pub fn install(w: &mut World) {
+    let path = medousa_desktop_host::paths::medousa_config_dir().join("native-sources.json");
+    restore(w, path, read_registry());
+    let ids: Vec<_> = w
+        .resource::<Workshops>()
+        .unwrap()
+        .entries
+        .iter()
+        .map(|e| e.saved.id.clone())
+        .collect();
+    for id in ids {
+        connect(w, &id, false);
+    }
+}
+/// Pure configuration restore, shared with hermetic launch tests. Connection
+/// effects happen only after this complete, read-only restore transaction.
+fn restore(w: &mut World, path: std::path::PathBuf, registry: Result<WorkshopRegistry, String>) {
     let (backend_feed, backend_sender) = feed::open(w, FeedConfig::queue(256));
     let (setup_feed, setup_sender) = feed::open(w, FeedConfig::queue(32));
-    let path = medousa_desktop_host::paths::medousa_config_dir().join("native-sources.json");
+    let initial = registry.as_ref().ok().and_then(initial_id);
     let loaded = crate::source_preferences::Preferences::read(&path);
     let error = loaded.as_ref().err().cloned();
     let prefs = loaded.unwrap_or_default();
@@ -244,6 +315,10 @@ pub fn install(w: &mut World) {
         catalogs: HashMap::new(),
         bindings,
         destination: prefs.new_chat,
+        initial_id: initial,
+        restore_defaults: error.is_none(),
+        source_view: SurfaceId::Chat,
+        notice: String::new(),
         backend_sender,
         setup_sender,
         _backend_feed: backend_feed,
@@ -252,26 +327,50 @@ pub fn install(w: &mut World) {
         preferences: crate::source_preferences::Store::new(path, error),
         aliases: prefs.aliases,
     });
-    reload(w);
-    let ids: Vec<_> = w
-        .resource::<Workshops>()
-        .unwrap()
+    load_registry(w, registry);
+    seed_defaults(w);
+}
+/// The legacy selection is a migration seed, not runtime activation. Missing or
+/// invalid identities stay unresolved rather than borrowing another connection.
+fn initial_id(registry: &WorkshopRegistry) -> Option<String> {
+    let matches: Vec<_> = registry
+        .workshops
+        .iter()
+        .filter(|e| e.id == registry.active_workshop_id)
+        .collect();
+    (matches.len() == 1 && saved::is_portal_kind(&matches[0].kind)).then(|| matches[0].id.clone())
+}
+fn seed_defaults(w: &mut World) {
+    let s = w.resource_mut::<Workshops>().unwrap();
+    if !s.restore_defaults {
+        return;
+    }
+    let Some(owner) = s
         .entries
         .iter()
-        .map(|e| e.saved.id.clone())
-        .collect();
-    for id in ids {
-        connect(w, &id, false);
+        .find(|e| Some(&e.saved.id) == s.initial_id.as_ref())
+        .and_then(|e| e.owner.clone())
+    else {
+        return;
+    };
+    s.destination.get_or_insert_with(|| owner.clone());
+    for surface in VIEWS.into_iter().filter(|v| *v != SurfaceId::Chat) {
+        s.bindings
+            .entry(surface)
+            .or_insert_with(|| Binding::new(owner.clone()));
     }
 }
 fn note(w: &mut World, s: String) {
+    w.resource_mut::<Workshops>().unwrap().notice = s.clone();
     if let Some(t) = w.resource_mut::<Toolbar>() {
-        t.note = s;
         t.dirty = true;
     }
 }
 fn reload(w: &mut World) {
-    let registry = match read_registry() {
+    load_registry(w, read_registry());
+}
+fn load_registry(w: &mut World, result: Result<WorkshopRegistry, String>) {
+    let registry = match result {
         Ok(r) => r,
         Err(e) => {
             note(w, e);
@@ -306,7 +405,7 @@ fn client(plan: &ConnectionPlan) -> Result<MedousaClient, String> {
                     workshop_id,
                     &plan.origin,
                 )
-                .ok_or("Saved pairing credentials are missing. Pair this workshop again.")?;
+                .ok_or("Saved workshop credentials are unavailable. Check Connection settings; no other source was substituted.")?;
             Ok(MedousaClient::with_transport(
                 Arc::new(crate::saved_transport::SavedTransport(
                     config,
@@ -426,6 +525,19 @@ pub(crate) fn owner(w: &World, session: Option<&str>) -> Option<String> {
         s.destination.clone()
     }
 }
+pub(crate) fn settings_workshop(w: &World, owner: &str) -> Option<crate::settings::Workshop> {
+    let entry = w
+        .resource::<Workshops>()?
+        .entries
+        .iter()
+        .find(|e| e.owner.as_deref() == Some(owner))?;
+    Some(crate::settings::Workshop {
+        label: entry.saved.label.clone(),
+        kind: entry.saved.kind.clone(),
+        url: entry.saved.url.clone(),
+        data_dir: entry.saved.data_dir.clone(),
+    })
+}
 pub(crate) fn commands(w: &World, owner: &str) -> Option<mpsc::UnboundedSender<Request>> {
     w.resource::<Workshops>()?.commands.get(owner).cloned()
 }
@@ -468,6 +580,10 @@ pub(crate) fn source_label(w: &World, owner: &str) -> String {
     } else {
         label.into()
     }
+}
+pub(crate) fn provenance(w: &World, session: &str) -> Option<String> {
+    let s = w.resource::<Workshops>()?;
+    (s.entries.len() > 1).then(|| source_for_session(w, session))
 }
 pub(crate) fn source_for_session(w: &World, session: &str) -> String {
     SessionKey::parse(session)
@@ -634,11 +750,7 @@ fn field(w: &mut World, p: Entity, name: &str, value: &str) -> Entity {
 fn persist(w: &World) {
     let s = w.resource::<Workshops>().unwrap();
     let prefs = crate::source_preferences::Preferences {
-        aliases: s
-            .entries
-            .iter()
-            .filter_map(|e| e.owner.as_ref().map(|o| (e.saved.id.clone(), o.clone())))
-            .collect(),
+        aliases: s.aliases.clone(),
         views: s
             .bindings
             .iter()
@@ -675,27 +787,6 @@ pub fn tick(w: &mut World) {
                     s.auxiliaries.insert(owner.clone(), aux);
                     s.clients.insert(owner.clone(), client);
                     s.commands.insert(owner.clone(), commands);
-                    // Single-daemon use gets its familiar initial destination.
-                    // With several saved sources, unresolved views require an
-                    // explicit choice; an offline source never causes fallback.
-                    if s.entries.len() == 1 {
-                        if s.destination.is_none() {
-                            s.destination = Some(owner.clone());
-                        }
-                        for surface in [
-                            SurfaceId::Notes,
-                            SurfaceId::Code,
-                            SurfaceId::Create,
-                            SurfaceId::Reviews,
-                            SurfaceId::Calendar,
-                            SurfaceId::Peers,
-                            SurfaceId::Settings,
-                        ] {
-                            s.bindings
-                                .entry(surface)
-                                .or_insert_with(|| Binding::new(owner.clone()));
-                        }
-                    }
                 }
                 let s = w.resource_mut::<Workshops>().unwrap();
                 if let Some(e) = s.entries.iter_mut().find(|e| e.saved.id == id) {
@@ -703,6 +794,8 @@ pub fn tick(w: &mut World) {
                     e.owner = Some(owner.clone());
                     e.status = "Connected".into();
                 }
+                s.aliases.insert(id.clone(), owner.clone());
+                seed_defaults(w);
                 if !duplicate && binding(w, SurfaceId::Code).is_some_and(|b| b.authority == owner) {
                     bind_terminal(w, &owner);
                 }
@@ -714,6 +807,17 @@ pub fn tick(w: &mut World) {
                 if let Some(e) = s.entries.iter_mut().find(|e| e.saved.id == id) {
                     e.connecting = false;
                     e.status = error;
+                }
+                let is_default = s
+                    .entries
+                    .iter()
+                    .find(|e| e.saved.id == id)
+                    .is_some_and(|e| {
+                        e.owner.as_ref() == s.destination.as_ref() && s.destination.is_some()
+                    })
+                    || (s.destination.is_none() && s.initial_id.as_deref() == Some(&id));
+                if is_default {
+                    crate::ui::workshop_unavailable(w);
                 }
             }
             Setup::Health(id, result) => {
@@ -728,11 +832,15 @@ pub fn tick(w: &mut World) {
             Setup::Paired(result) => {
                 if let Some(t) = w.resource_mut::<Toolbar>() {
                     t.pairing = false;
-                    t.note =
-                        result.as_ref().err().cloned().unwrap_or_else(|| {
-                            "Workshop paired. Connect its saved row below.".into()
-                        });
                 }
+                note(
+                    w,
+                    result
+                        .as_ref()
+                        .err()
+                        .cloned()
+                        .unwrap_or_else(|| "Workshop paired. Connect its saved row below.".into()),
+                );
                 if result.is_ok() {
                     reload(w);
                 }
@@ -767,7 +875,14 @@ pub(crate) fn action(w: &mut World, event: &HostIntent) -> bool {
         return false;
     };
     let action = *action;
-    let known = [MANAGE, RELOAD, PAIR].contains(&action)
+    let mounted = w
+        .resource::<Toolbar>()
+        .is_some_and(|t| w.get::<Layout>(t.root).is_some());
+    if !mounted || crate::surfaces::active(w) != SurfaceId::Settings {
+        return false;
+    }
+    let known = [RELOAD, PAIR].contains(&action)
+        || (VIEW..VIEW + VIEWS.len() as u64).contains(&action)
         || (CONNECT..CONNECT + 100).contains(&action)
         || (START..START + 100).contains(&action)
         || w.resource::<Toolbar>()
@@ -775,10 +890,9 @@ pub(crate) fn action(w: &mut World, event: &HostIntent) -> bool {
     if !known {
         return false;
     }
-    if action == MANAGE {
-        let t = w.resource_mut::<Toolbar>().unwrap();
-        t.expanded = !t.expanded;
-        t.dirty = true;
+    if (VIEW..VIEW + VIEWS.len() as u64).contains(&action) {
+        w.resource_mut::<Workshops>().unwrap().source_view = VIEWS[(action - VIEW) as usize];
+        w.resource_mut::<Toolbar>().unwrap().dirty = true;
     } else if action == RELOAD {
         reload(w);
     } else if action == PAIR {
@@ -824,7 +938,7 @@ pub(crate) fn action(w: &mut World, event: &HostIntent) -> bool {
             .and_then(|t| t.source_buttons.get(&action))
             .cloned();
         if let Some(owner) = owner {
-            let surface = crate::surfaces::active(w);
+            let surface = w.resource::<Workshops>().unwrap().source_view;
             let previous = binding(w, surface);
             if surface == SurfaceId::Chat {
                 w.resource_mut::<Workshops>().unwrap().destination = Some(owner);
@@ -852,13 +966,27 @@ pub(crate) fn action(w: &mut World, event: &HostIntent) -> bool {
     true
 }
 fn redraw(w: &mut World) {
-    let surface = crate::surfaces::active(w);
+    if !w
+        .resource::<Toolbar>()
+        .is_some_and(|t| w.get::<Layout>(t.root).is_some())
+    {
+        return;
+    }
+    let surface = w.resource::<Workshops>().unwrap().source_view;
     let s = w.resource::<Workshops>().unwrap();
     let selected = if surface == SurfaceId::Chat {
         s.destination.clone()
     } else {
         s.bindings.get(&surface).map(|b| b.authority.clone())
     };
+    let changeable = matches!(
+        surface,
+        SurfaceId::Chat
+            | SurfaceId::Notes
+            | SurfaceId::Code
+            | SurfaceId::Create
+            | SurfaceId::Reviews
+    ) || selected.is_none();
     let source = selected
         .as_deref()
         .map(|o| {
@@ -874,7 +1002,7 @@ fn redraw(w: &mut World) {
         })
         .unwrap_or_else(|| "Choose a workshop".into());
     let summary = if surface == SurfaceId::Chat {
-        format!("New chat destination: {source} · existing chats keep their source")
+        format!("New chats: {source}")
     } else {
         format!("{surface:?} source: {source} · selection belongs only to this view")
     };
@@ -912,15 +1040,33 @@ fn redraw(w: &mut World) {
     t.dirty = false;
     t.source_buttons.clear();
     let body = t.body;
-    let expanded = t.expanded;
     let a = t.address_draft.clone();
     let qr = t.qr_draft.clone();
-    let note = t.note.clone();
     let pairing = t.pairing;
     t.address = None;
     t.qr = None;
+    let note = w.resource::<Workshops>().unwrap().notice.clone();
     for child in children_of(w, body) {
         despawn(w, child);
+    }
+    let views = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 4.,
+            ..Layout::column()
+        },
+    );
+    for (i, view) in VIEWS.iter().enumerate() {
+        button(
+            w,
+            views,
+            VIEW + i as u64,
+            &format!("{}{:?}", if *view == surface { "✓ " } else { "" }, view),
+            true,
+        );
     }
     let destinations = panel(
         w,
@@ -948,15 +1094,19 @@ fn redraw(w: &mut World) {
                 },
                 name
             ),
-            true,
+            changeable,
         );
         w.resource_mut::<Toolbar>()
             .unwrap()
             .source_buttons
             .insert(id, owner.clone());
     }
-    if !expanded {
-        return;
+    if !changeable {
+        label(
+            w,
+            body,
+            "This view keeps its launch binding for the window.",
+        );
     }
     label(
         w,

@@ -55,6 +55,30 @@ fn write(path: &str, content: Option<&str>, token: Option<&str>) -> VaultWriteRe
     }
 }
 #[test]
+fn source_rebind_rejects_dirty_buffers_and_pending_saves_without_replacing_documents() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "saved", Some("v1"));
+    let document = w.resource::<Notes>().unwrap().views["a.md"].document;
+    assert!(can_rebind(w));
+    edit(w, "a.md", "keep this unsaved draft");
+    assert!(!can_rebind(w));
+    assert_eq!(
+        w.resource::<Notes>().unwrap().views["a.md"].document,
+        document
+    );
+    click(w, Action::Save);
+    assert!(
+        !can_rebind(w),
+        "uncertain or pending saves must not be rebound"
+    );
+    assert_eq!(
+        w.resource::<Notes>().unwrap().views["a.md"].document,
+        document
+    );
+}
+
+#[test]
 fn retained_editors_keep_distinct_drafts_history_and_entities() {
     let mut app = fixture();
     let w = app.world_mut();

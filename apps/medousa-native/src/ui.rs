@@ -1,5 +1,8 @@
 //! App-owned orchestration. RNDR owns controls/editing; app-core owns chat state.
 #[cfg(test)]
+#[path = "startup_tests.rs"]
+mod startup_tests;
+#[cfg(test)]
 #[path = "workshop_tests.rs"]
 mod workshop_tests;
 use crate::{
@@ -881,13 +884,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     button(world, filter_row, MODEL_NEXT, "Next", true);
     // Connection and turn state read as one quiet sentence above the card,
     // not as another control row under the writing lane.
-    let status = text(
-        world,
-        status_slot,
-        "Connecting to local daemon…",
-        Typography::Caption,
-    )
-    .unwrap();
+    let status = text(world, status_slot, "Connecting…", Typography::Caption).unwrap();
     world.get_mut::<Layout>(status).unwrap().width = Size::Fill;
     world.get_mut::<Layout>(status).unwrap().padding = 0.;
     world.get_mut::<Label>(status).unwrap().overflow = TextOverflow::Ellipsis;
@@ -1693,8 +1690,18 @@ fn apply_reply(world: &mut World, reply: Reply) {
         conversations::reply(world, reply);
     }
 }
+pub(crate) fn workshop_unavailable(world: &mut World) {
+    let m = world.resource_mut::<Model>().unwrap();
+    if m.chat.session().is_none() && m.requested_session.is_none() {
+        m.loading = false;
+        m.chat.status = "Saved workshop unavailable. Retry in Settings → Connection.".into();
+    }
+}
 /// Called only when an exact saved connection has advertised its authority.
 pub(crate) fn workshop_ready(world: &mut World, owner: &str) {
+    if crate::workshops::owner(world, None).as_deref() != Some(owner) {
+        return;
+    }
     let commands = crate::workshops::commands(world, owner);
     let (models, modes) = crate::workshops::catalog(world, owner);
     let model = world.resource_mut::<Model>().unwrap();
@@ -1704,7 +1711,7 @@ pub(crate) fn workshop_ready(world: &mut World, owner: &str) {
         model.models = models;
         model.modes = modes;
         model.loading = false;
-        model.chat.status = "Connected. Choose a destination above, then New chat.".into();
+        model.chat.status = "Connected".into();
     }
 }
 pub(crate) fn workshop_catalog(

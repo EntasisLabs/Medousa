@@ -662,11 +662,10 @@ fn connection(w: &mut World, s: &mut State, body: Entity) {
     }
     heading(w, body, "This app");
     fact(w, body, "Version", env!("CARGO_PKG_VERSION"));
-    quiet(
-        w,
-        body,
-        "Use Workshops / setup above to add a trusted workshop or reconnect a saved source. Existing chats and other views keep their own workshop; there is no global switch.",
-    );
+    if w.resource::<crate::workshops::Workshops>().is_some() {
+        heading(w, body, "Connections");
+        crate::workshops::mount(w, body);
+    }
 }
 
 /// A titled choice with a hint, as medousa-home's preference choices.

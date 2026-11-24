@@ -551,7 +551,11 @@ fn highlight(w: &mut World, editor: Entity, content: &str) {
     w.insert(editor, Spans { runs });
 }
 pub fn mount(w: &mut World, parent: Entity) {
-    if w.resource::<Code>().is_some() {
+    // Source rebind has already checked drafts/leases and removed the old UI.
+    if w.resource::<Code>()
+        .and_then(|s| s.rows)
+        .is_some_and(|e| w.get::<Layout>(e).is_some())
+    {
         return;
     }
     let root = w.spawn((Layout {

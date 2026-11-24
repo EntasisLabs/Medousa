@@ -634,13 +634,18 @@ pub(super) fn render(
                 props,
                 NavigationMeta {
                     selected: selected == Some(id),
-                    secondary: Some(crate::workshops::source_for_session(world, id)),
+                    secondary: crate::workshops::provenance(world, id),
                     ..Default::default()
                 },
             )
             .unwrap();
             world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
-            world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(52.);
+            world.get_mut::<Layout>(h.root).unwrap().height =
+                Size::Px(if crate::workshops::provenance(world, id).is_some() {
+                    52.
+                } else {
+                    40.
+                });
             world.insert(h.root, Radius(visual::CONTROL_RADIUS));
             let row_authority = crate::routing::SessionKey::parse(id)
                 .map(|k| k.authority)

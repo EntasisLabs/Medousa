@@ -210,6 +210,10 @@ pub(crate) struct Workshop {
 pub struct Command {
     serial: u64,
     kind: Kind,
+    workshop: Option<Option<Workshop>>,
+}
+pub(crate) fn bind_workshop(command: &mut Command, workshop: Option<Workshop>) {
+    command.workshop = Some(workshop);
 }
 enum Kind {
     Health,
@@ -545,7 +549,11 @@ fn with_state<R>(w: &mut World, f: impl FnOnce(&mut World, &mut State) -> R) -> 
 impl State {
     fn enqueue(&mut self, kind: Kind) -> u64 {
         let serial = next();
-        self.queue.push(Command { serial, kind });
+        self.queue.push(Command {
+            serial,
+            kind,
+            workshop: None,
+        });
         serial
     }
     fn list_packages(&mut self) {
@@ -809,6 +817,28 @@ pub fn activate(w: &mut World) {
         }
         s.redraw = true;
     }
+}
+
+#[cfg(test)]
+pub(crate) fn show_connection_fixture(w: &mut World) {
+    if let Some(s) = state_mut(w) {
+        s.section = Section::Connection;
+        s.redraw = true;
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn workshop_label_fixture(w: &World) -> Option<String> {
+    state(w)?.workshop.as_ref().map(|s| s.label.clone())
+}
+#[cfg(test)]
+pub(crate) fn defaults_fixture(w: &World) -> Option<serde_json::Value> {
+    state(w)?.defaults.clone()
+}
+#[cfg(test)]
+pub(crate) fn read_defaults_fixture(w: &mut World) {
+    let s = state_mut(w).unwrap();
+    s.defaults_reading = Some(s.enqueue(Kind::Defaults));
 }
 
 pub fn can_deactivate(_: &World) -> bool {
@@ -1183,6 +1213,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     s.queue.push(Command {
                         serial,
                         kind: Kind::MuseDiscovery(start),
+                        workshop: None,
                     });
                     if let Some(f) = s.conv_form.as_mut() {
                         f.discovery_reading = Some(serial);
@@ -1734,6 +1765,9 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
             .map(|h| Reply::Health(Box::new(h)))
             .map_err(|e| e.to_string()),
         // Registry reads and writes are small but blocking file IO.
+        Kind::Workshop if command.workshop.is_some() => {
+            Ok(Reply::Workshop(command.workshop.unwrap()))
+        }
         Kind::Workshop => {
             let origin = client.base_url().to_owned();
             tokio::task::spawn_blocking(move || workshop(&origin))

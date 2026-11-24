@@ -205,13 +205,32 @@ pub fn save_active_id(id: &str) -> Result<(), String> {
     std::fs::rename(temporary, path).map_err(|e| e.to_string())
 }
 
-/// Read only native device appearance; never consult a daemon selection.
+/// Prefer device appearance. On first native launch, read the prior workshop's
+/// appearance as a one-time launch seed only; do not activate or rewrite it.
 pub fn active_id() -> String {
-    std::fs::read(medousa_desktop_host::paths::medousa_config_dir().join("native-appearance.json"))
+    launch_id(
+        &medousa_desktop_host::paths::medousa_config_dir().join("native-appearance.json"),
+        &medousa_desktop_host::workshop_registry::workshops_registry_path(),
+    )
+}
+fn launch_id(appearance: &std::path::Path, registry: &std::path::Path) -> String {
+    std::fs::read(appearance)
         .ok()
         .and_then(|raw| serde_json::from_slice::<serde_json::Value>(&raw).ok())
         .and_then(|v| v["theme"].as_str().map(str::to_owned))
         .filter(|id| !id.trim().is_empty())
+        .or_else(|| {
+            let raw = std::fs::read(registry).ok()?;
+            let registry: medousa_desktop_host::workshop_registry::WorkshopRegistry =
+                serde_json::from_slice(&raw).ok()?;
+            registry
+                .workshops
+                .iter()
+                .find(|w| w.id == registry.active_workshop_id)
+                .and_then(|w| w.client_state.as_ref())
+                .and_then(|s| s.color_theme_id.clone())
+                .filter(|id| !id.trim().is_empty())
+        })
         .unwrap_or_else(default_id)
 }
 
@@ -219,6 +238,32 @@ pub fn active_id() -> String {
 mod tests {
     use super::*;
     use rndr_ui::{Contrast, UiTheme};
+
+    #[test]
+    fn launch_appearance_preserves_prior_remote_theme_and_native_override_without_writes() {
+        let temp = tempfile::tempdir().unwrap();
+        let appearance = temp.path().join("native-appearance.json");
+        let registry_path = temp.path().join("workshops.json");
+        let mut registry = medousa_desktop_host::workshop_registry::default_registry();
+        registry.workshops[0].kind = "portal".into();
+        registry.workshops[0].client_state = Some(
+            medousa_desktop_host::workshop_registry::WorkshopClientState {
+                last_session_id: Some("keep-chat".into()),
+                color_theme_id: Some("prior-theme".into()),
+            },
+        );
+        let bytes = serde_json::to_vec(&registry).unwrap();
+        std::fs::write(&registry_path, &bytes).unwrap();
+        assert_eq!(launch_id(&appearance, &registry_path), "prior-theme");
+        assert!(!appearance.exists(), "restoration is read-only");
+        std::fs::write(&appearance, br#"{"theme":"native-theme"}"#).unwrap();
+        assert_eq!(launch_id(&appearance, &registry_path), "native-theme");
+        assert_eq!(std::fs::read(&registry_path).unwrap(), bytes);
+        assert_eq!(
+            std::fs::read(&appearance).unwrap(),
+            br#"{"theme":"native-theme"}"#
+        );
+    }
 
     fn ratio(a: Color, b: Color) -> f32 {
         let lum = |c: Color| {

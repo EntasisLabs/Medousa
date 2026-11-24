@@ -15,7 +15,7 @@ pub struct Chat {
 impl Chat {
     pub fn connecting() -> Self {
         Self {
-            status: "Connecting to local daemon…".into(),
+            status: "Connecting…".into(),
             ..Self::default()
         }
     }

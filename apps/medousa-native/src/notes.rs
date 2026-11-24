@@ -266,7 +266,13 @@ fn icon_button(
     n.actions.insert(id, action(h.root));
 }
 pub fn mount(world: &mut World, parent: Entity) {
-    if world.resource::<Notes>().is_some() {
+    // A guarded source rebind tears down the old surface before remounting.
+    // Do not retain resource handles to that now-despawned tree.
+    if world
+        .resource::<Notes>()
+        .and_then(|n| n.rows)
+        .is_some_and(|e| world.get::<Layout>(e).is_some())
+    {
         return;
     }
     let root = world.spawn((Layout {
