@@ -197,7 +197,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,providers,agent-more,mcp,mcp-add,accounts,external,conversation-add,runtime,runtime-lists,sharing,channels,providers}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,providers,agent-more,mcp,mcp-add,accounts,external,conversation-add,runtime,runtime-lists,runtime-more,sharing,channels,providers}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -578,6 +578,32 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "runtime-lists");
+        with_state(app.world_mut(), |_, s| {
+            s.open.remove("runtime.allowlists");
+            s.open.remove("runtime.env");
+            s.open.insert("runtime.workers");
+            s.open.insert("runtime.versions");
+            let workers = runtime::Workers {
+                max_in_flight: 8,
+                agents: 2,
+                scheduled: 2,
+                delivery: 1,
+                maintenance: 1,
+            };
+            s.workers = Some(Ok(workers));
+            s.workers_draft = Some(workers.stepped("agents", 1));
+            s.versions = Some(Ok((
+                serde_json::json!({"available": true, "version": "git version 2.47.1", "path": "/usr/bin/git", "enabled": true, "platformHint": ""}),
+                serde_json::json!({"enabled": true, "available": true, "isRepo": true, "branch": "main", "dirtyCount": 3, "vaultRoot": "/v"}),
+            )));
+            s.redraw = true;
+        });
+        rndr_paint::frame(&mut app);
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., -1400.];
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "runtime-more");
         app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., 0.];
         with_state(app.world_mut(), |_, s| {
             s.section = Section::Sharing;
@@ -2427,4 +2453,93 @@ fn a_server_with_a_sign_in_signs_in_through_the_engine() {
     let s = state(app.world()).unwrap();
     assert_eq!(s.message, "Signed in");
     assert!(s.mcp_reading.is_some(), "status is read again");
+}
+
+#[test]
+fn worker_capacity_steps_a_draft_and_saves_only_when_shares_fit() {
+    let mut app = runtime_open(serde_json::json!({}));
+    let read = state(app.world())
+        .unwrap()
+        .workers_reading
+        .expect("read on open");
+    let saved = runtime::Workers {
+        max_in_flight: 4,
+        agents: 2,
+        scheduled: 1,
+        delivery: 1,
+        maintenance: 0,
+    };
+    apply(
+        app.world_mut(),
+        Update {
+            serial: read,
+            result: Ok(Reply::Workers(saved)),
+        },
+    );
+    app.update();
+    click(&mut app, "Worker capacity");
+    click(&mut app, "More agents");
+    click(&mut app, "Save worker capacity");
+    let s = state(app.world()).unwrap();
+    assert!(s.workers_busy.is_none(), "5 shares don't fit in 4");
+    assert_eq!(
+        s.workers_note,
+        "Lane shares total 5, which exceeds global capacity 4."
+    );
+    click(&mut app, "More global capacity");
+    click(&mut app, "Save worker capacity");
+    let busy = state(app.world()).unwrap().workers_busy.expect("saving");
+    let next = state(app.world()).unwrap().workers_draft.unwrap();
+    assert_eq!((next.max_in_flight, next.agents), (5, 3));
+    apply(
+        app.world_mut(),
+        Update {
+            serial: busy,
+            result: Ok(Reply::Workers(next)),
+        },
+    );
+    assert_eq!(
+        state(app.world()).unwrap().workers_note,
+        "Saved — restart the engine to apply the new capacity."
+    );
+}
+
+#[test]
+fn versions_turn_on_through_the_engine_and_show_the_vault() {
+    let mut app = runtime_open(serde_json::json!({}));
+    let read = state(app.world())
+        .unwrap()
+        .versions_busy
+        .expect("read on open");
+    let versions = |on: bool| {
+        Reply::Versions(Box::new((
+            serde_json::json!({"available": true, "version": "git 2.47", "enabled": on, "platformHint": ""}),
+            serde_json::json!({"enabled": on, "available": true, "isRepo": on, "branch": "main",
+                "dirtyCount": 2, "vaultRoot": "/v"}),
+        )))
+    };
+    apply(
+        app.world_mut(),
+        Update {
+            serial: read,
+            result: Ok(versions(false)),
+        },
+    );
+    app.update();
+    click(&mut app, "Versions");
+    click(&mut app, "Vault versioning");
+    let busy = state(app.world())
+        .unwrap()
+        .versions_busy
+        .expect("turning on");
+    apply(
+        app.world_mut(),
+        Update {
+            serial: busy,
+            result: Ok(versions(true)),
+        },
+    );
+    app.update();
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "On · main · 2 changed"), "{t:?}");
 }

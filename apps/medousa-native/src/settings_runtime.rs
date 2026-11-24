@@ -418,6 +418,74 @@ pub(crate) fn list(d: &Value, key: &str) -> Vec<String> {
         .collect()
 }
 
+/// `/v1/runtime/workers`: queue concurrency and preferred lane shares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Workers {
+    pub max_in_flight: usize,
+    pub agents: usize,
+    pub scheduled: usize,
+    pub delivery: usize,
+    pub maintenance: usize,
+}
+
+/// The lanes: field, name, hint.
+pub(crate) const LANES: [(&str, &str, &str); 4] = [
+    ("agents", "Agents", "Delegated and long-running LLM work"),
+    (
+        "scheduled",
+        "Scheduled",
+        "Recurring and general queued jobs",
+    ),
+    ("delivery", "Delivery", "Outbox and channel publication"),
+    (
+        "maintenance",
+        "Maintenance",
+        "Retention and background upkeep",
+    ),
+];
+
+impl Workers {
+    pub(crate) fn get(&self, field: &str) -> usize {
+        match field {
+            "max_in_flight" => self.max_in_flight,
+            "agents" => self.agents,
+            "scheduled" => self.scheduled,
+            "delivery" => self.delivery,
+            _ => self.maintenance,
+        }
+    }
+
+    /// One field stepped by `delta`, kept at 1 or more for the total and 0
+    /// or more for a lane.
+    pub(crate) fn stepped(mut self, field: &str, delta: i64) -> Self {
+        let min = usize::from(field == "max_in_flight");
+        let next = (self.get(field) as i64 + delta).max(min as i64) as usize;
+        match field {
+            "max_in_flight" => self.max_in_flight = next,
+            "agents" => self.agents = next,
+            "scheduled" => self.scheduled = next,
+            "delivery" => self.delivery = next,
+            _ => self.maintenance = next,
+        }
+        self
+    }
+
+    pub(crate) fn reserved(&self) -> usize {
+        self.agents + self.scheduled + self.delivery + self.maintenance
+    }
+
+    /// medousa-home's check before saving.
+    pub(crate) fn problem(&self) -> Option<String> {
+        (self.reserved() > self.max_in_flight).then(|| {
+            format!(
+                "Lane shares total {}, which exceeds global capacity {}.",
+                self.reserved(),
+                self.max_in_flight
+            )
+        })
+    }
+}
+
 /// The next preset from `value` in direction `dir` (−1 or 1), snapping an
 /// off-grid value to its neighbour; `None` at either end.
 pub(crate) fn preset(steps: &[i64], value: i64, dir: i64) -> Option<i64> {
@@ -563,5 +631,24 @@ mod tests {
         assert_eq!(preset(&s, 20, -1), Some(15));
         assert_eq!(preset(&s, 30, 1), None);
         assert_eq!(preset(&s, 5, -1), None);
+    }
+
+    #[test]
+    fn worker_shares_step_within_bounds_and_must_fit() {
+        let w = Workers {
+            max_in_flight: 2,
+            agents: 1,
+            scheduled: 0,
+            delivery: 0,
+            maintenance: 1,
+        };
+        assert_eq!(w.stepped("scheduled", -1).scheduled, 0);
+        assert_eq!(w.stepped("max_in_flight", -5).max_in_flight, 1);
+        assert!(w.problem().is_none());
+        let over = w.stepped("agents", 1);
+        assert_eq!(
+            over.problem().as_deref(),
+            Some("Lane shares total 3, which exceeds global capacity 2.")
+        );
     }
 }

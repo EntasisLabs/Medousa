@@ -3459,19 +3459,176 @@ fn runtime_section(w: &mut World, s: &mut State, body: Entity) {
     if s.patching.is_some() {
         quiet(w, body, "Saving…");
     }
+    runtime_more(w, s, body);
     if more(
         w,
         body,
         s,
         "runtime.more",
         "More runtime settings",
-        "Computer control, activity, versions, capacity",
+        "Computer control, activity",
     ) {
         quiet(
             w,
             body,
-            "Computer control, world activity, Versions and worker capacity are coming to this app soon. Until then, change them in the original Medousa app.",
+            "Computer control and world activity are coming to this app soon. Until then, change them in the original Medousa app.",
         );
+    }
+}
+
+/// Worker capacity and Versions.
+fn runtime_more(w: &mut World, s: &mut State, body: Entity) {
+    use super::runtime::LANES;
+    let meta = match (&s.workers_draft, &s.workers) {
+        (Some(d), _) => format!("{}/{} reserved", d.reserved(), d.max_in_flight),
+        (None, Some(Err(_))) => "Unavailable".into(),
+        _ => String::new(),
+    };
+    if more(w, body, s, "runtime.workers", "Worker capacity", &meta) {
+        match (s.workers_draft, &s.workers) {
+            (Some(d), _) => {
+                quiet(
+                    w,
+                    body,
+                    "Queue concurrency and preferred lane shares. Idle lanes lend capacity automatically.",
+                );
+                let free = s.workers_busy.is_none();
+                let step = |field: &'static str, delta: i64| {
+                    let next = d.stepped(field, delta);
+                    (next != d).then_some(Action::WorkerStep(field, delta))
+                };
+                stepper(
+                    w,
+                    body,
+                    s,
+                    "Global capacity",
+                    &format!(
+                        "{} flexible after lane shares",
+                        d.max_in_flight.saturating_sub(d.reserved())
+                    ),
+                    &d.max_in_flight.to_string(),
+                    step("max_in_flight", -1),
+                    step("max_in_flight", 1),
+                    free,
+                );
+                for (field, name, hint) in LANES {
+                    stepper(
+                        w,
+                        body,
+                        s,
+                        name,
+                        hint,
+                        &d.get(field).to_string(),
+                        step(field, -1),
+                        step(field, 1),
+                        free,
+                    );
+                }
+                let changed = s
+                    .workers
+                    .as_ref()
+                    .is_some_and(|w| w.as_ref().ok() != Some(&d));
+                let row = panel(
+                    w,
+                    body,
+                    Layout {
+                        width: Size::Hug,
+                        height: Size::Hug,
+                        ..Layout::row()
+                    },
+                );
+                named_button(
+                    w,
+                    row,
+                    s,
+                    if free { "Save" } else { "Saving…" },
+                    "Save worker capacity".into(),
+                    Action::SaveWorkers,
+                    free && changed,
+                );
+                if !s.workers_note.is_empty() {
+                    let note = s.workers_note.clone();
+                    label(w, body, &note, Typography::Label);
+                }
+            }
+            (None, Some(Err(e))) => {
+                let e = e.clone();
+                quiet(w, body, &super::sharing::missing_or(&e, "Worker capacity"));
+            }
+            _ => {
+                quiet(w, body, "Reading…");
+            }
+        }
+    }
+
+    let (on, meta) = match &s.versions {
+        Some(Ok((detect, status))) => {
+            let on = status["enabled"].as_bool().unwrap_or(false);
+            let meta = if !on {
+                "Off — normal note conflict checks only".to_string()
+            } else if !detect["available"].as_bool().unwrap_or(false) {
+                "On — Git not available yet".into()
+            } else if !status["isRepo"].as_bool().unwrap_or(false) {
+                "On — ready to start versioning".into()
+            } else {
+                let branch = status["branch"].as_str().unwrap_or("detached");
+                let dirty = match status["dirtyCount"].as_u64().unwrap_or(0) {
+                    0 => "clean".to_string(),
+                    n => format!("{n} changed"),
+                };
+                format!("On · {branch} · {dirty}")
+            };
+            (Some(on), meta)
+        }
+        Some(Err(e)) => (None, super::sharing::missing_or(e, "Versions")),
+        None => (None, String::new()),
+    };
+    if more(w, body, s, "runtime.versions", "Versions", &meta) {
+        quiet(
+            w,
+            body,
+            "Optional vault history — named snapshots on the workshop’s machine.",
+        );
+        match on {
+            Some(on) => {
+                switch_row(
+                    w,
+                    body,
+                    s,
+                    "Vault versioning",
+                    &meta,
+                    on,
+                    Action::Versions(!on),
+                    s.versions_busy.is_none(),
+                );
+                if let Some(Ok((detect, _))) = &s.versions
+                    && on
+                {
+                    let line = if detect["available"].as_bool().unwrap_or(false) {
+                        format!(
+                            "Found {}{}",
+                            detect["version"].as_str().unwrap_or("Git"),
+                            detect["path"]
+                                .as_str()
+                                .map(|p| format!(" at {p}"))
+                                .unwrap_or_default()
+                        )
+                    } else {
+                        format!(
+                            "Git is not available yet. {}",
+                            detect["platformHint"].as_str().unwrap_or_default()
+                        )
+                    };
+                    quiet(w, body, &line);
+                }
+            }
+            None if s.versions_busy.is_some() => {
+                quiet(w, body, "Reading…");
+            }
+            None => {
+                quiet(w, body, &meta);
+            }
+        }
     }
 }
 

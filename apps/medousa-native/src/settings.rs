@@ -180,6 +180,11 @@ enum Action {
     ModePolicy(medousa_types::AgentModeTransitionPolicy),
     /// Artifact cleanup: on, days kept, kept per chat.
     Artifacts(bool, i64, usize),
+    /// Steps one worker field in the draft; Save writes it.
+    WorkerStep(&'static str, i64),
+    SaveWorkers,
+    /// Vault versioning on or off.
+    Versions(bool),
     /// Saves a runtime list field from its draft: field, draft key.
     SaveList(&'static str, &'static str),
     /// Sets the env override typed in the Add form.
@@ -255,6 +260,10 @@ enum Kind {
     SaveChannel(Box<channels::Plan>),
     ModePolicy,
     SetModePolicy(medousa_types::AgentModeTransitionPolicy),
+    Workers,
+    SetWorkers(runtime::Workers),
+    /// Reads Versions, after turning it on or off when given.
+    Versions(Option<bool>),
     Artifacts,
     SetArtifacts(serde_json::Value),
     /// Provider keys; whether the custom provider's id can be read here.
@@ -292,6 +301,9 @@ enum Reply {
     Providers(Box<providers::Read>),
     ModePolicy(medousa_types::AgentModeTransitionPolicy),
     Artifacts(Box<medousa_types::ArtifactRetentionStatusResponse>),
+    Workers(runtime::Workers),
+    /// Git as detected, and the vault's status.
+    Versions(Box<(serde_json::Value, serde_json::Value)>),
     McpServer(Box<Option<(medousa_desktop_host::mcp::Upsert, bool)>>),
     /// A server's tools, and a note when the gateway couldn't list them.
     McpToolList(Vec<medousa_desktop_host::mcp::Tool>, String),
@@ -471,6 +483,15 @@ pub(crate) struct State {
     artifacts_reading: Option<u64>,
     artifacts_busy: Option<u64>,
     extras_note: String,
+    /// Worker capacity as saved, the draft being stepped, and Versions,
+    /// with their reads and changes in flight.
+    workers: Option<Result<runtime::Workers, String>>,
+    workers_draft: Option<runtime::Workers>,
+    workers_reading: Option<u64>,
+    workers_busy: Option<u64>,
+    workers_note: String,
+    versions: Option<Result<(serde_json::Value, serde_json::Value), String>>,
+    versions_busy: Option<u64>,
     /// Host env overrides: a variable a Remove waits on, and the last note.
     env_confirm: Option<String>,
     env_note: String,
@@ -563,6 +584,16 @@ impl State {
         }
         if self.artifacts_reading.is_none() {
             self.artifacts_reading = Some(self.enqueue(Kind::Artifacts));
+        }
+        self.redraw = true;
+    }
+    /// Worker capacity and Versions, read with Runtime Controls.
+    fn read_runtime_more(&mut self) {
+        if self.workers_reading.is_none() {
+            self.workers_reading = Some(self.enqueue(Kind::Workers));
+        }
+        if self.versions_busy.is_none() {
+            self.versions_busy = Some(self.enqueue(Kind::Versions(None)));
         }
         self.redraw = true;
     }
@@ -719,6 +750,13 @@ pub fn mount(w: &mut World, parent: Entity) {
         artifacts_reading: None,
         artifacts_busy: None,
         extras_note: String::new(),
+        workers: None,
+        workers_draft: None,
+        workers_reading: None,
+        workers_busy: None,
+        workers_note: String::new(),
+        versions: None,
+        versions_busy: None,
         env_note: String::new(),
         focused: None,
         waiting: None,
@@ -800,6 +838,9 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     s.provider_clear = false;
                     s.read_providers();
                     s.read_extras();
+                }
+                if section == Section::Runtime {
+                    s.read_runtime_more();
                 }
                 if matches!(section, Section::Agent | Section::Runtime)
                     && s.defaults_reading.is_none()
@@ -1243,6 +1284,30 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             }
             Action::KeepProviderKey => s.provider_clear = false,
             Action::KeepEnv => s.env_confirm = None,
+            Action::WorkerStep(field, delta) => {
+                if let Some(d) = s.workers_draft.as_mut() {
+                    *d = d.stepped(field, delta);
+                    s.workers_note.clear();
+                }
+            }
+            Action::SaveWorkers => {
+                if let Some(d) = s.workers_draft
+                    && s.workers_busy.is_none()
+                {
+                    match d.problem() {
+                        Some(p) => s.workers_note = p,
+                        None => {
+                            s.workers_note.clear();
+                            s.workers_busy = Some(s.enqueue(Kind::SetWorkers(d)));
+                        }
+                    }
+                }
+            }
+            Action::Versions(on) => {
+                if s.versions_busy.is_none() {
+                    s.versions_busy = Some(s.enqueue(Kind::Versions(Some(on))));
+                }
+            }
             Action::Stage(key) => {
                 s.forget_fields(&["stage.provider", "stage.model", "stage.chain"]);
                 s.stage = key;
@@ -1343,6 +1408,8 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     if s.section == Section::Agent {
                         s.read_providers();
                         s.read_extras();
+                    } else {
+                        s.read_runtime_more();
                     }
                     if s.defaults_reading.is_none() && s.patching.is_none() {
                         s.defaults_reading = Some(s.enqueue(Kind::Defaults));
@@ -1792,6 +1859,32 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
             .await
             .map(Reply::ModePolicy)
             .map_err(|e| e.to_string()),
+        Kind::Workers => client
+            .http()
+            .get::<runtime::Workers>("/v1/runtime/workers")
+            .await
+            .map(Reply::Workers)
+            .map_err(|e| e.to_string()),
+        Kind::SetWorkers(w) => client
+            .http()
+            .put::<runtime::Workers, _>("/v1/runtime/workers", &w)
+            .await
+            .map(Reply::Workers)
+            .map_err(|e| e.to_string()),
+        Kind::Versions(set) => {
+            let vault = client.vault();
+            let changed = match set {
+                Some(on) => vault.git_enable(on, true).await.map(|_| ()),
+                None => Ok(()),
+            };
+            match changed {
+                Ok(()) => match (vault.git_detect().await, vault.git_status().await) {
+                    (Ok(detect), Ok(status)) => Ok(Reply::Versions(Box::new((detect, status)))),
+                    (Err(e), _) | (_, Err(e)) => Err(e.to_string()),
+                },
+                Err(e) => Err(e.to_string()),
+            }
+        }
         Kind::Artifacts => client
             .http()
             .get::<medousa_types::ArtifactRetentionStatusResponse>("/v1/maintenance/artifacts")
@@ -2293,6 +2386,36 @@ pub fn apply(w: &mut World, u: Update) {
                 Ok(Reply::ModePolicy(p)) => s.mode_policy = Some(Ok(p)),
                 Err(e) if reading_mode => s.mode_policy = Some(Err(e)),
                 Err(e) => s.extras_note = format!("Mode suggestions weren’t saved: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.workers_reading == Some(u.serial) || s.workers_busy == Some(u.serial) {
+            let saving = s.workers_busy == Some(u.serial);
+            s.workers_reading = None;
+            s.workers_busy = None;
+            match u.result {
+                Ok(Reply::Workers(w)) => {
+                    s.workers = Some(Ok(w));
+                    s.workers_draft = Some(w);
+                    if saving {
+                        s.workers_note =
+                            "Saved — restart the engine to apply the new capacity.".into();
+                    }
+                }
+                Err(e) if saving => s.workers_note = e,
+                Err(e) => s.workers = Some(Err(e)),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.versions_busy == Some(u.serial) {
+            s.versions_busy = None;
+            match u.result {
+                Ok(Reply::Versions(v)) => s.versions = Some(Ok(*v)),
+                Err(e) => s.versions = Some(Err(e)),
                 _ => {}
             }
             s.redraw = true;
@@ -2848,6 +2971,8 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Providers(_)
                 | Reply::ModePolicy(_)
                 | Reply::Artifacts(_)
+                | Reply::Workers(_)
+                | Reply::Versions(_)
                 | Reply::McpServer(_)
                 | Reply::McpToolList(..)
                 | Reply::McpOAuth(_)
