@@ -126,6 +126,8 @@ enum Action {
     AgentSignIn(&'static str),
     AgentSignOut(&'static str),
     OpenChat,
+    /// Peers and trusted workshops live on the Peers screen.
+    OpenPeers,
     /// First press asks; a second on the same conversation removes it.
     ConversationRemove(String),
     CancelRemove,
@@ -907,6 +909,9 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             }
             Action::OpenChat => {
                 crate::surfaces::select(w, crate::surfaces::SurfaceId::Chat);
+            }
+            Action::OpenPeers => {
+                crate::surfaces::select(w, crate::surfaces::SurfaceId::Peers);
             }
             Action::ConversationRemove(id) => {
                 if s.agent_busy.is_none() {

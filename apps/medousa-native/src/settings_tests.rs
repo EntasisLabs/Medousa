@@ -437,7 +437,9 @@ fn settings_visual_acceptance() {
         }
         shoot(&mut app, "external");
         with_state(app.world_mut(), |_, s| {
-            use medousa_types::{ExternalWhatsAppPairingState as Wa, ExternalWhatsAppPairingStatus};
+            use medousa_types::{
+                ExternalWhatsAppPairingState as Wa, ExternalWhatsAppPairingStatus,
+            };
             // A checkerboard stands in for WhatsApp's QR.
             let mut cells = String::new();
             for y in 0..21 {
@@ -447,7 +449,9 @@ fn settings_visual_acceptance() {
                     }
                 }
             }
-            let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21">{cells}</svg>"#);
+            let svg = format!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21">{cells}</svg>"#
+            );
             let mut form = external::ConvForm::new(medousa_types::ExternalProvider::Muse);
             form.pairing = Some(external::PairingRead {
                 pairing: Ok(external::pairing(ExternalWhatsAppPairingStatus {
@@ -2119,5 +2123,15 @@ fn muse_pairs_through_whatsapp_and_finds_its_chat() {
             .unwrap()
             .saving
             .is_some()
+    );
+}
+
+#[test]
+fn sharing_opens_the_peers_screen() {
+    let mut app = sharing_open();
+    click(&mut app, "Open Peers");
+    assert_eq!(
+        crate::surfaces::active(app.world()),
+        crate::surfaces::SurfaceId::Peers
     );
 }

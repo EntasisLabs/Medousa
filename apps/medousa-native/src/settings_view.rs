@@ -3088,10 +3088,25 @@ fn sharing_section(w: &mut World, s: &mut State, body: Entity) {
         }
         None => {}
     }
+    let side = runtime_row(
+        w,
+        body,
+        "Peers & trusted workshops",
+        "Connect workshops, invite devices and set trust on the Peers screen",
+    );
+    named_button(
+        w,
+        side,
+        s,
+        "Open",
+        "Open Peers".into(),
+        Action::OpenPeers,
+        true,
+    );
     quiet(
         w,
         body,
-        "Peers, trusted workshops and canvas backups are still managed in the original Medousa app.",
+        "Canvas backups are still managed in the original Medousa app.",
     );
 
     channels_part(w, s, body);
