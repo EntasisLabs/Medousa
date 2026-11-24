@@ -7,7 +7,9 @@ use rndr_ui::{
     *,
 };
 
-pub const RAIL_WIDTH: f32 = 56.;
+/// Wide enough that the macOS traffic lights sit inside the rail, so the
+/// navigation column runs to the window's top even with no sidebar open.
+pub const RAIL_WIDTH: f32 = 78.;
 const NAV_TARGET: f32 = 40.;
 const NAV_ICON: f32 = 20.;
 const CHAT: u64 = 0x5355_0001;
@@ -124,6 +126,13 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     );
     crate::native_style::plane(world, rail, crate::native_style::rail());
     world.insert(rail, ResolvedColor);
+    world.insert(
+        rail,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
     world.insert(
         rail,
         Semantics {
@@ -880,7 +889,7 @@ mod tests {
     fn rail_is_fixed_width_and_does_not_fetch_notes_until_selected() {
         let mut app = app();
         assert!(crate::notes::drain_commands(app.world_mut()).is_empty());
-        assert_eq!(chat_width(app.world()), 1144.);
+        assert_eq!(chat_width(app.world()), 1200. - RAIL_WIDTH);
         select(app.world_mut(), SurfaceId::Notes);
         let commands = crate::notes::drain_commands(app.world_mut());
         assert!(!commands.is_empty());

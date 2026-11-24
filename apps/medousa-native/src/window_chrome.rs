@@ -1,5 +1,10 @@
 //! App-owned window band. RNDR owns native traffic lights, dragging, caption
 //! actions, resizing, tab semantics and drag/drop; no simulated macOS buttons.
+//!
+//! The band floats over the window's top edge with no fill of its own. Every
+//! pane below runs to the top and pads its contents clear of the band, so the
+//! navigation column and the content beside it are split the full height of
+//! the window rather than painted to look that way.
 use super::*;
 use rndr_ui::tabs::TabStripHandle;
 
@@ -8,6 +13,7 @@ struct BandStrip(TabStripHandle);
 impl Component for BandStrip {}
 struct Chrome {
     band: Entity,
+    body: Entity,
     leading: Entity,
     chat: Entity,
     tabs: Entity,
@@ -32,6 +38,15 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     world.insert(band, WindowDrag);
     world.insert(
         band,
+        Absolute {
+            left: Some(0.),
+            top: Some(0.),
+            right: Some(0.),
+            bottom: None,
+        },
+    );
+    world.insert(
+        band,
         Align {
             items: Items::Center,
             ..Default::default()
@@ -45,10 +60,8 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Padding::default()
         },
     );
-    visual::flat(world, band, visual::canvas());
-    // Reserves the traffic lights and, while a sidebar shows, carries the
-    // navigation plane up through the band so rail, sidebar and window top
-    // read as one column, as in medousa-home.
+    // Reserves the traffic lights and whatever navigation runs beneath them,
+    // so the band's controls start where the content pane does.
     let leading = container(
         world,
         Some(band),
@@ -152,8 +165,18 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         world.insert(h.root, kind);
         world.insert(h.root, ActivationHandler(caption_action));
     }
+    let body = container(
+        world,
+        Some(root),
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            ..Layout::row()
+        },
+    );
     world.insert_resource(Chrome {
         band,
+        body,
         leading,
         chat,
         tabs,
@@ -162,15 +185,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         documents,
         caption,
     });
-    container(
-        world,
-        Some(root),
-        Layout {
-            width: Size::Fill,
-            height: Size::Fill,
-            ..Layout::row()
-        },
-    )
+    body
 }
 /// The window band, for overlays that hang from it.
 pub(crate) fn band(world: &World) -> Option<Entity> {
@@ -311,12 +326,144 @@ pub(super) fn pane_commands(world: &mut World, multiple: bool, split: bool) {
     }
 }
 
+/// A pane padded clear of the band. Keeps any inset the app authored.
+struct TitlebarInset {
+    authored: Option<Padding>,
+}
+impl Component for TitlebarInset {}
+
+/// Structure that only arranges panes side by side: rows, and a column whose
+/// one visible child is such a row (a surface host or a split's pane).
+fn passes_through(world: &World, entity: Entity) -> bool {
+    let row = |e: Entity| {
+        !world.has::<Scroll>(e) && world.get::<Layout>(e).is_some_and(|l| l.axis == Axis::Row)
+    };
+    if row(entity) {
+        return true;
+    }
+    let shown: Vec<_> = children_of(world, entity)
+        .into_iter()
+        .filter(|&c| !world.has::<Hidden>(c))
+        .collect();
+    !world.has::<Scroll>(entity) && shown.len() == 1 && row(shown[0])
+}
+
+/// Holds a scrolling pane below the band. Padding on the scroller itself
+/// would scroll away with its content and slide it under the band.
+struct TitlebarWrap {
+    pane: Entity,
+}
+impl Component for TitlebarWrap {}
+
+/// Put `pane` inside a wrapper that takes its place among its siblings.
+fn wrap(world: &mut World, pane: Entity) -> Entity {
+    let parent = world.get::<Parent>(pane).unwrap().entity;
+    let wrapper = world.spawn((Layout::column(), TitlebarWrap { pane }));
+    world.insert(wrapper, Parent { entity: parent });
+    let children = world.get_mut::<Children>(parent).unwrap();
+    let index = children.list.iter().position(|&c| c == pane).unwrap();
+    children.list[index] = wrapper;
+    world.remove::<Parent>(pane);
+    set_parent(world, pane, wrapper);
+    sync_wrap(world, wrapper, pane);
+    wrapper
+}
+
+/// Keep a wrapper sized, painted and shown like its pane. A remounted surface
+/// drops the old pane; its empty wrapper goes with it.
+fn sync_wrap(world: &mut World, wrapper: Entity, pane: Entity) -> bool {
+    if !world.is_alive(pane) || world.get::<Parent>(pane).map(|p| p.entity) != Some(wrapper) {
+        despawn(world, wrapper);
+        return false;
+    }
+    let inner = *world.get::<Layout>(pane).unwrap();
+    let layout = world.get_mut::<Layout>(wrapper).unwrap();
+    layout.width = if inner.width == Size::Fill {
+        Size::Fill
+    } else {
+        Size::Hug
+    };
+    layout.height = Size::Fill;
+    layout.min_width = inner.min_width;
+    world.get_mut::<Layout>(pane).unwrap().height = Size::Fill;
+    match world.get::<UiStyle>(pane).and_then(|s| s.background) {
+        Some(background) => world.insert(
+            wrapper,
+            UiStyle {
+                background: Some(background),
+                ..Default::default()
+            },
+        ),
+        None => {
+            world.remove::<UiStyle>(wrapper);
+        }
+    }
+    show(world, wrapper, !world.has::<Hidden>(pane));
+    true
+}
+
+/// Every pane whose top is the window's top pads its contents below the band.
+/// Sashes stay full height so their hairline runs to the top too.
+fn inset_panes(world: &mut World) {
+    let Some(body) = world.resource::<Chrome>().map(|c| c.body) else {
+        return;
+    };
+    let mut panes = Vec::new();
+    let mut stack = children_of(world, body);
+    while let Some(entity) = stack.pop() {
+        if world.has::<Splitter>(entity) || world.get::<Layout>(entity).is_none() {
+            continue;
+        }
+        if let Some(wrap) = world.get::<TitlebarWrap>(entity).map(|w| w.pane) {
+            if sync_wrap(world, entity, wrap) {
+                panes.push(entity);
+            }
+        } else if passes_through(world, entity) {
+            stack.extend(children_of(world, entity));
+        } else if world.has::<Scroll>(entity) {
+            panes.push(wrap(world, entity));
+        } else {
+            panes.push(entity);
+        }
+    }
+    for &pane in &panes {
+        if !world.has::<TitlebarInset>(pane) {
+            let authored = world.get::<Padding>(pane).copied();
+            world.insert(pane, TitlebarInset { authored });
+        }
+        let base = world
+            .get::<TitlebarInset>(pane)
+            .and_then(|i| i.authored)
+            .unwrap_or_else(|| Padding::all(world.get::<Layout>(pane).unwrap().padding));
+        let padded = Padding {
+            top: base.top + HEIGHT,
+            ..base
+        };
+        if world.get::<Padding>(pane) != Some(&padded) {
+            world.insert(pane, padded);
+        }
+    }
+    let stale: Vec<_> = world
+        .entities_with::<TitlebarInset>()
+        .into_iter()
+        .filter(|e| !panes.contains(e))
+        .collect();
+    for entity in stale {
+        match world.get::<TitlebarInset>(entity).and_then(|i| i.authored) {
+            Some(authored) => world.insert(entity, authored),
+            None => {
+                world.remove::<Padding>(entity);
+            }
+        }
+        world.remove::<TitlebarInset>(entity);
+    }
+}
+
 pub fn polish(world: &mut World) {
     let Some(state) = world.resource::<Chrome>() else {
         return;
     };
-    let (band, leading, chat, destination, caption, tabs) = (
-        state.band,
+    let (leading, chat, destination, caption, tabs) = (
         state.leading,
         state.chat,
         state.destination,
@@ -333,16 +480,10 @@ pub fn polish(world: &mut World) {
     } else {
         frame.leading
     };
-    // Only extend the plane when it lines up with navigation below; a bare
-    // rail is narrower than the traffic lights and keeps the canvas band.
+    // Panes beneath paint the band's backdrop; this only positions controls.
     let edge = navigation_edge(world);
-    let joined = edge >= native;
-    world.get_mut::<Layout>(leading).unwrap().width = Size::Px(if joined { edge } else { native });
-    if joined {
-        visual::flat(world, leading, visual::navigation());
-    } else {
-        visual::flat(world, leading, visual::canvas());
-    }
+    world.get_mut::<Layout>(leading).unwrap().width = Size::Px(edge.max(native));
+    inset_panes(world);
     show(world, caption, frame.draws_controls);
     let active = crate::surfaces::active(world);
     show(world, chat, active == crate::surfaces::SurfaceId::Chat);
@@ -372,8 +513,6 @@ pub fn polish(world: &mut World) {
         _ => "Medousa",
     }
     .into();
-    // Content beyond the navigation plane continues the reading canvas.
-    visual::flat(world, band, visual::canvas());
     let bars: Vec<_> = [tabs, documents[0], documents[1]]
         .into_iter()
         .flat_map(|host| children_of(world, host))
@@ -525,6 +664,45 @@ mod tests {
                 visible(w, c.chat),
                 surface == crate::surfaces::SurfaceId::Chat
             );
+        }
+    }
+    #[test]
+    fn panes_run_to_the_window_top_and_pad_below_the_band() {
+        let mut app = fixture();
+        for surface in [
+            crate::surfaces::SurfaceId::Chat,
+            crate::surfaces::SurfaceId::Notes,
+            crate::surfaces::SurfaceId::Settings,
+        ] {
+            crate::surfaces::select(app.world_mut(), surface);
+            for _ in 0..3 {
+                app.update();
+            }
+            let w = app.world();
+            let c = w.resource::<Chrome>().unwrap();
+            // The band floats with no fill, so panes below show through it.
+            assert!(
+                w.get::<UiStyle>(c.band)
+                    .and_then(|s| s.background)
+                    .is_none()
+            );
+            let rail = crate::surfaces::rail(w).unwrap();
+            assert_eq!(w.get::<Rect>(rail).unwrap().y, 0.);
+            assert!(w.get::<Padding>(rail).unwrap().top >= HEIGHT);
+            // The navigation column is rail + sidebar, side by side from y=0.
+            let sidebar = w
+                .entities_with::<TitlebarInset>()
+                .into_iter()
+                .filter(|&e| visible(w, e) && e != rail)
+                .filter_map(|e| w.get::<Rect>(e).map(|r| (e, *r)))
+                .find(|(_, r)| (r.x - crate::surfaces::RAIL_WIDTH).abs() < 0.5)
+                .expect("a pane beside the rail");
+            assert_eq!(sidebar.1.y, 0., "{surface:?}");
+            for child in children_of(w, sidebar.0) {
+                if visible(w, child) {
+                    assert!(w.get::<Rect>(child).unwrap().y >= HEIGHT, "{surface:?}");
+                }
+            }
         }
     }
     #[test]
