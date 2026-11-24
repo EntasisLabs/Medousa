@@ -11,8 +11,8 @@ use rndr_ui::{
 /// navigation column runs to the window's top even with no sidebar open:
 /// 16pt each side of the lights' 54pt span, as medousa-home places them.
 pub const RAIL_WIDTH: f32 = 86.;
-const NAV_TARGET: f32 = 40.;
-const NAV_ICON: f32 = 20.;
+const NAV_TARGET: f32 = 48.;
+const NAV_ICON: f32 = 24.;
 const CHAT: u64 = 0x5355_0001;
 const NOTES: u64 = 0x5355_0002;
 const CODE: u64 = 0x5355_0003;
@@ -154,18 +154,6 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         (PEERS, Icon::MessageCircle, "Peers"),
         (SETTINGS, Icon::Settings, "Settings"),
     ] {
-        // Settings sits at the foot of the rail, above the workshop glyph.
-        if command == SETTINGS {
-            panel(
-                world,
-                rail,
-                Layout {
-                    width: Size::Px(NAV_TARGET),
-                    height: Size::Fill,
-                    ..Layout::column()
-                },
-            );
-        }
         let tile = panel(
             world,
             rail,
@@ -175,7 +163,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
                 ..Layout::column()
             },
         );
-        world.insert(tile, Radius(10.));
+        world.insert(tile, Radius(12.));
         world.insert(tile, ResolvedColor);
         let mut props = ButtonProps::new(name, HostIntent::Command(command));
         props.variant = controls::ButtonVariant::Quiet;
@@ -281,6 +269,18 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         focus: [None; SURFACE_COUNT],
     });
     roots[0]
+}
+/// Settings anchors the foot of the rail, below the workshop status
+/// controls, so destinations read top-down and app-level items sit apart.
+pub fn settings_to_foot(world: &mut World) {
+    let Some(host) = world.resource::<SurfaceHost>() else {
+        return;
+    };
+    let (rail, tile) = (host.rail, host.tiles[SurfaceId::Settings.index()]);
+    if let Some(children) = world.get_mut::<Children>(rail) {
+        children.list.retain(|e| *e != tile);
+        children.list.push(tile);
+    }
 }
 /// The destination rail, once mounted.
 pub fn rail(world: &World) -> Option<Entity> {

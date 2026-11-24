@@ -1176,7 +1176,8 @@ fn icon_buttons_are_one_square_shape_with_a_centred_glyph() {
             };
             // A tab's glyphs are sized and placed with the tab itself.
             if w.get::<Parent>(*e).is_some_and(|p| w.has::<Tab>(p.entity))
-                || w.get::<Parent>(root).is_some_and(|p| w.has::<Tab>(p.entity))
+                || w.get::<Parent>(root)
+                    .is_some_and(|p| w.has::<Tab>(p.entity))
             {
                 continue;
             }

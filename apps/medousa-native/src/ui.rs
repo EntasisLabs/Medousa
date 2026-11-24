@@ -313,6 +313,7 @@ fn setup(world: &mut World) {
     let body = chrome::mount(world, root);
     let chat_root = crate::surfaces::mount(world, body);
     workshop_status::mount(world, crate::surfaces::rail(world).expect("rail"));
+    crate::surfaces::settings_to_foot(world);
     command_palette::mount(world, chrome::band(world).expect("window band"));
     let (navigation_split, details_split) = workspace::mount(world, chat_root);
     let prefs = world.resource::<workspace::Workspace>().unwrap().prefs;
