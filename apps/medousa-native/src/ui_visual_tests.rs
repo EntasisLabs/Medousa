@@ -1211,3 +1211,143 @@ fn icon_buttons_are_one_square_shape_with_a_centred_glyph() {
         assert!(checked > 0, "{surface:?} has icon buttons");
     }
 }
+
+#[test]
+fn destination_sidebars_collapse_expand_and_resize_like_chat() {
+    let (mut app, _rx) = fixture();
+    for surface in [
+        crate::surfaces::SurfaceId::Notes,
+        crate::surfaces::SurfaceId::Code,
+        crate::surfaces::SurfaceId::Create,
+        crate::surfaces::SurfaceId::Reviews,
+        crate::surfaces::SurfaceId::Calendar,
+        crate::surfaces::SurfaceId::Peers,
+        crate::surfaces::SurfaceId::Settings,
+    ] {
+        crate::surfaces::select(app.world_mut(), surface);
+        for _ in 0..8 {
+            app.update();
+        }
+        let sidebar_rect = |app: &App| {
+            let w = app.world();
+            let root = crate::surfaces::root(w, surface).unwrap();
+            let mut stack = vec![root];
+            while let Some(e) = stack.pop() {
+                if w.has::<visual::DocumentSidebar>(e) || w.has::<visual::SidebarPane>(e) {
+                    let mut n = e;
+                    let mut shown = true;
+                    loop {
+                        shown &= !w.has::<Hidden>(n);
+                        match w.get::<Parent>(n) {
+                            Some(p) => n = p.entity,
+                            None => break,
+                        }
+                    }
+                    return shown.then(|| *w.get::<Rect>(e).unwrap());
+                }
+                stack.extend(children_of(w, e));
+            }
+            None
+        };
+        let before = sidebar_rect(&app).expect("sidebar shown");
+        assert!(
+            (before.w - crate::workspace::SIDE_DEFAULT).abs() < 1.,
+            "{surface:?} {before:?}"
+        );
+        // Collapse and expand by clicking the band's toggle, through the same
+        // pointer and intent routing a real click takes.
+        let click = |app: &mut App| {
+            let w = app.world();
+            let r = w
+                .query::<Semantics>()
+                .iter()
+                .filter(|(e, s)| {
+                    s.name.as_deref() == Some("Toggle sidebar")
+                        && w.has::<Button>(*e)
+                        && !w.has::<Hidden>(*e)
+                })
+                .filter_map(|(e, _)| w.get::<Rect>(*e).filter(|r| r.w > 0.).copied())
+                .next()
+                .expect("the band's sidebar toggle");
+            let at = [r.x + r.w / 2., r.y + r.h / 2.];
+            let input = app.world_mut().resource_mut::<Input>().unwrap();
+            input.pointer.position = at;
+            input.pointer.press_at = Some(at);
+            input.pointer.pressed = true;
+            input.pointer.down = true;
+            input.pointer.button = PointerButton::Left;
+            app.update();
+            let input = app.world_mut().resource_mut::<Input>().unwrap();
+            input.pointer.pressed = false;
+            input.pointer.press_at = None;
+            input.pointer.down = false;
+            input.pointer.released = true;
+            app.update();
+            app.world_mut()
+                .resource_mut::<Input>()
+                .unwrap()
+                .pointer
+                .released = false;
+            for _ in 0..4 {
+                app.update();
+            }
+        };
+        click(&mut app);
+        assert!(sidebar_rect(&app).is_none(), "{surface:?} collapsed");
+        click(&mut app);
+        assert!(sidebar_rect(&app).is_some(), "{surface:?} expanded");
+        // Drag its divider 60pt wider.
+        let w = app.world();
+        let sash = w
+            .query::<Semantics>()
+            .iter()
+            .filter(|(e, s)| s.name.as_deref() == Some("Sidebar width") && !w.has::<Hidden>(*e))
+            .filter_map(|(e, _)| w.get::<Rect>(*e).filter(|r| r.w > 0.).copied())
+            .find(|r| (r.x - (before.x + before.w)).abs() < 2.)
+            .expect("a divider after the sidebar");
+        let at = [sash.x + sash.w / 2., sash.y + sash.h / 2.];
+        let input = app.world_mut().resource_mut::<Input>().unwrap();
+        input.pointer.position = at;
+        input.pointer.press_at = Some(at);
+        input.pointer.pressed = true;
+        input.pointer.down = true;
+        input.pointer.button = PointerButton::Left;
+        app.update();
+        for step in 1..=6 {
+            let input = app.world_mut().resource_mut::<Input>().unwrap();
+            input.pointer.position = [at[0] + step as f32 * 10., at[1]];
+            input.pointer.press_at = None;
+            input.pointer.pressed = false;
+            app.update();
+        }
+        app.world_mut()
+            .resource_mut::<Input>()
+            .unwrap()
+            .pointer
+            .down = false;
+        for _ in 0..3 {
+            app.update();
+        }
+        let after = sidebar_rect(&app).unwrap();
+        assert!(
+            (after.w - before.w - 60.).abs() < 2.,
+            "{surface:?} {before:?} -> {after:?}"
+        );
+        let i = [
+            "notes", "code", "create", "reviews", "calendar", "peers", "settings",
+        ]
+        .iter()
+        .position(|n| format!("{surface:?}").to_lowercase() == *n)
+        .unwrap();
+        let saved = app
+            .world()
+            .resource::<workspace::Workspace>()
+            .unwrap()
+            .prefs
+            .sides[i];
+        assert!(
+            (saved.width - after.w).abs() < 1. && saved.open,
+            "{surface:?} {saved:?}"
+        );
+    }
+}

@@ -34,7 +34,7 @@ pub enum SurfaceId {
     Settings,
 }
 impl SurfaceId {
-    fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         match self {
             Self::Chat => 0,
             Self::Notes => 1,
@@ -283,6 +283,12 @@ pub fn settings_to_foot(world: &mut World) {
         children.list.retain(|e| *e != tile);
         children.list.push(tile);
     }
+}
+/// A destination's retained root.
+pub fn root(world: &World, surface: SurfaceId) -> Option<Entity> {
+    world
+        .resource::<SurfaceHost>()
+        .map(|h| h.roots[surface.index()])
 }
 /// The destination rail, once mounted.
 pub fn rail(world: &World) -> Option<Entity> {

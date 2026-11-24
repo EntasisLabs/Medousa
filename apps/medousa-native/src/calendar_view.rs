@@ -826,7 +826,9 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         w.resource_mut::<Focus>().unwrap().entity = None;
     }
     let panes = children_of(w, s.root);
-    let (side, root) = (panes[0], panes[1]);
+    // Sidebar first, main pane last: the sidebar's resize divider sits
+    // between them once `crate::sidebars` seats it.
+    let (side, root) = (panes[0], *panes.last().unwrap());
     for e in children_of(w, side).into_iter().chain(children_of(w, root)) {
         despawn(w, e);
     }

@@ -45,6 +45,7 @@ const DETAILS: u64 = 30;
 const MODEL_SEARCH: u64 = 31;
 const RUNTIME: u64 = 35;
 const CONVERSATION_MENU: u64 = 36;
+const SURFACE_SIDEBAR: u64 = 37;
 const SIDEBAR: u64 = 32;
 const NEW: u64 = 1;
 const SEARCH: u64 = 2;
@@ -211,6 +212,9 @@ pub fn app() -> App {
     app.add_system(Schedule::Layout, bound_composer_triggers);
     app.add_system(Schedule::Layout, visual::fit_labels);
     app.add_system(Schedule::Layout, visual::path_crumbs);
+    // Before the band's pass: it re-hugs a scrolling sidebar's wrapper,
+    // and a drag's width must be read first.
+    app.add_system(Schedule::Layout, crate::sidebars::sync);
     app.add_system(Schedule::Layout, chrome::polish);
     app.add_system(Schedule::Layout, visual::action_icons);
     app.add_system(Schedule::Layout, visual::borders);
@@ -237,6 +241,7 @@ fn button(
         SEND => Some("Send message".into()),
         STOP => Some("Stop response".into()),
         SIDEBAR => Some("Toggle conversation sidebar".into()),
+        SURFACE_SIDEBAR => Some("Toggle sidebar".into()),
         CONVERSATION_MENU => Some("Conversation actions".into()),
         DETAILS => Some("Context and sticky notes".into()),
         RUNTIME => Some("Choose runtime".into()),
@@ -249,6 +254,7 @@ fn button(
     };
     let icon = match (id, title) {
         (SIDEBAR, "Chats") => Some((Icon::PanelLeft, "Toggle conversation sidebar")),
+        (SURFACE_SIDEBAR, _) => Some((Icon::PanelLeft, "Toggle sidebar")),
         (CONVERSATION_MENU, _) => Some((Icon::Ellipsis, "Conversation actions")),
         (TOGGLE_SEARCH, _) => Some((Icon::Search, "Search conversations")),
         (NEW, "New chat") => Some((Icon::Plus, "New chat")),
@@ -275,7 +281,7 @@ fn button(
     {
         world.get_mut::<Layout>(h.root).unwrap().width = Size::Px(match id {
             SEND | STOP => 54.,
-            DETAILS | SIDEBAR | CONVERSATION_MENU => {
+            DETAILS | SIDEBAR | SURFACE_SIDEBAR | CONVERSATION_MENU => {
                 // Square, like the band's other icon buttons.
                 if icon.is_some() {
                     visual::ACTION_SIZE
@@ -1312,6 +1318,12 @@ fn update(world: &mut World) {
         }) {
             continue;
         }
+        // The band's sidebar toggle belongs to the window, not the view under
+        // it: handle it before the active destination claims the intent.
+        if host == Some(HostIntent::Command(SURFACE_SIDEBAR)) {
+            crate::sidebars::toggle(world);
+            continue;
+        }
         match crate::surfaces::active(world) {
             crate::surfaces::SurfaceId::Notes => {
                 if let Some(host) = host {
@@ -1476,6 +1488,7 @@ fn action(world: &mut World, id: u64) {
             let m = world.resource_mut::<Model>().unwrap();
             m.sidebar_open = !m.sidebar_open;
         }
+        SURFACE_SIDEBAR => crate::sidebars::toggle(world),
         MORE => {
             let m = world.resource::<Model>().unwrap();
             if let Some(cursor) = m.session_cursor.clone() {

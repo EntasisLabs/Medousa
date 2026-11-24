@@ -10,12 +10,36 @@ use std::{
     time::Duration,
 };
 
+/// A destination's sidebar: shown or collapsed, and its width in points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Side {
+    pub open: bool,
+    pub width: f32,
+}
+impl Default for Side {
+    fn default() -> Self {
+        Self {
+            open: true,
+            width: SIDE_DEFAULT,
+        }
+    }
+}
+pub const SIDE_DEFAULT: f32 = 288.;
+pub const SIDE_MIN: f32 = 200.;
+pub const SIDE_MAX: f32 = 480.;
+/// Sidebars of the non-chat destinations, by surface name.
+pub const SIDE_NAMES: [&str; 7] = [
+    "notes", "code", "create", "reviews", "calendar", "peers", "settings",
+];
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Preferences {
     pub sidebar_ratio: f64,
     pub chat_ratio: f64,
     pub sidebar_open: bool,
     pub details_open: bool,
+    /// Non-chat destinations, in [`SIDE_NAMES`] order.
+    pub sides: [Side; 7],
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -24,6 +48,7 @@ impl Default for Preferences {
             chat_ratio: 0.68,
             sidebar_open: true,
             details_open: false,
+            sides: [Side::default(); 7],
         }
     }
 }
@@ -44,6 +69,18 @@ impl Preferences {
                 .unwrap_or(p.chat_ratio);
             p.sidebar_open = v["sidebar_open"].as_bool().unwrap_or(p.sidebar_open);
             p.details_open = v["details_open"].as_bool().unwrap_or(p.details_open);
+            for (i, name) in SIDE_NAMES.iter().enumerate() {
+                let side = &v["sidebars"][name];
+                if let Some(open) = side["open"].as_bool() {
+                    p.sides[i].open = open;
+                }
+                if let Some(width) = side["width"]
+                    .as_f64()
+                    .filter(|w| w.is_finite() && (SIDE_MIN as f64..=SIDE_MAX as f64).contains(w))
+                {
+                    p.sides[i].width = width as f32;
+                }
+            }
         }
         p
     }
@@ -51,9 +88,20 @@ impl Preferences {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        let sidebars: serde_json::Map<String, serde_json::Value> = SIDE_NAMES
+            .iter()
+            .zip(self.sides)
+            .map(|(name, side)| {
+                (
+                    (*name).to_owned(),
+                    serde_json::json!({"open": side.open, "width": side.width}),
+                )
+            })
+            .collect();
         let data = serde_json::to_vec_pretty(&serde_json::json!({
             "version": 1, "sidebar_ratio": self.sidebar_ratio, "chat_ratio": self.chat_ratio,
             "sidebar_open": self.sidebar_open, "details_open": self.details_open,
+            "sidebars": sidebars,
         }))?;
         let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
         std::fs::write(&temporary, data)?;
@@ -177,7 +225,7 @@ fn show(world: &mut World, e: Entity, visible: bool) {
 /// Show a side pane, easing its contents in from the pane's own edge when it
 /// reappears. The pane surface stays solid, layout is final at once so the
 /// reading lane never reflows per frame, and hiding stays immediate.
-fn reveal(world: &mut World, e: Entity, visible: bool, from_x: f32) {
+pub(crate) fn reveal(world: &mut World, e: Entity, visible: bool, from_x: f32) {
     let appearing = visible && world.has::<Hidden>(e);
     show(world, e, visible);
     // Never animate a pane's first appearance at launch.
@@ -294,6 +342,18 @@ pub fn chrome(world: &mut World) {
         }
     }
 }
+/// Queue a write when a destination sidebar changed outside the chat split.
+pub fn save(world: &mut World) {
+    let Some(state) = world.resource_mut::<Workspace>() else {
+        return;
+    };
+    if state.prefs != state.last_sent {
+        if let Some(tx) = &state.save {
+            let _ = tx.send(state.prefs);
+        }
+        state.last_sent = state.prefs;
+    }
+}
 pub fn error(world: &World) -> Option<String> {
     world
         .resource::<Workspace>()?
@@ -317,6 +377,15 @@ mod tests {
             chat_ratio: 0.61,
             sidebar_open: false,
             details_open: true,
+            sides: {
+                let mut sides = [Side::default(); 7];
+                sides[0] = Side {
+                    open: false,
+                    width: 340.,
+                };
+                sides[6].width = 220.;
+                sides
+            },
         };
         p.write(&path).unwrap();
         assert_eq!(Preferences::read(&path), p);

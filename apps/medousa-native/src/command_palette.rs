@@ -166,7 +166,9 @@ pub(super) fn update(world: &mut World) {
     if let Some(band) = world.get::<Rect>(world.get::<Parent>(handle.anchor).unwrap().entity) {
         // Centred on the window, though the band now starts past the
         // navigation column: offset from wherever the band begins.
-        let window = world.resource::<Viewport>().map_or(band.x + band.w, |v| v.width);
+        let window = world
+            .resource::<Viewport>()
+            .map_or(band.x + band.w, |v| v.width);
         let left = ((window - WIDTH) / 2.).max(0.) - band.x;
         let absolute = world.get_mut::<Absolute>(handle.anchor).unwrap();
         if absolute.left != Some(left) {

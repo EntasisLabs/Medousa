@@ -19,6 +19,7 @@ mod routing;
 mod runtimes;
 mod saved_transport;
 mod settings;
+mod sidebars;
 mod source_preferences;
 mod surfaces;
 mod terminal;

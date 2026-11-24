@@ -587,23 +587,7 @@ pub struct ReadingDocument;
 impl Component for ReadingDocument {}
 
 pub fn document_layouts(world: &mut World) {
-    let width = world.resource::<Viewport>().map_or(1200., |v| v.width);
-    for entity in world
-        .query::<DocumentSidebar>()
-        .iter()
-        .map(|(e, _)| *e)
-        .collect::<Vec<_>>()
-    {
-        // The notes rail fits three independently actionable labels plus two icons.
-        let rail = if world.has::<LibraryBreadcrumbs>(entity) {
-            (width * 0.37).clamp(232., 344.)
-        } else if width < 960. {
-            232.
-        } else {
-            288.
-        };
-        world.get_mut::<Layout>(entity).unwrap().width = Size::Px(rail);
-    }
+    // Sidebar widths belong to `crate::sidebars`: remembered, draggable.
     for entity in world
         .query::<ReadingDocument>()
         .iter()

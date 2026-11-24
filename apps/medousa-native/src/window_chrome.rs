@@ -21,6 +21,7 @@ struct BandStrip(TabStripHandle);
 impl Component for BandStrip {}
 struct Chrome {
     band: Entity,
+    side: Entity,
     more: Entity,
     body: Entity,
     leading: Entity,
@@ -80,6 +81,8 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Layout::row()
         },
     );
+    // Non-chat destinations' sidebar toggle, where chat keeps its own.
+    let side = button(world, band, SURFACE_SIDEBAR, "Sidebar", true).root;
     let chat = container(
         world,
         Some(band),
@@ -185,6 +188,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     );
     world.insert_resource(Chrome {
         band,
+        side,
         more,
         body,
         leading,
@@ -549,6 +553,9 @@ pub fn polish(world: &mut World) {
     show(world, caption, frame.draws_controls);
     let active = crate::surfaces::active(world);
     show(world, chat, active == crate::surfaces::SurfaceId::Chat);
+    let side = world.resource::<Chrome>().unwrap().side;
+    let toggle = active != crate::surfaces::SurfaceId::Chat && crate::sidebars::available(world);
+    show(world, side, toggle);
     let documents = world.resource::<Chrome>().unwrap().documents;
     let mut has_document = false;
     for (i, host) in documents.into_iter().enumerate() {
