@@ -2287,12 +2287,7 @@ fn sharing_section(w: &mut World, s: &mut State, body: Entity) {
         "Peers, trusted workshops and canvas backups are still managed in the original Medousa app.",
     );
 
-    heading(w, body, "Channels");
-    quiet(
-        w,
-        body,
-        "Messaging doors — Telegram, Discord, Slack and WhatsApp are set up in the original Medousa app for now.",
-    );
+    channels_part(w, s, body);
     if !s.sharing_note.is_empty() {
         let note = s.sharing_note.clone();
         label(w, body, &note, Typography::Label);
@@ -2314,6 +2309,365 @@ fn sharing_section(w: &mut World, s: &mut State, body: Entity) {
         Action::Refresh,
         s.sharing_reading.is_none(),
     );
+}
+
+/// A one-line text field whose text is kept in `s.drafts` under `key`, so a
+/// rebuild keeps what was typed. A secure one shows bullets.
+#[allow(clippy::too_many_arguments)]
+fn field(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    key: &'static str,
+    title: &str,
+    hint: &str,
+    placeholder: &str,
+    secure: bool,
+) {
+    label(w, p, title, Typography::Label);
+    if !hint.is_empty() {
+        quiet(w, p, hint);
+    }
+    let value = s.drafts.get(key).cloned().unwrap_or_default();
+    let e = w.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(32.),
+            padding: 8.,
+            ..Layout::column()
+        },
+        Label::new(value),
+        TextField,
+        Focusable,
+        Placeholder::new(placeholder),
+        Semantics {
+            name: Some(title.into()),
+            ..Default::default()
+        },
+    ));
+    set_parent(w, e, p);
+    visual::plane(w, e, visual::raised());
+    w.insert(e, Radius(8.));
+    if secure {
+        w.insert(e, Secure);
+    }
+    s.fields.push((key, e));
+}
+
+/// Channels: how many are ready, then each with its form when opened.
+fn channels_part(w: &mut World, s: &mut State, body: Entity) {
+    heading(w, body, "Channels");
+    quiet(
+        w,
+        body,
+        "Messaging doors — reach Medousa from Telegram, Discord, Slack and WhatsApp.",
+    );
+    if !s.local() {
+        if s.reading.is_empty() {
+            quiet(
+                w,
+                body,
+                "This workshop runs on another machine; its channels are set up there.",
+            );
+        }
+        return;
+    }
+    match s.channels.clone() {
+        Some(summary) => {
+            quiet(
+                w,
+                body,
+                &format!(
+                    "{} of {} ready",
+                    channels::ready(&summary),
+                    channels::CHANNELS.len()
+                ),
+            );
+            for c in &channels::CHANNELS {
+                channel(w, s, body, c, &summary);
+            }
+        }
+        None if s.channels_reading.is_some() => {
+            quiet(w, body, "Reading channels…");
+        }
+        None => {}
+    }
+    if let Some(("", note)) = &s.channel_note {
+        let note = note.clone();
+        label(w, body, &note, Typography::Label);
+    }
+}
+
+fn channel(
+    w: &mut World,
+    s: &mut State,
+    body: Entity,
+    c: &'static channels::Meta,
+    summary: &medousa_desktop_host::channels::Summary,
+) {
+    use medousa_desktop_host::channels::Status;
+    let status = summary.status(c.id);
+    let open = s.open.contains(channels::open_key(c.id));
+    let side = runtime_row(
+        w,
+        body,
+        c.name,
+        &format!("{} · {}", c.description, channels::status_label(status)),
+    );
+    let (face, spoken) = match (open, status) {
+        (true, _) => ("Close", format!("Close {}", c.name)),
+        (false, Status::NeedsSetup) => ("Set up", format!("Set up {}", c.name)),
+        (false, _) => ("Edit", format!("Edit {}", c.name)),
+    };
+    named_button(w, side, s, face, spoken, Action::Channel(c.id), true);
+    if !open {
+        return;
+    }
+    let form = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            padding: 12.,
+            ..Layout::column()
+        },
+    );
+    quiet(w, form, c.tagline);
+    label(
+        w,
+        form,
+        if c.id == "whatsapp" {
+            "Bridge setup"
+        } else {
+            "Connect"
+        },
+        Typography::Emphasis,
+    );
+    quiet(w, form, c.blurb);
+    if let Some((url, name)) = c.guide {
+        let row = panel(
+            w,
+            form,
+            Layout {
+                width: Size::Hug,
+                height: Size::Hug,
+                ..Layout::row()
+            },
+        );
+        button(w, row, s, name, Action::OpenGuide(url), true);
+    }
+    for t in c.tokens {
+        let kept = channels::token_set(summary, t.key);
+        let forgetting = s.forget.contains(t.key);
+        let hint = match (forgetting, kept) {
+            (true, _) => "Forgotten when you save",
+            (false, true) => "Kept on this Mac — paste again only to replace",
+            (false, false) => "Waiting for a token",
+        };
+        field(w, form, s, t.key, t.title, hint, t.placeholder, true);
+        if kept {
+            switch_row(
+                w,
+                form,
+                s,
+                &format!("Forget saved {}", t.title.to_lowercase()),
+                "Clears it when you save, unless a new one is pasted",
+                forgetting,
+                Action::ForgetToken(t.key),
+                true,
+            );
+        }
+    }
+    let (who, copy) = match c.id {
+        "telegram" => (
+            "Who may reach her",
+            "After the token is live, message the bot /whoami and paste your numeric ID — only you get in.",
+        ),
+        "discord" => (
+            "How she’s called",
+            "The character before commands in your servers.",
+        ),
+        "slack" => (
+            "Who may reach her",
+            "Socket Mode only listens to the Slack users you list here.",
+        ),
+        _ => ("", ""),
+    };
+    match c.id {
+        "telegram" | "discord" | "slack" => {
+            label(w, form, who, Typography::Emphasis);
+            quiet(w, form, copy);
+        }
+        _ => {}
+    }
+    match c.id {
+        "telegram" => field(
+            w,
+            form,
+            s,
+            "telegram.users",
+            "Your Telegram user ID",
+            "From /whoami — separate more with commas",
+            "123456789",
+            false,
+        ),
+        "discord" => field(
+            w,
+            form,
+            s,
+            "discord.prefix",
+            "Command prefix",
+            "",
+            "!",
+            false,
+        ),
+        "slack" => field(
+            w,
+            form,
+            s,
+            "slack.users",
+            "Allowed Slack user IDs",
+            "Comma-separated",
+            "U0123ABCD",
+            false,
+        ),
+        _ => {
+            field(
+                w,
+                form,
+                s,
+                "whatsapp.bind",
+                "Deliver bind",
+                "Where the bridge listens",
+                "127.0.0.1:7423",
+                false,
+            );
+            field(
+                w,
+                form,
+                s,
+                "whatsapp.users",
+                "Allowed JIDs",
+                "Who may message her — comma-separated",
+                "user@s.whatsapp.net",
+                false,
+            );
+            label(w, form, "Bridge extras", Typography::Emphasis);
+            quiet(
+                w,
+                form,
+                "Optional overrides — most bridges never need these.",
+            );
+            field(
+                w,
+                form,
+                s,
+                "whatsapp.url",
+                "Deliver URL",
+                "Optional",
+                "",
+                false,
+            );
+            field(
+                w,
+                form,
+                s,
+                "whatsapp.db",
+                "Session DB path",
+                "Optional",
+                "",
+                false,
+            );
+        }
+    }
+    if more(
+        w,
+        form,
+        s,
+        channels::advanced_key(c.id),
+        "Advanced",
+        "Heartbeat nudges and delivery targets",
+    ) {
+        let on = s.heartbeat.get(c.id).copied().unwrap_or(false);
+        let (where_, key, title, placeholder) = match c.id {
+            "telegram" => (
+                "On configured chats",
+                "telegram.chats",
+                "Heartbeat chat IDs",
+                "-1001234567890",
+            ),
+            "discord" => (
+                "On configured channels",
+                "discord.channels",
+                "Heartbeat channel IDs",
+                "",
+            ),
+            "slack" => (
+                "On configured channels",
+                "slack.channels",
+                "Heartbeat channel IDs",
+                "",
+            ),
+            _ => (
+                "On configured chats",
+                "whatsapp.jids",
+                "Heartbeat chat JIDs",
+                "",
+            ),
+        };
+        switch_row(
+            w,
+            form,
+            s,
+            "Heartbeat nudges",
+            where_,
+            on,
+            Action::ChannelHeartbeat(c.id, !on),
+            true,
+        );
+        field(
+            w,
+            form,
+            s,
+            key,
+            title,
+            "Comma-separated",
+            placeholder,
+            false,
+        );
+    }
+    let busy = s.channel_busy.is_some();
+    let saving = s.channel_busy.is_some_and(|(_, id)| id == c.id);
+    let row = panel(
+        w,
+        form,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            ..Layout::row()
+        },
+    );
+    named_button(
+        w,
+        row,
+        s,
+        if saving {
+            "Saving…"
+        } else {
+            "Save & connect"
+        },
+        format!("Save {}", c.name),
+        Action::SaveChannel(c.id),
+        !busy,
+    );
+    if let Some((id, note)) = &s.channel_note
+        && *id == c.id
+    {
+        let note = note.clone();
+        label(w, form, &note, Typography::Label);
+    }
 }
 
 fn bar(w: &mut World, p: Entity, percent: f32) {
@@ -2491,6 +2845,8 @@ fn packages(w: &mut World, s: &mut State, body: Entity) {
 }
 
 pub(super) fn render(w: &mut World, s: &mut State) {
+    capture(w, s);
+    s.fields.clear();
     if w.resource::<Focus>()
         .and_then(|f| f.entity)
         .is_some_and(|e| crate::surfaces::descendant(w, e, s.root))
@@ -2521,5 +2877,12 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         Section::ExternalAgents => external_agents(w, s, body),
         Section::Runtime => runtime_section(w, s, body),
         Section::Sharing => sharing_section(w, s, body),
+    }
+    // The field that had focus gets it back, caret and all.
+    if let Some((key, caret)) = s.focused.take()
+        && let Some(&(_, e)) = s.fields.iter().find(|(k, _)| *k == key)
+    {
+        w.resource_mut::<Focus>().unwrap().entity = Some(e);
+        w.insert(e, caret);
     }
 }

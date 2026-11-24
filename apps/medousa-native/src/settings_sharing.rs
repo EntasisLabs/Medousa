@@ -1,6 +1,7 @@
 //! Sharing: Shared mode, phones paired with this workshop and the pairing
-//! QR, and LAN pairing for a workshop this Mac runs. Channels, peers and
-//! share bundles are still set up in medousa-home.
+//! QR, and LAN pairing for a workshop this Mac runs. Channels are in
+//! `settings_channels.rs`; peers and share bundles are still set up in
+//! medousa-home.
 use base64::Engine;
 use serde::Deserialize;
 

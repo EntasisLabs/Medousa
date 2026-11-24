@@ -16,10 +16,14 @@ fn texts(w: &World) -> Vec<String> {
         .collect()
 }
 
+/// A Settings control by its spoken name. Other surfaces may have one by
+/// the same name (Peers has its own pairing QR), so only Settings counts.
 fn named(w: &World, name: &str) -> Option<Entity> {
+    let root = state(w).map(|s| s.root);
     w.entities_with::<Semantics>().into_iter().find(|e| {
         w.has::<Focusable>(*e)
             && w.get::<Semantics>(*e).and_then(|s| s.name.as_deref()) == Some(name)
+            && root.is_none_or(|r| crate::surfaces::descendant(w, *e, r))
     })
 }
 
@@ -193,7 +197,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime,sharing}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime,sharing,channels}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -420,6 +424,30 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "sharing");
+        with_state(app.world_mut(), |_, s| {
+            s.open.remove("pair.qr");
+            s.reading.clear();
+            s.workshop = None;
+            let mut summary = channels_summary();
+            summary.discord.credentials_set = true;
+            summary.discord.adapter_running = true;
+            s.channels = Some(summary);
+            s.open.insert("ch.telegram");
+            s.open.insert("ch.telegram.advanced");
+            s.seed_channel("telegram");
+            s.drafts
+                .insert("telegram.token", "123456:ABC-secret".into());
+            s.redraw = true;
+        });
+        rndr_paint::frame(&mut app);
+        // Scrolled down to Channels.
+        let body = state(app.world()).unwrap().body;
+        let scroll = app.world().get::<Parent>(body).unwrap().entity;
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., -760.];
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "channels");
     }
 }
 
@@ -1368,4 +1396,151 @@ fn the_pairing_qr_shows_its_code_and_copies_the_link() {
     );
     click(&mut app, "Hide pairing QR");
     assert!(!state(app.world()).unwrap().open.contains("pair.qr"));
+}
+
+fn channels_summary() -> medousa_desktop_host::channels::Summary {
+    let mut s = medousa_desktop_host::channels::Summary::default();
+    s.telegram.credentials_set = true;
+    s.telegram.allowed_user_ids = vec![7];
+    s.discord.command_prefix = "!".into();
+    s
+}
+
+fn channels_open(kind: &str) -> App {
+    let mut app = sharing_open();
+    with_state(app.world_mut(), |_, s| {
+        s.reading.clear();
+        s.workshop = Some(Workshop {
+            label: "Studio".into(),
+            kind: kind.into(),
+            url: "http://127.0.0.1:7878".into(),
+            data_dir: None,
+        });
+        s.read_channels();
+        s.redraw = true;
+    });
+    if let Some(read) = state(app.world()).unwrap().channels_reading {
+        apply(
+            app.world_mut(),
+            Update {
+                serial: read,
+                result: Ok(Reply::Channels(Box::new(channels_summary()))),
+            },
+        );
+    }
+    take_commands(app.world_mut());
+    app.update();
+    app
+}
+
+fn field_text(w: &World, name: &str) -> String {
+    let e = named(w, name).unwrap_or_else(|| panic!("{name} shown"));
+    w.get::<Label>(e).unwrap().text.clone()
+}
+
+fn type_text(app: &mut App, text: &str) {
+    app.world_mut()
+        .resource_mut::<Input>()
+        .unwrap()
+        .chars
+        .push_str(text);
+    app.update();
+}
+
+#[test]
+fn a_channel_form_keeps_what_was_typed_across_redraws_and_saves_the_token() {
+    let mut app = channels_open("local");
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "1 of 4 ready"), "{t:?}");
+    assert!(t.iter().any(|x| x == "DMs, groups, and topics · Ready"));
+    assert!(
+        named(app.world(), "Bot token").is_none(),
+        "forms wait behind Edit"
+    );
+
+    click(&mut app, "Edit Telegram");
+    assert_eq!(field_text(app.world(), "Your Telegram user ID"), "7");
+    assert_eq!(
+        field_text(app.world(), "Bot token"),
+        "",
+        "a kept token isn’t shown"
+    );
+    click(&mut app, "Bot token");
+    type_text(&mut app, "123:abc");
+    let token = named(app.world(), "Bot token").unwrap();
+    assert!(app.world().has::<Secure>(token), "shown as bullets");
+    assert_eq!(field_text(app.world(), "Bot token"), "123:abc");
+
+    // A redraw rebuilds the page; the text and the focus come back.
+    with_state(app.world_mut(), |_, s| s.redraw = true);
+    app.update();
+    let again = named(app.world(), "Bot token").unwrap();
+    assert_ne!(again, token, "rebuilt");
+    assert_eq!(field_text(app.world(), "Bot token"), "123:abc");
+    assert_eq!(
+        app.world().resource::<Focus>().unwrap().entity,
+        Some(again),
+        "still typing in it"
+    );
+    type_text(&mut app, "x");
+    assert_eq!(field_text(app.world(), "Bot token"), "123:abcx");
+
+    click(&mut app, "Save Telegram");
+    let (busy, id) = state(app.world()).unwrap().channel_busy.expect("saving");
+    assert_eq!(id, "telegram");
+    // The worker is handed this plan (the app's update dispatches it).
+    let s = state(app.world()).unwrap();
+    let plan = channels::plan("telegram", &s.drafts, false, &s.forget).unwrap();
+    assert_eq!(plan.tokens, [("bot_token", Some("123:abcx".to_string()))]);
+
+    apply(
+        app.world_mut(),
+        Update {
+            serial: busy,
+            result: Ok(Reply::Channels(Box::new(channels_summary()))),
+        },
+    );
+    app.update();
+    assert_eq!(
+        field_text(app.world(), "Bot token"),
+        "",
+        "cleared once kept"
+    );
+    let t = texts(app.world());
+    assert!(
+        t.iter()
+            .any(|x| x == "Saved — Medousa starts this channel for you."),
+        "{t:?}"
+    );
+}
+
+#[test]
+fn a_bad_id_is_named_and_nothing_is_saved() {
+    let mut app = channels_open("local");
+    click(&mut app, "Edit Telegram");
+    click(&mut app, "Your Telegram user ID");
+    type_text(&mut app, ", me");
+    click(&mut app, "Save Telegram");
+    assert!(state(app.world()).unwrap().channel_busy.is_none());
+    let t = texts(app.world());
+    assert!(
+        t.iter().any(|x| x.starts_with("“me” isn’t a number")),
+        "{t:?}"
+    );
+    // Closing the form drops what was typed.
+    click(&mut app, "Close Telegram");
+    assert!(state(app.world()).unwrap().drafts.is_empty());
+}
+
+#[test]
+fn a_workshop_elsewhere_sets_its_channels_up_there() {
+    let app = channels_open("remote");
+    let s = state(app.world()).unwrap();
+    assert!(s.channels.is_none() && s.channels_reading.is_none());
+    let t = texts(app.world());
+    assert!(
+        t.iter()
+            .any(|x| x == "This workshop runs on another machine; its channels are set up there."),
+        "{t:?}"
+    );
 }

@@ -13,6 +13,8 @@ use std::sync::{Arc, Mutex};
 
 #[path = "settings_agent.rs"]
 pub(crate) mod agent;
+#[path = "settings_channels.rs"]
+pub(crate) mod channels;
 #[path = "settings_external.rs"]
 pub(crate) mod external;
 #[path = "settings_runtime.rs"]
@@ -132,6 +134,13 @@ enum Action {
     DeviceRemove(String),
     CancelDeviceRemove,
     LanPairing(bool),
+    /// Opens or closes a channel's form, filling it from what's saved.
+    Channel(&'static str),
+    ChannelHeartbeat(&'static str, bool),
+    /// Marks a kept token to be forgotten on the next save, or not.
+    ForgetToken(&'static str),
+    SaveChannel(&'static str),
+    OpenGuide(&'static str),
 }
 
 /// The active workshop as the registry describes it.
@@ -180,6 +189,8 @@ enum Kind {
     RotateInvite,
     DeviceRemove(String),
     Lan(String, bool),
+    Channels,
+    SaveChannel(Box<channels::Plan>),
 }
 pub struct Update {
     serial: u64,
@@ -207,6 +218,7 @@ enum Reply {
     Shared(sharing::SharedMode),
     Qr(Box<sharing::Qr>),
     Lan(serde_json::Value),
+    Channels(Box<medousa_desktop_host::channels::Summary>),
 }
 
 /// Waiting for an agent's CLI to report it signed in.
@@ -313,6 +325,20 @@ pub(crate) struct State {
     /// The countdown shown, and when paired devices are next checked.
     qr_secs: u64,
     pair_poll: Option<std::time::Instant>,
+    /// Channels on this Mac: what's saved, its read, the save in flight and
+    /// for which channel, and that save's outcome.
+    channels: Option<medousa_desktop_host::channels::Summary>,
+    channels_reading: Option<u64>,
+    channel_busy: Option<(u64, &'static str)>,
+    channel_note: Option<(&'static str, String)>,
+    /// Open forms' text by field key, heartbeat switches by channel, and
+    /// kept tokens marked to forget. Drafts outlive the page's rebuilds.
+    drafts: HashMap<&'static str, String>,
+    heartbeat: HashMap<&'static str, bool>,
+    forget: HashSet<&'static str>,
+    /// Fields drawn this time, and the one that had focus with its caret.
+    fields: Vec<(&'static str, Entity)>,
+    focused: Option<(&'static str, Caret)>,
     waiting: Option<Waiting>,
     agent_note: String,
     conversation_confirm: Option<String>,
@@ -362,6 +388,24 @@ impl State {
             self.sharing_reading = Some(self.enqueue(Kind::Sharing(lan)));
             self.redraw = true;
         }
+    }
+    /// A channel's settings and adapters live where the workshop runs.
+    fn read_channels(&mut self) {
+        if self.channels_reading.is_none() && self.local() {
+            self.channels_reading = Some(self.enqueue(Kind::Channels));
+            self.redraw = true;
+        }
+    }
+    /// Fills an open form from what's saved, once.
+    fn seed_channel(&mut self, id: &'static str) {
+        let Some(summary) = &self.channels else {
+            return;
+        };
+        let (fields, heartbeat) = channels::fill(summary, id);
+        for (k, v) in fields {
+            self.drafts.entry(k).or_insert(v);
+        }
+        self.heartbeat.entry(id).or_insert(heartbeat);
     }
     fn read_qr(&mut self) {
         if self.qr_reading.is_none() {
@@ -461,6 +505,15 @@ pub fn mount(w: &mut World, parent: Entity) {
         qr_loaded: 0,
         qr_secs: 0,
         pair_poll: None,
+        channels: None,
+        channels_reading: None,
+        channel_busy: None,
+        channel_note: None,
+        drafts: HashMap::new(),
+        heartbeat: HashMap::new(),
+        forget: HashSet::new(),
+        fields: Vec::new(),
+        focused: None,
         waiting: None,
         agent_note: String::new(),
         conversation_confirm: None,
@@ -497,6 +550,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
         return false;
     };
     with_state(w, |w, s| {
+        capture(w, s);
         match a {
             Action::Section(section) => {
                 s.shell_confirm = false;
@@ -515,6 +569,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 if section == Section::Sharing {
                     s.device_confirm = None;
                     s.read_sharing();
+                    s.read_channels();
                     // LAN pairing is offered by where the workshop runs.
                     if s.workshop.is_none() && s.reading.is_empty() {
                         s.refresh();
@@ -710,6 +765,47 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     s.open.insert(key);
                 }
             }
+            Action::Channel(id) => {
+                let key = channels::open_key(id);
+                if s.open.remove(key) {
+                    // Closing drops what was typed, tokens included.
+                    let keys = channels::keys(id);
+                    s.fields.retain(|(k, _)| !keys.contains(k));
+                    for k in keys {
+                        s.drafts.remove(k);
+                        s.forget.remove(k);
+                    }
+                    s.heartbeat.remove(id);
+                } else {
+                    s.open.insert(key);
+                    s.seed_channel(id);
+                }
+                s.channel_note = None;
+            }
+            Action::ChannelHeartbeat(id, on) => {
+                s.heartbeat.insert(id, on);
+            }
+            Action::ForgetToken(key) => {
+                if !s.forget.remove(key) {
+                    s.forget.insert(key);
+                }
+            }
+            Action::SaveChannel(id) => {
+                if s.channel_busy.is_none() && s.local() {
+                    let heartbeat = s.heartbeat.get(id).copied().unwrap_or(false);
+                    match channels::plan(id, &s.drafts, heartbeat, &s.forget) {
+                        Ok(plan) => {
+                            s.channel_note = None;
+                            let serial = s.enqueue(Kind::SaveChannel(Box::new(plan)));
+                            s.channel_busy = Some((serial, id));
+                        }
+                        Err(e) => s.channel_note = Some((id, e)),
+                    }
+                }
+            }
+            Action::OpenGuide(url) => {
+                s.enqueue(Kind::OpenUrl(url.into()));
+            }
             Action::OpenInstaller => {
                 if s.busy.is_none() {
                     s.message.clear();
@@ -780,6 +876,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     s.read_agents();
                 } else if s.section == Section::Sharing {
                     s.read_sharing();
+                    s.read_channels();
                     if s.open.contains("pair.qr") {
                         s.read_qr();
                     }
@@ -1129,6 +1226,11 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
         Kind::Lan(url, on) => medousa_desktop_host::peer_lan::set_enabled(&url, on)
             .await
             .map(Reply::Lan),
+        Kind::Channels => tokio::task::spawn_blocking(medousa_desktop_host::channels::summary)
+            .await
+            .map(|s| Reply::Channels(Box::new(s)))
+            .map_err(|e| e.to_string()),
+        Kind::SaveChannel(plan) => save_channel(client, *plan).await,
         Kind::ConversationRotate(id) => client
             .http()
             .post_empty::<medousa_types::RotateExternalCallbackResponse>(&format!(
@@ -1202,8 +1304,127 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
     }
 }
 
+/// Stores a channel's token changes with the engine, then saves its
+/// settings here and starts or stops its adapter.
+async fn save_channel(client: &MedousaClient, plan: channels::Plan) -> Result<Reply, String> {
+    if !plan.tokens.is_empty() {
+        let list = client
+            .http()
+            .get::<medousa_types::IntegrationConnectionListResponse>("/v1/integrations")
+            .await
+            .map_err(|e| format!("The engine’s token store couldn’t be read: {e}"))?;
+        let id = match list.connections.into_iter().find(|c| c.kind == plan.kind) {
+            Some(c) => c.connection_id,
+            None => {
+                client
+                    .http()
+                    .post::<medousa_types::IntegrationConnection, _>(
+                        "/v1/integrations",
+                        &medousa_types::CreateIntegrationConnectionRequest {
+                            kind: plan.kind.into(),
+                            label: None,
+                            base_url: None,
+                        },
+                    )
+                    .await
+                    .map_err(|e| format!("The engine couldn’t keep the token: {e}"))?
+                    .connection_id
+            }
+        };
+        let id = urlencoding::encode(id.as_str()).into_owned();
+        for (slot, value) in &plan.tokens {
+            let path = format!("/v1/integrations/{id}/secrets/{slot}");
+            let done = match value {
+                Some(value) => {
+                    client
+                        .http()
+                        .put::<serde_json::Value, _>(
+                            &path,
+                            &medousa_types::UpsertIntegrationSecretRequest {
+                                value: value.clone(),
+                            },
+                        )
+                        .await
+                }
+                None => client.http().delete::<serde_json::Value>(&path).await,
+            };
+            done.map_err(|e| format!("The engine couldn’t keep the token: {e}"))?;
+        }
+    }
+    let url = client.base_url().to_string();
+    tokio::task::spawn_blocking(move || {
+        medousa_desktop_host::channels::save(&plan.save, &url)?;
+        Ok(medousa_desktop_host::channels::summary())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|s| Reply::Channels(Box::new(s)))
+}
+
+/// Copies typed text into drafts and notes the focused field and its caret,
+/// so the next rebuild keeps both.
+fn capture(w: &World, s: &mut State) {
+    let focus = w.resource::<Focus>().and_then(|f| f.entity);
+    s.focused = None;
+    for &(key, e) in &s.fields {
+        if !w.is_alive(e) {
+            continue;
+        }
+        if let Some(l) = w.get::<Label>(e) {
+            s.drafts.insert(key, l.text.clone());
+        }
+        if focus == Some(e) {
+            s.focused = Some((key, w.get::<Caret>(e).copied().unwrap_or_default()));
+        }
+    }
+}
+
 pub fn apply(w: &mut World, u: Update) {
     with_state(w, |_, s| {
+        if s.channels_reading == Some(u.serial) {
+            s.channels_reading = None;
+            match u.result {
+                Ok(Reply::Channels(summary)) => {
+                    s.channels = Some(*summary);
+                    for c in &channels::CHANNELS {
+                        if s.open.contains(channels::open_key(c.id)) {
+                            s.seed_channel(c.id);
+                        }
+                    }
+                }
+                Err(e) => s.channel_note = Some(("", format!("Couldn’t read channels: {e}"))),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if let Some((serial, id)) = s.channel_busy
+            && serial == u.serial
+        {
+            s.channel_busy = None;
+            match u.result {
+                Ok(Reply::Channels(summary)) => {
+                    s.channels = Some(*summary);
+                    // Saved tokens leave the form and this app's memory.
+                    if let Some(c) = channels::CHANNELS.iter().find(|c| c.id == id) {
+                        for t in c.tokens {
+                            s.fields.retain(|(k, _)| *k != t.key);
+                            s.drafts.insert(t.key, String::new());
+                            s.forget.remove(t.key);
+                        }
+                    }
+                    s.channel_note =
+                        Some((id, "Saved — Medousa starts this channel for you.".into()));
+                }
+                Err(e) => {
+                    s.channel_note = Some((id, e));
+                    s.read_channels();
+                }
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
         if s.sharing_reading == Some(u.serial) {
             s.sharing_reading = None;
             match u.result {
@@ -1502,12 +1723,17 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Sharing(_)
                 | Reply::Shared(_)
                 | Reply::Qr(_)
-                | Reply::Lan(_),
+                | Reply::Lan(_)
+                | Reply::Channels(_),
             ) => {}
             Err(e) if reading => s.message = format!("Couldn’t read the connection: {e}"),
             Err(e) => {
                 s.message = format!("The theme is applied here but wasn’t saved for next time: {e}")
             }
+        }
+        // Channels are offered once it's known where the workshop runs.
+        if reading && s.reading.is_empty() && s.section == Section::Sharing {
+            s.read_channels();
         }
         s.redraw = true;
     });
