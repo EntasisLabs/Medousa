@@ -418,6 +418,38 @@ fn sync_wrap(world: &mut World, wrapper: Entity, pane: Entity) -> bool {
 
 /// Every pane whose top is the window's top pads its contents below the band.
 /// Sashes stay full height so their hairline runs to the top too.
+/// A navigation sidebar: no traffic lights above it, so its header takes
+/// the titlebar row instead of sitting below an empty band.
+fn sidebar(world: &World, pane: Entity) -> bool {
+    let mut stack = vec![(pane, 0)];
+    while let Some((e, depth)) = stack.pop() {
+        if world.has::<visual::DocumentSidebar>(e) || world.has::<visual::SidebarPane>(e) {
+            return true;
+        }
+        if depth < 3 {
+            stack.extend(children_of(world, e).into_iter().map(|c| (c, depth + 1)));
+        }
+    }
+    false
+}
+/// The sidebar's first header row or title, which then drags the window as
+/// the band does over the content column.
+fn header(world: &World, pane: Entity) -> Option<Entity> {
+    let mut node = pane;
+    for _ in 0..6 {
+        let first = children_of(world, node)
+            .into_iter()
+            .find(|c| !world.has::<Hidden>(*c) && !world.has::<Absolute>(*c))?;
+        let row = world
+            .get::<Layout>(first)
+            .is_some_and(|l| l.axis == Axis::Row);
+        if row || world.has::<Label>(first) {
+            return Some(first);
+        }
+        node = first;
+    }
+    None
+}
 fn inset_panes(world: &mut World) {
     let Some(body) = world.resource::<Chrome>().map(|c| c.body) else {
         return;
@@ -449,8 +481,16 @@ fn inset_panes(world: &mut World) {
             .get::<TitlebarInset>(pane)
             .and_then(|i| i.authored)
             .unwrap_or_else(|| Padding::all(world.get::<Layout>(pane).unwrap().padding));
+        let navigation = sidebar(world, pane);
+        if navigation {
+            if let Some(header) = header(world, pane) {
+                if !world.has::<WindowDrag>(header) {
+                    world.insert(header, WindowDrag);
+                }
+            }
+        }
         let padded = Padding {
-            top: base.top + HEIGHT,
+            top: base.top + if navigation { 0. } else { HEIGHT },
             ..base
         };
         if world.get::<Padding>(pane) != Some(&padded) {
@@ -494,9 +534,17 @@ pub fn polish(world: &mut World) {
     } else {
         frame.leading
     };
-    // Panes beneath paint the band's backdrop; this only positions controls.
+    // The band floats over the content column only. The navigation column
+    // owns its own top: the rail holds the traffic lights and a sidebar's
+    // header rises into the titlebar row beside them.
     let edge = navigation_edge(world);
-    world.get_mut::<Layout>(leading).unwrap().width = Size::Px(edge.max(native));
+    let band = world.resource::<Chrome>().unwrap().band;
+    if let Some(pin) = world.get_mut::<Absolute>(band) {
+        if pin.left != Some(edge) {
+            pin.left = Some(edge);
+        }
+    }
+    world.get_mut::<Layout>(leading).unwrap().width = Size::Px((native - edge).max(0.));
     inset_panes(world);
     show(world, caption, frame.draws_controls);
     let active = crate::surfaces::active(world);
@@ -742,7 +790,9 @@ mod tests {
             assert_eq!(visible(w, c.caption), controls);
             assert_eq!(w.get::<Rect>(c.band).unwrap().h, HEIGHT);
             let ui = w.resource::<Ui>().unwrap();
-            assert!(w.get::<Rect>(ui.sidebar).unwrap().y >= HEIGHT);
+            // The band covers the content column only, past the sidebar.
+            let sidebar = *w.get::<Rect>(ui.sidebar).unwrap();
+            assert!(w.get::<Rect>(c.band).unwrap().x >= sidebar.x + sidebar.w - 1.);
             if controls {
                 for (button, _) in w.query::<WindowButton>() {
                     assert!(visible(w, button));
@@ -770,7 +820,7 @@ mod tests {
         }
     }
     #[test]
-    fn panes_run_to_the_window_top_and_pad_below_the_band() {
+    fn panes_run_to_the_top_and_sidebar_headers_take_the_titlebar_row() {
         let mut app = fixture();
         for surface in [
             crate::surfaces::SurfaceId::Chat,
@@ -801,11 +851,14 @@ mod tests {
                 .find(|(_, r)| (r.x - crate::surfaces::RAIL_WIDTH).abs() < 0.5)
                 .expect("a pane beside the rail");
             assert_eq!(sidebar.1.y, 0., "{surface:?}");
-            for child in children_of(w, sidebar.0) {
-                if visible(w, child) {
-                    assert!(w.get::<Rect>(child).unwrap().y >= HEIGHT, "{surface:?}");
-                }
-            }
+            // No traffic lights above a sidebar: its header takes the
+            // titlebar row and drags the window like the band beside it.
+            let head = header(w, sidebar.0).expect("a sidebar header");
+            let r = *w.get::<Rect>(head).unwrap();
+            assert!(r.y < HEIGHT && r.y + r.h <= HEIGHT, "{surface:?} {r:?}");
+            assert!(w.has::<WindowDrag>(head), "{surface:?}");
+            let band = *w.get::<Rect>(c.band).unwrap();
+            assert!(band.x >= sidebar.1.x + sidebar.1.w - 1., "{surface:?}");
         }
     }
     #[test]

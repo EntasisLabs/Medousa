@@ -576,6 +576,10 @@ pub fn flat(world: &mut World, entity: Entity, color: Token) {
 }
 
 pub struct DocumentSidebar;
+/// A navigation sidebar that is not a document sidebar (chat, peers): its
+/// header takes the titlebar row beside the traffic lights.
+pub struct SidebarPane;
+impl Component for SidebarPane {}
 pub struct LibraryBreadcrumbs;
 impl Component for LibraryBreadcrumbs {}
 impl Component for DocumentSidebar {}

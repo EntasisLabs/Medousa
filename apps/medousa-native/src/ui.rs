@@ -336,6 +336,10 @@ fn setup(world: &mut World) {
         ..Layout::column()
     };
     visual::flat(world, sidebar.root, visual::navigation());
+    world.insert(sidebar.root, visual::SidebarPane);
+    // One inset, the content's: the header lines up with the titlebar row
+    // and the other sidebars instead of stacking the surface's padding too.
+    world.insert(sidebar.root, Padding::all(0.));
     let sidebar_header = container(
         world,
         Some(sidebar.content),

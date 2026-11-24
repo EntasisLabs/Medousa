@@ -106,6 +106,7 @@ pub(super) fn mount(w: &mut World, parent: Entity) {
         },
     );
     visual::plane(w, sidebar, visual::navigation());
+    w.insert(sidebar, visual::SidebarPane);
     label(w, sidebar, "Peers", Typography::Title);
     label(
         w,

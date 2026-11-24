@@ -127,6 +127,8 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     );
     crate::native_style::plane(world, rail, crate::native_style::rail());
     world.insert(rail, ResolvedColor);
+    // The rail's open top holds the traffic lights and drags the window.
+    world.insert(rail, WindowDrag);
     world.insert(
         rail,
         Align {

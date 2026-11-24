@@ -164,7 +164,10 @@ pub(super) fn update(world: &mut World) {
         return;
     };
     if let Some(band) = world.get::<Rect>(world.get::<Parent>(handle.anchor).unwrap().entity) {
-        let left = ((band.w - WIDTH) / 2.).max(0.);
+        // Centred on the window, though the band now starts past the
+        // navigation column: offset from wherever the band begins.
+        let window = world.resource::<Viewport>().map_or(band.x + band.w, |v| v.width);
+        let left = ((window - WIDTH) / 2.).max(0.) - band.x;
         let absolute = world.get_mut::<Absolute>(handle.anchor).unwrap();
         if absolute.left != Some(left) {
             absolute.left = Some(left);
@@ -331,6 +334,9 @@ mod tests {
         update(app.world_mut());
         let anchor = handle(app.world()).anchor;
         let left = app.world().get::<Absolute>(anchor).unwrap().left.unwrap();
-        assert_eq!(left, (1200. - WIDTH) / 2.);
+        // Centred on the window, wherever the band itself begins.
+        let band = app.world().get::<Parent>(anchor).unwrap().entity;
+        let band_x = app.world().get::<Rect>(band).unwrap().x;
+        assert_eq!(band_x + left, (1200. - WIDTH) / 2.);
     }
 }
