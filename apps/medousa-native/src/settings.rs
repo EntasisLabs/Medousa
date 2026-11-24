@@ -149,6 +149,13 @@ enum Action {
     /// First press asks; a second clears the open provider's key.
     ClearProviderKey,
     KeepProviderKey,
+    /// Saves a runtime list field from its draft: field, draft key.
+    SaveList(&'static str, &'static str),
+    /// Sets the env override typed in the Add form.
+    EnvAdd,
+    /// First press asks; a second removes that variable.
+    EnvRemove(String),
+    KeepEnv,
 }
 
 /// The active workshop as the registry describes it.
@@ -360,6 +367,9 @@ pub(crate) struct State {
     provider_open: Option<String>,
     provider_note: String,
     provider_clear: bool,
+    /// Host env overrides: a variable a Remove waits on, and the last note.
+    env_confirm: Option<String>,
+    env_note: String,
     focused: Option<(&'static str, Caret)>,
     waiting: Option<Waiting>,
     agent_note: String,
@@ -554,6 +564,8 @@ pub fn mount(w: &mut World, parent: Entity) {
         provider_open: None,
         provider_note: String::new(),
         provider_clear: false,
+        env_confirm: None,
+        env_note: String::new(),
         focused: None,
         waiting: None,
         agent_note: String::new(),
@@ -592,6 +604,10 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
     };
     with_state(w, |w, s| {
         capture(w, s);
+        let Some(a) = runtime_edit(s, a) else {
+            s.redraw = true;
+            return;
+        };
         match a {
             Action::Section(section) => {
                 s.shell_confirm = false;
@@ -806,7 +822,13 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             }
             Action::DismissCallbackKey => s.callback_key = None,
             Action::Toggle(key) => {
-                if !s.open.remove(key) {
+                if s.open.remove(key) {
+                    s.forget_fields(runtime::drafts_for(key));
+                    if key == "runtime.env" {
+                        s.env_confirm = None;
+                        s.env_note.clear();
+                    }
+                } else {
                     s.open.insert(key);
                 }
             }
@@ -898,6 +920,9 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 }
             }
             Action::KeepProviderKey => s.provider_clear = false,
+            Action::KeepEnv => s.env_confirm = None,
+            // Turned into field patches by `runtime_edit`.
+            Action::SaveList(..) | Action::EnvAdd | Action::EnvRemove(_) => {}
             Action::OpenInstaller => {
                 if s.busy.is_none() {
                     s.message.clear();
@@ -987,6 +1012,53 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
         s.redraw = true;
     });
     true
+}
+
+/// Turns a runtime list or env edit into a field patch, read from what was
+/// typed; `None` when it waits on a second press or was refused.
+fn runtime_edit(s: &mut State, a: Action) -> Option<Action> {
+    let field = |key: &'static str, value: serde_json::Value| {
+        Some(Action::Agent(agent::Patch::Field(key, value)))
+    };
+    let env = || {
+        s.defaults
+            .as_ref()
+            .and_then(|d| d["env_overrides"].as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    match a {
+        Action::SaveList(key, draft) => {
+            let list = runtime::split_list(s.drafts.get(draft).map_or("", String::as_str));
+            field(key, list.into())
+        }
+        Action::EnvAdd => {
+            let get = |k| s.drafts.get(k).cloned().unwrap_or_default();
+            match runtime::env_set(&env(), &get("rt.env.name"), &get("rt.env.value")) {
+                Ok(next) if s.patching.is_none() => {
+                    // The value leaves the form and this app's memory.
+                    s.forget_fields(&["rt.env.name", "rt.env.value"]);
+                    s.env_note.clear();
+                    field("env_overrides", next.into())
+                }
+                Ok(_) => None,
+                Err(e) => {
+                    s.env_note = e;
+                    None
+                }
+            }
+        }
+        Action::EnvRemove(name) => {
+            if s.env_confirm.as_deref() == Some(name.as_str()) {
+                s.env_confirm = None;
+                field("env_overrides", runtime::env_remove(&env(), &name).into())
+            } else {
+                s.env_confirm = Some(name);
+                None
+            }
+        }
+        other => Some(other),
+    }
 }
 
 /// Applies `id` now and saves it for medousa-home and the next launch.

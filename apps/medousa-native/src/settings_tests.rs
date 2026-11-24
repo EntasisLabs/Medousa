@@ -197,7 +197,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime,sharing,channels,providers}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime,runtime-lists,sharing,channels,providers}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -426,6 +426,25 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "runtime");
+        with_state(app.world_mut(), |_, s| {
+            s.open.remove("host_turn_bus_mode");
+            s.open.insert("runtime.allowlists");
+            s.open.insert("runtime.env");
+            if let Some(d) = s.defaults.as_mut() {
+                d["env_overrides"] = "RUST_LOG=info\nOPENAI_ORG=org-123".into();
+                d["shell_writable_roots"] = serde_json::json!(["/Users/dee/projects"]);
+            }
+            s.redraw = true;
+        });
+        rndr_paint::frame(&mut app);
+        let body = state(app.world()).unwrap().body;
+        let scroll = app.world().get::<Parent>(body).unwrap().entity;
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., -560.];
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "runtime-lists");
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., 0.];
         with_state(app.world_mut(), |_, s| {
             s.section = Section::Sharing;
             let read = sharing_read(true);
@@ -1662,4 +1681,93 @@ fn a_bad_base_url_is_named_and_an_unchanged_form_says_so() {
     click(&mut app, "Close OpenAI API");
     let s = state(app.world()).unwrap();
     assert!(s.provider_open.is_none() && !s.drafts.contains_key("provider.url"));
+}
+
+#[test]
+fn runtime_lists_are_edited_and_saved_one_field_at_a_time() {
+    let mut app = runtime_open(serde_json::json!({
+        "shell_allowed_binaries": ["git"],
+        "allowed_modules": [],
+    }));
+    click(&mut app, "Allowlists");
+    assert_eq!(field_text(app.world(), "Allowed binaries"), "git");
+    click(&mut app, "Allowed binaries");
+    type_text(&mut app, ", rg");
+    click(&mut app, "Save allowed binaries");
+    let s = state(app.world()).unwrap();
+    let (_, patch) = s.patching.clone().expect("saving");
+    assert_eq!(
+        patch,
+        agent::Patch::Field("shell_allowed_binaries", serde_json::json!(["git", "rg"]))
+    );
+    saved(&mut app);
+    assert_eq!(field_text(app.world(), "Allowed binaries"), "git, rg");
+
+    click(&mut app, "Allowed tools");
+    assert_eq!(field_text(app.world(), "Module names"), "");
+    click(&mut app, "Module names");
+    type_text(&mut app, "websearch.search,fetch.url");
+    click(&mut app, "Save allowed tools");
+    let (_, patch) = state(app.world())
+        .unwrap()
+        .patching
+        .clone()
+        .expect("saving");
+    assert_eq!(
+        patch,
+        agent::Patch::Field(
+            "allowed_modules",
+            serde_json::json!(["websearch.search", "fetch.url"])
+        )
+    );
+}
+
+#[test]
+fn env_overrides_add_a_masked_value_and_remove_on_a_second_press() {
+    let mut app = runtime_open(serde_json::json!({"env_overrides": "A=1"}));
+    click(&mut app, "Host env overrides");
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "A"));
+    assert!(!t.iter().any(|x| x.contains("A=1")), "values aren't shown");
+
+    click(&mut app, "Variable name");
+    type_text(&mut app, "TOKEN");
+    click(&mut app, "Value");
+    type_text(&mut app, "s3cret");
+    assert!(
+        app.world()
+            .has::<Secure>(named(app.world(), "Value").unwrap())
+    );
+    click(&mut app, "Add variable");
+    let s = state(app.world()).unwrap();
+    let (_, patch) = s.patching.clone().expect("saving");
+    assert_eq!(
+        patch,
+        agent::Patch::Field("env_overrides", "A=1\nTOKEN=s3cret".into())
+    );
+    assert!(
+        !s.drafts.contains_key("rt.env.value"),
+        "the value is dropped"
+    );
+    saved(&mut app);
+    assert_eq!(field_text(app.world(), "Value"), "");
+
+    click(&mut app, "Add variable");
+    assert_eq!(
+        state(app.world()).unwrap().env_note,
+        "A variable name has no spaces or “=”, like API_TIMEOUT."
+    );
+
+    click(&mut app, "Remove A");
+    assert!(state(app.world()).unwrap().patching.is_none(), "asks first");
+    click(&mut app, "Confirm removal of A");
+    let (_, patch) = state(app.world())
+        .unwrap()
+        .patching
+        .clone()
+        .expect("removing");
+    assert_eq!(
+        patch,
+        agent::Patch::Field("env_overrides", "TOKEN=s3cret".into())
+    );
 }

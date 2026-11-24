@@ -418,6 +418,77 @@ pub(crate) fn list(d: &Value, key: &str) -> Vec<String> {
         .collect()
 }
 
+/// medousa-home's `parseMultilineList`: commas or new lines.
+pub(crate) fn split_list(raw: &str) -> Vec<String> {
+    raw.split([',', '\n'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// The text fields a disclosure owns, dropped when it closes.
+pub(crate) fn drafts_for(disclosure: &str) -> &'static [&'static str] {
+    match disclosure {
+        "runtime.tools" => &["rt.modules"],
+        "runtime.allowlists" => &["rt.binaries", "rt.roots"],
+        "runtime.env" => &["rt.env.name", "rt.env.value"],
+        _ => &[],
+    }
+}
+
+/// The names set in `env_overrides` (`KEY=value` per line), in order.
+pub(crate) fn env_names(env: &str) -> Vec<String> {
+    env.lines()
+        .filter_map(|l| l.split_once('=').map(|(k, _)| k.trim()))
+        .filter(|k| !k.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+fn names(line: &str, name: &str) -> bool {
+    line.split_once('=').is_some_and(|(k, _)| k.trim() == name)
+}
+
+/// Sets one variable, replacing its line or adding one; other lines stay.
+pub(crate) fn env_set(env: &str, name: &str, value: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() || name.contains(['=', ' ', '\t']) {
+        return Err("A variable name has no spaces or “=”, like API_TIMEOUT.".into());
+    }
+    if value.contains('\n') {
+        return Err("A value fits on one line.".into());
+    }
+    let line = format!("{name}={value}");
+    let mut lines: Vec<String> = Vec::new();
+    let mut replaced = false;
+    for l in env.lines() {
+        if names(l, name) {
+            if !replaced {
+                lines.push(line.clone());
+                replaced = true;
+            }
+        } else {
+            lines.push(l.to_string());
+        }
+    }
+    if !replaced {
+        while lines.last().is_some_and(|l| l.trim().is_empty()) {
+            lines.pop();
+        }
+        lines.push(line);
+    }
+    Ok(lines.join("\n"))
+}
+
+/// Drops a variable's lines; other lines stay.
+pub(crate) fn env_remove(env: &str, name: &str) -> String {
+    env.lines()
+        .filter(|l| !names(l, name))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -456,5 +527,21 @@ mod tests {
             POSTURE.chosen(&json!({"tool_call_mode": "bogus"})).1,
             "Flexible"
         );
+    }
+
+    #[test]
+    fn lists_split_like_medousa_home_and_env_lines_change_one_at_a_time() {
+        assert_eq!(split_list("git, ls\nrg,,"), ["git", "ls", "rg"]);
+        let env = "# keep\nA=1\nB=two=2";
+        assert_eq!(env_names(env), ["A", "B"]);
+        assert_eq!(env_set(env, "A", "9").unwrap(), "# keep\nA=9\nB=two=2");
+        assert_eq!(
+            env_set(env, " C ", "x").unwrap(),
+            "# keep\nA=1\nB=two=2\nC=x"
+        );
+        assert!(env_set(env, "BAD NAME", "x").is_err());
+        assert!(env_set(env, "", "x").is_err());
+        assert_eq!(env_remove(env, "A"), "# keep\nB=two=2");
+        assert_eq!(drafts_for("runtime.env"), ["rt.env.name", "rt.env.value"]);
     }
 }

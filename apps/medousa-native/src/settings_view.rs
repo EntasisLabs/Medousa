@@ -1925,6 +1925,37 @@ fn runtime_row(w: &mut World, p: Entity, label_: &str, hint: &str) -> Entity {
     side
 }
 
+/// A Save button for a runtime list field, under its text field.
+#[allow(clippy::too_many_arguments)]
+fn save_row(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    spoken: &str,
+    key: &'static str,
+    draft: &'static str,
+    enabled: bool,
+) {
+    let row = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            ..Layout::row()
+        },
+    );
+    named_button(
+        w,
+        row,
+        s,
+        "Save",
+        spoken.into(),
+        Action::SaveList(key, draft),
+        enabled,
+    );
+}
+
 /// An on/off setting: its name and hint, with an On/Off button.
 #[allow(clippy::too_many_arguments)]
 fn switch_row(
@@ -2065,19 +2096,32 @@ fn runtime_section(w: &mut World, s: &mut State, body: Entity) {
             "Custom list"
         },
     ) {
-        quiet(
+        s.drafts.entry("rt.modules").or_insert(modules.join(", "));
+        field(
             w,
             body,
-            &if modules.is_empty() {
-                "Empty list means the full tool catalog is allowed.".to_string()
-            } else {
-                modules.join(", ")
-            },
+            s,
+            "rt.modules",
+            "Module names",
+            "Tools she can call, separated by commas.",
+            "websearch.search, fetch.url",
+            false,
         );
-        quiet(
+        if modules.is_empty() {
+            quiet(
+                w,
+                body,
+                "Empty list means the full tool catalog is allowed.",
+            );
+        }
+        save_row(
             w,
             body,
-            "Edit the list in the original Medousa app for now.",
+            s,
+            "Save allowed tools",
+            "allowed_modules",
+            "rt.modules",
+            idle,
         );
     }
 
@@ -2134,31 +2178,45 @@ fn runtime_section(w: &mut World, s: &mut State, body: Entity) {
             "Custom binaries"
         },
     ) {
-        let none = || "None".to_string();
-        fact(
+        s.drafts.entry("rt.binaries").or_insert(binaries.join(", "));
+        s.drafts.entry("rt.roots").or_insert(roots.join(", "));
+        field(
             w,
             body,
+            s,
+            "rt.binaries",
             "Allowed binaries",
-            &if binaries.is_empty() {
-                none()
-            } else {
-                binaries.join(", ")
-            },
+            "Command basenames, separated by commas.",
+            "git, ls, rg",
+            false,
         );
-        fact(
+        save_row(
             w,
             body,
+            s,
+            "Save allowed binaries",
+            "shell_allowed_binaries",
+            "rt.binaries",
+            idle,
+        );
+        field(
+            w,
+            body,
+            s,
+            "rt.roots",
             "Writable roots",
-            &if roots.is_empty() {
-                none()
-            } else {
-                roots.join(", ")
-            },
+            "Absolute paths, separated by commas.",
+            "/Users/you/projects",
+            false,
         );
-        quiet(
+        save_row(
             w,
             body,
-            "Edit these lists in the original Medousa app for now.",
+            s,
+            "Save writable roots",
+            "shell_writable_roots",
+            "rt.roots",
+            idle,
         );
     }
 
@@ -2211,16 +2269,73 @@ fn runtime_section(w: &mut World, s: &mut State, body: Entity) {
             k => format!("{k} variables"),
         },
     ) {
-        // Only names: values may be secrets.
-        for line in env.lines().filter(|l| !l.trim().is_empty()) {
-            let name = line.split('=').next().unwrap_or_default().trim();
-            fact(w, body, name, "Set");
-        }
         quiet(
             w,
             body,
-            "KEY=value per line, applied when a turn starts. Edit them in the original Medousa app for now.",
+            "Applied when a turn starts. Values may be secrets, so only names are shown; adding a name again replaces its value.",
         );
+        for name in r::env_names(env) {
+            let (line, col) = split_row(w, body);
+            label(w, col, &name, Typography::Label);
+            let confirming = s.env_confirm.as_deref() == Some(name.as_str());
+            if confirming {
+                named_button(
+                    w,
+                    line,
+                    s,
+                    "Cancel",
+                    format!("Keep {name}"),
+                    Action::KeepEnv,
+                    true,
+                );
+            }
+            named_button(
+                w,
+                line,
+                s,
+                if confirming { "Remove?" } else { "Remove" },
+                if confirming {
+                    format!("Confirm removal of {name}")
+                } else {
+                    format!("Remove {name}")
+                },
+                Action::EnvRemove(name.clone()),
+                idle,
+            );
+        }
+        field(
+            w,
+            body,
+            s,
+            "rt.env.name",
+            "Variable name",
+            "",
+            "API_TIMEOUT",
+            false,
+        );
+        field(w, body, s, "rt.env.value", "Value", "", "value", true);
+        let row = panel(
+            w,
+            body,
+            Layout {
+                width: Size::Hug,
+                height: Size::Hug,
+                ..Layout::row()
+            },
+        );
+        named_button(
+            w,
+            row,
+            s,
+            "Add variable",
+            "Add variable".into(),
+            Action::EnvAdd,
+            idle,
+        );
+        if !s.env_note.is_empty() {
+            let note = s.env_note.clone();
+            label(w, body, &note, Typography::Label);
+        }
     }
     if s.patching.is_some() {
         quiet(w, body, "Saving…");
