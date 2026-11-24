@@ -327,6 +327,153 @@ pub fn upsert_server(u: &Upsert) -> Result<(), String> {
     save_config(&config).map(|_| ())
 }
 
+/// One tool of a server as Settings lists it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tool {
+    pub name: String,
+    pub title: String,
+    pub enabled: bool,
+    /// The gateway reports it and it is on.
+    pub available: bool,
+    /// Words that help Medousa find it.
+    pub hints: Vec<String>,
+}
+
+/// The gateway's live tool catalog.
+pub async fn catalog() -> Result<medousa_types::mcp_gateway_api::McpCatalogSyncResponse, String> {
+    let base = gateway_url();
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut request = client.get(format!("{}/v1/mcp/catalog", base.trim_end_matches('/')));
+    if let Some(token) = env("MEDOUSA_MCP_GATEWAY_TOKEN") {
+        request = request.bearer_auth(token);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|err| format!("cannot reach MCP gateway at {base}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(format!("MCP gateway returned HTTP {}", response.status()));
+    }
+    response.json().await.map_err(|err| err.to_string())
+}
+
+fn hints_for(server: &medousa_mcp_gateway::McpServerConfig, tool: &str) -> Vec<String> {
+    server
+        .tool_tags
+        .iter()
+        .find_map(|(name, hints)| name.eq_ignore_ascii_case(tool).then(|| hints.clone()))
+        .unwrap_or_default()
+}
+
+/// A server's tools, after medousa-home's `mcp_gateway_list_tools`: what
+/// the gateway reports, and what the config turns off or tags, by title.
+pub fn merge_tools(
+    server: &medousa_mcp_gateway::McpServerConfig,
+    catalog: Option<&medousa_types::mcp_gateway_api::McpCatalogSyncResponse>,
+) -> Vec<Tool> {
+    let mut tools: Vec<Tool> = Vec::new();
+    for entry in catalog
+        .into_iter()
+        .flat_map(|c| c.entries.iter())
+        .filter(|e| e.server_id.eq_ignore_ascii_case(&server.id))
+    {
+        if tools.iter().any(|t| t.name.eq_ignore_ascii_case(&entry.tool_name)) {
+            continue;
+        }
+        let enabled = server.tool_enabled(&entry.tool_name);
+        tools.push(Tool {
+            name: entry.tool_name.clone(),
+            title: entry.title.clone(),
+            enabled,
+            available: entry.available && enabled,
+            hints: hints_for(server, &entry.tool_name),
+        });
+    }
+    for name in server.tool_tags.keys().chain(server.disabled_tools.iter()) {
+        if tools.iter().any(|t| t.name.eq_ignore_ascii_case(name)) {
+            continue;
+        }
+        tools.push(Tool {
+            name: name.clone(),
+            title: name.clone(),
+            enabled: server.tool_enabled(name),
+            available: false,
+            hints: hints_for(server, name),
+        });
+    }
+    tools.sort_by(|a, b| {
+        a.title
+            .to_ascii_lowercase()
+            .cmp(&b.title.to_ascii_lowercase())
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    tools
+}
+
+/// One saved server's config. Blocking file IO.
+pub fn server(server_id: &str) -> Result<medousa_mcp_gateway::McpServerConfig, String> {
+    let id = normalize_server_id(server_id)?;
+    let (config, _) = load_config()?;
+    config
+        .servers
+        .into_iter()
+        .find(|s| s.id.eq_ignore_ascii_case(&id))
+        .ok_or_else(|| format!("unknown MCP server '{id}'"))
+}
+
+/// Turns one tool on or off and sets its discovery hints, as medousa-home's
+/// `mcp_gateway_update_tool`. Applies on the next restart. Blocking file IO.
+pub fn update_tool(
+    server_id: &str,
+    tool_name: &str,
+    enabled: bool,
+    hints: &[String],
+) -> Result<String, String> {
+    require_local()?;
+    let id = normalize_server_id(server_id)?;
+    let tool_name = tool_name.trim();
+    if tool_name.is_empty() || tool_name.chars().any(char::is_control) {
+        return Err("Tool name is required".to_string());
+    }
+    let (mut config, _) = load_config()?;
+    let server = config
+        .servers
+        .iter_mut()
+        .find(|entry| entry.id.eq_ignore_ascii_case(&id))
+        .ok_or_else(|| format!("unknown MCP server '{id}'"))?;
+    let name = server
+        .tool_tags
+        .keys()
+        .chain(server.disabled_tools.iter())
+        .find(|existing| existing.eq_ignore_ascii_case(tool_name))
+        .cloned()
+        .unwrap_or_else(|| tool_name.to_string());
+    server
+        .tool_tags
+        .retain(|n, _| !n.eq_ignore_ascii_case(tool_name));
+    let mut kept: Vec<String> = Vec::new();
+    for hint in hints.iter().map(|h| h.trim()).filter(|h| !h.is_empty()) {
+        if !kept.iter().any(|k| k.eq_ignore_ascii_case(hint)) {
+            kept.push(hint.to_string());
+        }
+    }
+    if !kept.is_empty() {
+        server.tool_tags.insert(name.clone(), kept);
+    }
+    server
+        .disabled_tools
+        .retain(|d| !d.eq_ignore_ascii_case(tool_name));
+    if !enabled {
+        server.disabled_tools.push(name.clone());
+    }
+    save_config(&config)?;
+    Ok(name)
+}
+
 fn servers_from_config(config: &McpGatewayFileConfig, connected: bool) -> Vec<Server> {
     config
         .servers
@@ -548,6 +695,42 @@ pub async fn restart() -> Result<(String, bool), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tools_merge_the_catalog_with_what_the_config_turns_off_or_tags() {
+        let mut server = config_from(
+            &Upsert {
+                id: "files".into(),
+                title: "Files".into(),
+                command: "npx".into(),
+                ..Upsert::default()
+            },
+            None,
+        )
+        .unwrap();
+        server.disabled_tools = vec!["Delete".into()];
+        server
+            .tool_tags
+            .insert("read".into(), vec!["open a file".into()]);
+        server.tool_tags.insert("gone".into(), vec!["x".into()]);
+        let catalog: medousa_types::mcp_gateway_api::McpCatalogSyncResponse =
+            serde_json::from_value(serde_json::json!({
+                "now_utc": "2026-11-01T00:00:00Z",
+                "entries": [
+                    {"server_id": "files", "tool_name": "read", "title": "Read file", "available": true},
+                    {"server_id": "FILES", "tool_name": "delete", "title": "Delete file", "available": true},
+                    {"server_id": "other", "tool_name": "x", "title": "X", "available": true}
+                ]
+            }))
+            .unwrap();
+        let tools = merge_tools(&server, Some(&catalog));
+        let names: Vec<_> = tools.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(names, ["Delete file", "gone", "Read file"]);
+        assert!(!tools[0].enabled && !tools[0].available);
+        assert!(!tools[1].available, "only in the config");
+        assert_eq!(tools[2].hints, ["open a file"]);
+        assert_eq!(merge_tools(&server, None).len(), 3);
+    }
 
     #[test]
     fn a_server_is_checked_like_medousa_home_and_keeps_what_the_form_skips() {

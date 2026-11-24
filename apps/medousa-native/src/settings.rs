@@ -114,6 +114,15 @@ enum Action {
     McpForgetToken,
     McpSave,
     McpCancel,
+    /// Shows or hides a server's tools.
+    McpTools(String),
+    /// Turns a tool on or off: server, tool, on.
+    McpTool(String, String, bool),
+    /// Opens a tool's hints for editing; Save writes them.
+    McpHints(String),
+    McpSaveHints,
+    McpSignIn(String),
+    McpSignOut(String),
     /// Starts a device sign-in with a review provider on its first host.
     SignIn(String, String),
     OpenSignIn,
@@ -209,6 +218,13 @@ enum Kind {
     McpRemove(String),
     McpRestart,
     McpServer(String),
+    McpToolList(String),
+    /// Saves one tool, then restarts the gateway: server, tool, on, hints.
+    McpToolSave(String, String, bool, Vec<String>),
+    /// Each server's sign-in, where the engine has one.
+    McpOAuth(Vec<String>),
+    McpSignIn(String),
+    McpSignOut(String),
     /// Saves a server, then restarts the gateway so it applies.
     McpSave(Box<medousa_desktop_host::mcp::Upsert>),
     Accounts,
@@ -277,6 +293,9 @@ enum Reply {
     ModePolicy(medousa_types::AgentModeTransitionPolicy),
     Artifacts(Box<medousa_types::ArtifactRetentionStatusResponse>),
     McpServer(Box<Option<(medousa_desktop_host::mcp::Upsert, bool)>>),
+    /// A server's tools, and a note when the gateway couldn't list them.
+    McpToolList(Vec<medousa_desktop_host::mcp::Tool>, String),
+    McpOAuth(Vec<medousa_types::McpOAuthStatusResponse>),
     Pairing(Box<external::PairingRead>),
     Discovery(Box<medousa_types::ExternalMuseDiscoveryStatus>),
     Created(Box<medousa_types::CreateExternalConversationResponse>),
@@ -378,6 +397,16 @@ pub(crate) struct State {
     mcp_confirm: Option<String>,
     mcp_restart_needed: bool,
     mcp_form: Option<McpForm>,
+    /// The server whose tools are shown, its tools and their read, the tool
+    /// whose hints are being edited, each server's sign-in and its read,
+    /// and a sign-in in flight.
+    mcp_tools_open: Option<String>,
+    mcp_tools: Option<(Vec<medousa_desktop_host::mcp::Tool>, String)>,
+    mcp_tools_reading: Option<u64>,
+    mcp_hint_tool: Option<String>,
+    mcp_oauth: HashMap<String, medousa_types::McpOAuthStatusResponse>,
+    mcp_oauth_reading: Option<u64>,
+    mcp_signin: Option<(u64, String)>,
     accounts: Option<Accounts>,
     accounts_reading: Option<u64>,
     /// A begin, check, cancel or disconnect in flight, and for whom.
@@ -638,6 +667,13 @@ pub fn mount(w: &mut World, parent: Entity) {
         mcp_confirm: None,
         mcp_restart_needed: false,
         mcp_form: None,
+        mcp_tools_open: None,
+        mcp_tools: None,
+        mcp_tools_reading: None,
+        mcp_hint_tool: None,
+        mcp_oauth: HashMap::new(),
+        mcp_oauth_reading: None,
+        mcp_signin: None,
         accounts: None,
         accounts_reading: None,
         account_busy: None,
@@ -838,6 +874,76 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     } else {
                         s.mcp_confirm = Some(id);
                     }
+                }
+            }
+            Action::McpTools(id) => {
+                s.forget_fields(&["mcp.hints"]);
+                s.mcp_hint_tool = None;
+                s.mcp_tools = None;
+                if s.mcp_tools_open.as_deref() == Some(id.as_str()) {
+                    s.mcp_tools_open = None;
+                } else {
+                    s.mcp_tools_reading = Some(s.enqueue(Kind::McpToolList(id.clone())));
+                    s.mcp_tools_open = Some(id);
+                }
+            }
+            Action::McpTool(server, tool, on) => {
+                if s.mcp_busy.is_none() {
+                    let hints = s
+                        .mcp_tools
+                        .as_ref()
+                        .and_then(|(tools, _)| tools.iter().find(|t| t.name == tool))
+                        .map(|t| t.hints.clone())
+                        .unwrap_or_default();
+                    s.message.clear();
+                    s.mcp_busy =
+                        Some((s.enqueue(Kind::McpToolSave(server, tool, on, hints)), true));
+                }
+            }
+            Action::McpHints(tool) => {
+                s.forget_fields(&["mcp.hints"]);
+                let hints = s
+                    .mcp_tools
+                    .as_ref()
+                    .and_then(|(tools, _)| tools.iter().find(|t| t.name == tool))
+                    .map(|t| t.hints.join(", "))
+                    .unwrap_or_default();
+                if s.mcp_hint_tool.as_deref() == Some(tool.as_str()) {
+                    s.mcp_hint_tool = None;
+                } else {
+                    s.drafts.insert("mcp.hints", hints);
+                    s.mcp_hint_tool = Some(tool);
+                }
+            }
+            Action::McpSaveHints => {
+                if s.mcp_busy.is_none()
+                    && let (Some(server), Some(tool)) =
+                        (s.mcp_tools_open.clone(), s.mcp_hint_tool.clone())
+                {
+                    let on = s
+                        .mcp_tools
+                        .as_ref()
+                        .and_then(|(tools, _)| tools.iter().find(|t| t.name == tool))
+                        .is_none_or(|t| t.enabled);
+                    let hints =
+                        runtime::split_list(s.drafts.get("mcp.hints").map_or("", String::as_str));
+                    s.message.clear();
+                    s.mcp_busy =
+                        Some((s.enqueue(Kind::McpToolSave(server, tool, on, hints)), true));
+                    s.forget_fields(&["mcp.hints"]);
+                    s.mcp_hint_tool = None;
+                }
+            }
+            Action::McpSignIn(id) => {
+                if s.mcp_signin.is_none() {
+                    s.message = "Finish signing in in your browser…".into();
+                    s.mcp_signin = Some((s.enqueue(Kind::McpSignIn(id.clone())), id));
+                }
+            }
+            Action::McpSignOut(id) => {
+                if s.mcp_signin.is_none() {
+                    s.message.clear();
+                    s.mcp_signin = Some((s.enqueue(Kind::McpSignOut(id.clone())), id));
                 }
             }
             Action::McpAdd => {
@@ -1829,6 +1935,67 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
             .await
             .map(|r| Reply::Created(Box::new(r)))
             .map_err(|e| e.to_string()),
+        Kind::McpToolList(id) => {
+            let catalog = medousa_desktop_host::mcp::catalog().await;
+            let server =
+                tokio::task::spawn_blocking(move || medousa_desktop_host::mcp::server(&id))
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r);
+            server.map(|server| {
+                let note = match &catalog {
+                    Ok(_) => String::new(),
+                    Err(e) => {
+                        format!("Live tools are unavailable until the MCP gateway reconnects ({e})")
+                    }
+                };
+                Reply::McpToolList(
+                    medousa_desktop_host::mcp::merge_tools(&server, catalog.as_ref().ok()),
+                    note,
+                )
+            })
+        }
+        Kind::McpToolSave(server, tool, on, hints) => {
+            let saved = tokio::task::spawn_blocking(move || {
+                medousa_desktop_host::mcp::update_tool(&server, &tool, on, &hints)
+            })
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r);
+            match saved {
+                Ok(name) => match restart_mcp(client).await {
+                    Ok(_) => Ok(Reply::McpDone(format!("{name} updated"))),
+                    Err(e) => Err(format!("{name} saved, but the gateway didn’t restart: {e}")),
+                },
+                Err(e) => Err(e),
+            }
+        }
+        Kind::McpOAuth(ids) => {
+            // A server without a sign-in answers with an error; it gets no
+            // button, as in medousa-home.
+            let mut found = Vec::new();
+            for id in ids {
+                let path = format!("/v1/mcp/oauth/{}", urlencoding::encode(id.trim()));
+                if let Ok(status) = client
+                    .http()
+                    .get::<medousa_types::McpOAuthStatusResponse>(&path)
+                    .await
+                {
+                    found.push(status);
+                }
+            }
+            Ok(Reply::McpOAuth(found))
+        }
+        Kind::McpSignIn(id) => mcp_sign_in(client, id).await,
+        Kind::McpSignOut(id) => client
+            .http()
+            .delete::<serde_json::Value>(&format!(
+                "/v1/mcp/oauth/{}",
+                urlencoding::encode(id.trim())
+            ))
+            .await
+            .map(|_| Reply::McpDone("Signed out".into()))
+            .map_err(|e| e.to_string()),
         Kind::McpServer(id) => {
             tokio::task::spawn_blocking(move || medousa_desktop_host::mcp::server_config(&id))
                 .await
@@ -1888,6 +2055,46 @@ fn mcp_upsert(s: &State, form: &McpForm) -> medousa_desktop_host::mcp::Upsert {
         bearer_token: Some(d("mcp.token")).filter(|t| !t.trim().is_empty()),
         clear_bearer_token: form.forget_token,
     }
+}
+
+/// Signs in to an MCP server in the system browser; the engine runs the
+/// OAuth exchange and keeps the tokens.
+async fn mcp_sign_in(client: &MedousaClient, id: String) -> Result<Reply, String> {
+    let session = medousa_desktop_host::oauth_callback::Session::bind().await?;
+    let begin: medousa_types::BeginMcpOAuthResponse = client
+        .http()
+        .post(
+            "/v1/mcp/oauth/begin",
+            &medousa_types::BeginMcpOAuthRequest {
+                server_id: id.clone(),
+                redirect_uri: session.redirect_uri().to_string(),
+                scopes: Vec::new(),
+                client_metadata_url: None,
+                client_id: None,
+                client_secret: None,
+                challenge: None,
+            },
+        )
+        .await
+        .map_err(|e| format!("Sign-in couldn’t start: {e}"))?;
+    let url = begin.authorization_url.clone();
+    tokio::task::spawn_blocking(move || open_url(&url))
+        .await
+        .map_err(|e| e.to_string())??;
+    let callback = session.wait().await?;
+    let done: Result<medousa_types::CompleteMcpOAuthResponse, _> = client
+        .http()
+        .post(
+            "/v1/mcp/oauth/complete",
+            &medousa_types::CompleteMcpOAuthRequest {
+                login_id: begin.login_id,
+                callback_url: callback.url().to_string(),
+            },
+        )
+        .await;
+    callback.finish(done.is_ok()).await;
+    done.map(|_| Reply::McpDone("Signed in".into()))
+        .map_err(|e| format!("Sign-in didn’t finish: {e}"))
 }
 
 /// Restarts the gateway; Medousa learns its tools once it is up.
@@ -2441,9 +2648,52 @@ pub fn apply(w: &mut World, u: Update) {
         if s.mcp_reading == Some(u.serial) {
             s.mcp_reading = None;
             match u.result {
-                Ok(Reply::Mcp(status)) => s.mcp = Some(*status),
+                Ok(Reply::Mcp(status)) => {
+                    // Which servers sign in is asked of the engine.
+                    let ids: Vec<String> = status.servers.iter().map(|v| v.id.clone()).collect();
+                    s.mcp = Some(*status);
+                    if s.mcp_oauth_reading.is_none() && !ids.is_empty() {
+                        s.mcp_oauth_reading = Some(s.enqueue(Kind::McpOAuth(ids)));
+                    }
+                }
                 Err(e) => s.message = format!("Couldn’t check MCP: {e}"),
                 _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.mcp_tools_reading == Some(u.serial) {
+            s.mcp_tools_reading = None;
+            match u.result {
+                Ok(Reply::McpToolList(tools, note)) => s.mcp_tools = Some((tools, note)),
+                Err(e) => s.mcp_tools = Some((Vec::new(), e)),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.mcp_oauth_reading == Some(u.serial) {
+            s.mcp_oauth_reading = None;
+            if let Ok(Reply::McpOAuth(found)) = u.result {
+                s.mcp_oauth = found
+                    .into_iter()
+                    .map(|o| (o.server_id.clone(), o))
+                    .collect();
+            }
+            s.redraw = true;
+            return;
+        }
+        if let Some((serial, _)) = &s.mcp_signin
+            && *serial == u.serial
+        {
+            s.mcp_signin = None;
+            match u.result {
+                Ok(Reply::McpDone(m)) => s.message = m,
+                Err(e) => s.message = e,
+                _ => {}
+            }
+            if s.mcp_reading.is_none() {
+                s.mcp_reading = Some(s.enqueue(Kind::McpStatus));
             }
             s.redraw = true;
             return;
@@ -2505,6 +2755,11 @@ pub fn apply(w: &mut World, u: Update) {
             }
             if s.mcp_reading.is_none() {
                 s.mcp_reading = Some(s.enqueue(Kind::McpStatus));
+            }
+            if let Some(id) = s.mcp_tools_open.clone()
+                && s.mcp_tools_reading.is_none()
+            {
+                s.mcp_tools_reading = Some(s.enqueue(Kind::McpToolList(id)));
             }
             s.redraw = true;
             return;
@@ -2594,6 +2849,8 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::ModePolicy(_)
                 | Reply::Artifacts(_)
                 | Reply::McpServer(_)
+                | Reply::McpToolList(..)
+                | Reply::McpOAuth(_)
                 | Reply::Pairing(_)
                 | Reply::Discovery(_)
                 | Reply::Created(_),

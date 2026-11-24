@@ -2542,7 +2542,30 @@ fn mcp(w: &mut World, s: &mut State, body: Entity) {
             (true, true) => format!("Connected · {} tools", server.tool_count),
             (true, false) => "Not connected".to_string(),
         };
+        let oauth = s.mcp_oauth.get(&server.id).cloned();
+        let state = match &oauth {
+            Some(o) if o.connected => format!("{state} · Signed in"),
+            _ => state,
+        };
         quiet(w, col, &format!("{} · {state}", server.id));
+        // Sign-in runs through the engine, wherever the workshop is.
+        if let Some(o) = oauth {
+            let signing = s.mcp_signin.is_some();
+            let (face, spoken, a) = if o.connected {
+                (
+                    "Sign out",
+                    format!("Sign out of {}", server.title),
+                    Action::McpSignOut(server.id.clone()),
+                )
+            } else {
+                (
+                    "Sign in",
+                    format!("Sign in to {}", server.title),
+                    Action::McpSignIn(server.id.clone()),
+                )
+            };
+            named_button(w, line, s, face, spoken, a, !signing);
+        }
         if !status.local {
             continue;
         }
@@ -2562,6 +2585,16 @@ fn mcp(w: &mut World, s: &mut State, body: Entity) {
                 items: Items::Center,
                 justify: Justify::End,
             },
+        );
+        let tools_open = s.mcp_tools_open.as_deref() == Some(server.id.as_str());
+        named_button(
+            w,
+            side,
+            s,
+            if tools_open { "Hide tools" } else { "Tools" },
+            format!("Tools for {}", server.title),
+            Action::McpTools(server.id.clone()),
+            true,
         );
         named_button(
             w,
@@ -2612,6 +2645,9 @@ fn mcp(w: &mut World, s: &mut State, body: Entity) {
                 },
             );
         }
+        if tools_open {
+            mcp_tools(w, s, body, &server.id, idle);
+        }
     }
     if status.local {
         match s.mcp_form.clone() {
@@ -2632,7 +2668,7 @@ fn mcp(w: &mut World, s: &mut State, body: Entity) {
         quiet(
             w,
             body,
-            "Per-tool settings and server sign-in are still set up in the original Medousa app.",
+            "Tools turn on or off per server; discovery hints teach Medousa the words you’d use to ask for one.",
         );
     }
     if more(
@@ -2653,6 +2689,107 @@ fn mcp(w: &mut World, s: &mut State, body: Entity) {
                 body,
                 "Log",
                 &medousa_desktop_host::mcp::log_path().display().to_string(),
+            );
+        }
+    }
+}
+
+/// One server's tools: each on or off, with its discovery hints.
+fn mcp_tools(w: &mut World, s: &mut State, body: Entity, server: &str, idle: bool) {
+    let p = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 4.,
+            padding: 12.,
+            ..Layout::column()
+        },
+    );
+    let Some((tools, note)) = s.mcp_tools.clone() else {
+        quiet(w, p, "Loading tools…");
+        return;
+    };
+    if !note.is_empty() {
+        quiet(w, p, &note);
+    }
+    if tools.is_empty() {
+        quiet(
+            w,
+            p,
+            "No tools are visible yet. Connect this server, then look again.",
+        );
+        return;
+    }
+    for tool in tools {
+        let mut meta = tool.name.clone();
+        if tool.enabled && !tool.available {
+            meta.push_str(" · Unavailable");
+        }
+        if !tool.hints.is_empty() {
+            meta.push_str(&format!(" · {}", tool.hints.join(", ")));
+        }
+        let side = runtime_row(w, p, &tool.title, &meta);
+        let editing = s.mcp_hint_tool.as_deref() == Some(tool.name.as_str());
+        named_button(
+            w,
+            side,
+            s,
+            if editing { "Close" } else { "Hints" },
+            format!("Hints for {}", tool.title),
+            Action::McpHints(tool.name.clone()),
+            idle,
+        );
+        let h = button(
+            w,
+            side,
+            s,
+            if tool.enabled { "On" } else { "Off" },
+            Action::McpTool(server.to_string(), tool.name.clone(), !tool.enabled),
+            idle,
+        );
+        w.remove::<visual::FitLabel>(h.root);
+        w.get_mut::<Layout>(h.root).unwrap().width = Size::Px(64.);
+        if tool.enabled {
+            mark(w, h.root);
+        }
+        if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+            sem.name = Some(tool.title.clone());
+            sem.description = if tool.enabled {
+                "On".into()
+            } else {
+                "Off".into()
+            };
+        }
+        if editing {
+            field(
+                w,
+                p,
+                s,
+                "mcp.hints",
+                "Discovery hints",
+                "Words you’d use to ask for this tool, separated by commas.",
+                "open a file, read notes",
+                false,
+            );
+            let row = panel(
+                w,
+                p,
+                Layout {
+                    width: Size::Hug,
+                    height: Size::Hug,
+                    ..Layout::row()
+                },
+            );
+            named_button(
+                w,
+                row,
+                s,
+                "Save & restart",
+                format!("Save hints for {}", tool.title),
+                Action::McpSaveHints,
+                idle,
             );
         }
     }

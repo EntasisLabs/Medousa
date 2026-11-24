@@ -356,7 +356,8 @@ fn settings_visual_acceptance() {
             s.open.insert("modes");
             s.open.insert("artifacts");
             if let Some(d) = s.defaults.as_mut() {
-                d["coding_runtime"] = serde_json::json!({"preferred": "codex", "fallbacks": ["cursor", "medousa"]});
+                d["coding_runtime"] =
+                    serde_json::json!({"preferred": "codex", "fallbacks": ["cursor", "medousa"]});
             }
             s.mode_policy = Some(Ok(medousa_types::AgentModeTransitionPolicy {
                 proposal_ttl_seconds: 300,
@@ -385,6 +386,33 @@ fn settings_visual_acceptance() {
             s.mcp = Some(mcp_status(true));
             s.mcp_confirm = Some("linear".into());
             s.mcp_restart_needed = true;
+            s.mcp_oauth.insert(
+                "github".into(),
+                serde_json::from_value(serde_json::json!({
+                    "server_id": "github", "status": "connected", "connected": true
+                }))
+                .unwrap(),
+            );
+            s.mcp_tools_open = Some("github".into());
+            s.mcp_tools = Some((
+                vec![
+                    medousa_desktop_host::mcp::Tool {
+                        name: "list_issues".into(),
+                        title: "List issues".into(),
+                        enabled: true,
+                        available: true,
+                        hints: vec!["bugs".into(), "tickets".into()],
+                    },
+                    medousa_desktop_host::mcp::Tool {
+                        name: "merge_pull_request".into(),
+                        title: "Merge pull request".into(),
+                        enabled: false,
+                        available: false,
+                        hints: vec![],
+                    },
+                ],
+                String::new(),
+            ));
             s.redraw = true;
         });
         for _ in 0..4 {
@@ -394,6 +422,7 @@ fn settings_visual_acceptance() {
         with_state(app.world_mut(), |_, s| {
             s.mcp_confirm = None;
             s.mcp_restart_needed = false;
+            s.mcp_tools_open = None;
             s.mcp_form = Some(McpForm {
                 transport: medousa_desktop_host::mcp::Transport::Http,
                 ..McpForm::default()
@@ -2300,4 +2329,102 @@ fn mode_suggestions_and_artifact_cleanup_save_through_the_engine() {
     click(&mut app, "Artifacts");
     click(&mut app, "More keep for");
     assert!(state(app.world()).unwrap().artifacts_busy.is_some());
+}
+
+#[test]
+fn a_servers_tools_turn_on_and_off_and_take_discovery_hints() {
+    use medousa_desktop_host::mcp::Tool;
+    let mut app = mcp_open(true);
+    app.world_mut().insert_resource(Viewport::new(1200., 1800.));
+    click(&mut app, "Tools for GitHub");
+    let read = state(app.world())
+        .unwrap()
+        .mcp_tools_reading
+        .expect("listed");
+    let tool = |name: &str, title: &str, on: bool, hints: &[&str]| Tool {
+        name: name.into(),
+        title: title.into(),
+        enabled: on,
+        available: on,
+        hints: hints.iter().map(|h| h.to_string()).collect(),
+    };
+    apply(
+        app.world_mut(),
+        Update {
+            serial: read,
+            result: Ok(Reply::McpToolList(
+                vec![
+                    tool("issues", "List issues", true, &["bugs"]),
+                    tool("merge", "Merge PR", false, &[]),
+                ],
+                String::new(),
+            )),
+        },
+    );
+    app.update();
+    click(&mut app, "Merge PR");
+    let (serial, restart) = state(app.world()).unwrap().mcp_busy.expect("saving");
+    assert!(restart, "a tool change restarts the gateway");
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::McpDone("merge updated".into())),
+        },
+    );
+    assert!(
+        state(app.world()).unwrap().mcp_tools_reading.is_some(),
+        "listed again"
+    );
+
+    click(&mut app, "Hints for List issues");
+    assert_eq!(field_text(app.world(), "Discovery hints"), "bugs");
+    click(&mut app, "Discovery hints");
+    type_text(&mut app, ", tickets");
+    click(&mut app, "Save hints for List issues");
+    let s = state(app.world()).unwrap();
+    assert!(s.mcp_busy.is_some() && s.mcp_hint_tool.is_none());
+}
+
+#[test]
+fn a_server_with_a_sign_in_signs_in_through_the_engine() {
+    let mut app = mcp_open(true);
+    let read = state(app.world())
+        .unwrap()
+        .mcp_oauth_reading
+        .expect("asked which servers sign in");
+    apply(
+        app.world_mut(),
+        Update {
+            serial: read,
+            result: Ok(Reply::McpOAuth(vec![
+                serde_json::from_value(serde_json::json!({
+                    "server_id": "github", "status": "disconnected", "connected": false
+                }))
+                .unwrap(),
+            ])),
+        },
+    );
+    app.update();
+    assert!(
+        named(app.world(), "Sign in to Linear").is_none(),
+        "no sign-in, no button"
+    );
+    click(&mut app, "Sign in to GitHub");
+    let (serial, id) = state(app.world())
+        .unwrap()
+        .mcp_signin
+        .clone()
+        .expect("signing in");
+    assert_eq!(id, "github");
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::McpDone("Signed in".into())),
+        },
+    );
+    let s = state(app.world()).unwrap();
+    assert_eq!(s.message, "Signed in");
+    assert!(s.mcp_reading.is_some(), "status is read again");
 }
