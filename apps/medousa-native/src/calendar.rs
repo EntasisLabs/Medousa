@@ -65,7 +65,6 @@ enum Action {
     Search,
     ClearSearch,
     ToggleSearch,
-    ToggleAgenda,
     ToggleSource,
 }
 #[derive(Clone)]
@@ -265,7 +264,6 @@ struct State {
     search_input: String,
     search_field: Option<Entity>,
     show_search: bool,
-    show_agenda: bool,
     show_source: bool,
 }
 impl State {
@@ -302,14 +300,31 @@ impl State {
         self.redraw = true;
     }
 }
+/// Calendar is a sidebar (mini month, agenda, tools) beside the period view,
+/// like Notes and Code. Both panes are stable; only their contents re-render.
 pub fn mount(w: &mut World, parent: Entity) {
     let root = w.spawn((Layout {
         width: Size::Fill,
         height: Size::Fill,
-        ..Layout::column()
+        ..Layout::row()
     },));
     set_parent(w, root, parent);
-    crate::native_style::flat(w, root, crate::native_style::canvas());
+    let sidebar = w.spawn((Layout {
+        width: Size::Px(288.),
+        height: Size::Fill,
+        gap: 4.,
+        ..Layout::column()
+    },));
+    set_parent(w, sidebar, root);
+    crate::native_style::navigation_frame(w, sidebar);
+    let main = w.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Fill,
+        min_width: 0.,
+        ..Layout::column()
+    },));
+    set_parent(w, main, root);
+    crate::native_style::flat(w, main, crate::native_style::canvas());
     w.insert_resource(State {
         root,
         mode: Mode::Month,
@@ -332,7 +347,6 @@ pub fn mount(w: &mut World, parent: Entity) {
         search_input: String::new(),
         search_field: None,
         show_search: false,
-        show_agenda: false,
         show_source: false,
     });
 }
@@ -408,7 +422,6 @@ fn empty_state(root: Entity) -> State {
         search_input: String::new(),
         search_field: None,
         show_search: false,
-        show_agenda: false,
         show_source: false,
     }
 }
@@ -445,7 +458,6 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             }
             Action::Day(d) if s.draft.is_none() => {
                 s.day = d;
-                s.show_agenda = true;
                 s.refresh();
             }
             Action::Refresh => {
@@ -453,9 +465,6 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             }
             Action::ToggleSearch if s.draft.is_none() => {
                 s.show_search = !s.show_search;
-            }
-            Action::ToggleAgenda if s.draft.is_none() => {
-                s.show_agenda = !s.show_agenda;
             }
             Action::ToggleSource if s.draft.is_none() => {
                 s.show_source = !s.show_source;

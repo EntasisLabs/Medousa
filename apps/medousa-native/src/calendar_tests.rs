@@ -229,8 +229,6 @@ fn native_calendar_visual_acceptance() {
     for (width, height, light, mode, edit, name) in [
         (1200, 900, false, Mode::Month, false, "month-wide"),
         (1280, 900, false, Mode::Month, false, "month-reference"),
-        (1200, 900, false, Mode::Month, false, "month-agenda"),
-        (760, 850, false, Mode::Month, false, "month-agenda-narrow"),
         (760, 850, false, Mode::Month, false, "month-narrow"),
         (1200, 900, true, Mode::Month, false, "month-light"),
         (1200, 850, false, Mode::Week, false, "week"),
@@ -269,9 +267,6 @@ fn native_calendar_visual_acceptance() {
         all.dtstart = bound("2026-11-20", "", true).unwrap();
         all.dtend = Some(bound("2026-11-21", "", true).unwrap());
         s.events.push(all);
-        if name.contains("agenda") {
-            act(app.world_mut(), Action::ToggleAgenda);
-        }
         if edit {
             act(app.world_mut(), Action::Open(0));
         }
@@ -727,11 +722,11 @@ fn search_input_retains_identity_and_ime_defers_action_and_resize() {
 }
 
 #[test]
-fn calendar_chrome_is_collapsed_and_day_selection_opens_optional_agenda() {
+fn calendar_chrome_is_collapsed_and_day_selection_drives_the_sidebar() {
     let mut app = seeded();
     let w = app.world_mut();
     let s = w.resource::<State>().unwrap();
-    assert!(!s.show_search && !s.show_agenda && !s.show_source);
+    assert!(!s.show_search && !s.show_source);
     assert!(s.search_field.is_none());
     act(w, Action::ToggleSearch);
     let e = w.resource::<State>().unwrap().search_field.unwrap();
@@ -742,9 +737,16 @@ fn calendar_chrome_is_collapsed_and_day_selection_opens_optional_agenda() {
     let e = w.resource::<State>().unwrap().search_field.unwrap();
     assert_eq!(w.get::<Label>(e).unwrap().text, "Planning");
     act(w, Action::Day(date("2026-11-20")));
-    assert!(w.resource::<State>().unwrap().show_agenda);
-    act(w, Action::ToggleAgenda);
-    assert!(!w.resource::<State>().unwrap().show_agenda);
+    assert_eq!(w.resource::<State>().unwrap().day, date("2026-11-20"));
+    // The sidebar lists the seeded event under its day, opening it on click.
+    let s = w.resource::<State>().unwrap();
+    assert!(s.actions.values().any(|a| matches!(a, Action::Open(0))));
+    let side = children_of(w, s.root)[0];
+    assert!(
+        w.query::<Label>()
+            .iter()
+            .any(|(e, l)| l.text == "WED, NOV 18" && crate::surfaces::descendant(w, *e, side))
+    );
     act(w, Action::ToggleSource);
     assert!(w.resource::<State>().unwrap().show_source);
 }
