@@ -25,6 +25,8 @@ pub(crate) mod runtime;
 pub(crate) mod sharing;
 #[path = "settings_view.rs"]
 mod view;
+#[path = "settings_world.rs"]
+pub(crate) mod world;
 
 static NEXT: AtomicU64 = AtomicU64::new(0x5345_1000);
 fn next() -> u64 {
@@ -185,6 +187,8 @@ enum Action {
     SaveWorkers,
     /// Vault versioning on or off.
     Versions(bool),
+    /// World activity: everything, or only promoted evidence.
+    WorldFilter(bool),
     /// Saves a runtime list field from its draft: field, draft key.
     SaveList(&'static str, &'static str),
     /// Sets the env override typed in the Add form.
@@ -264,6 +268,8 @@ enum Kind {
     SetWorkers(runtime::Workers),
     /// Reads Versions, after turning it on or off when given.
     Versions(Option<bool>),
+    World,
+    Computer,
     Artifacts,
     SetArtifacts(serde_json::Value),
     /// Provider keys; whether the custom provider's id can be read here.
@@ -304,6 +310,8 @@ enum Reply {
     Workers(runtime::Workers),
     /// Git as detected, and the vault's status.
     Versions(Box<(serde_json::Value, serde_json::Value)>),
+    World(Vec<world::Item>),
+    Computer(Vec<world::Driver>),
     McpServer(Box<Option<(medousa_desktop_host::mcp::Upsert, bool)>>),
     /// A server's tools, and a note when the gateway couldn't list them.
     McpToolList(Vec<medousa_desktop_host::mcp::Tool>, String),
@@ -492,6 +500,12 @@ pub(crate) struct State {
     workers_note: String,
     versions: Option<Result<(serde_json::Value, serde_json::Value), String>>,
     versions_busy: Option<u64>,
+    /// World activity and computer readiness, their reads, and the filter.
+    world: Option<Result<Vec<world::Item>, String>>,
+    world_reading: Option<u64>,
+    world_evidence: bool,
+    computer: Option<Result<Vec<world::Driver>, String>>,
+    computer_reading: Option<u64>,
     /// Host env overrides: a variable a Remove waits on, and the last note.
     env_confirm: Option<String>,
     env_note: String,
@@ -594,6 +608,12 @@ impl State {
         }
         if self.versions_busy.is_none() {
             self.versions_busy = Some(self.enqueue(Kind::Versions(None)));
+        }
+        if self.world_reading.is_none() {
+            self.world_reading = Some(self.enqueue(Kind::World));
+        }
+        if self.computer_reading.is_none() {
+            self.computer_reading = Some(self.enqueue(Kind::Computer));
         }
         self.redraw = true;
     }
@@ -757,6 +777,11 @@ pub fn mount(w: &mut World, parent: Entity) {
         workers_note: String::new(),
         versions: None,
         versions_busy: None,
+        world: None,
+        world_reading: None,
+        world_evidence: false,
+        computer: None,
+        computer_reading: None,
         env_note: String::new(),
         focused: None,
         waiting: None,
@@ -1303,6 +1328,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     }
                 }
             }
+            Action::WorldFilter(evidence) => s.world_evidence = evidence,
             Action::Versions(on) => {
                 if s.versions_busy.is_none() {
                     s.versions_busy = Some(s.enqueue(Kind::Versions(Some(on))));
@@ -1859,6 +1885,47 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
             .await
             .map(Reply::ModePolicy)
             .map_err(|e| e.to_string()),
+        Kind::World => {
+            let query = [("tail", "true".to_string()), ("limit", "80".to_string())];
+            let timeline = client
+                .http()
+                .get_query::<medousa_types::WorldTimelineResponse>("/v1/worlds/timeline", &query)
+                .await
+                .map_err(|e| e.to_string());
+            // Evidence is optional; the timeline is enough to show.
+            let evidence = client
+                .http()
+                .get_query::<medousa_types::WorldEvidenceResponse>("/v1/worlds/evidence", &query)
+                .await
+                .ok();
+            timeline.map(|t| Reply::World(world::merge(t, evidence)))
+        }
+        Kind::Computer => {
+            #[derive(serde::Deserialize)]
+            struct Drivers {
+                #[serde(default)]
+                drivers: Vec<serde_json::Value>,
+            }
+            match client.http().get::<Drivers>("/v1/computer/drivers").await {
+                Ok(list) => {
+                    let mut out = Vec::new();
+                    for driver in list.drivers {
+                        let id = driver["driver_id"].as_str().unwrap_or_default().to_string();
+                        let preflight = client
+                            .http()
+                            .get::<serde_json::Value>(&format!(
+                                "/v1/computer/drivers/{}/preflight",
+                                urlencoding::encode(&id)
+                            ))
+                            .await
+                            .map_err(|e| e.to_string());
+                        out.push(world::Driver { driver, preflight });
+                    }
+                    Ok(Reply::Computer(out))
+                }
+                Err(e) => Err(e.to_string()),
+            }
+        }
         Kind::Workers => client
             .http()
             .get::<runtime::Workers>("/v1/runtime/workers")
@@ -2406,6 +2473,26 @@ pub fn apply(w: &mut World, u: Update) {
                 }
                 Err(e) if saving => s.workers_note = e,
                 Err(e) => s.workers = Some(Err(e)),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.world_reading == Some(u.serial) {
+            s.world_reading = None;
+            match u.result {
+                Ok(Reply::World(items)) => s.world = Some(Ok(items)),
+                Err(e) => s.world = Some(Err(e)),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if s.computer_reading == Some(u.serial) {
+            s.computer_reading = None;
+            match u.result {
+                Ok(Reply::Computer(drivers)) => s.computer = Some(Ok(drivers)),
+                Err(e) => s.computer = Some(Err(e)),
                 _ => {}
             }
             s.redraw = true;
@@ -2973,6 +3060,8 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Artifacts(_)
                 | Reply::Workers(_)
                 | Reply::Versions(_)
+                | Reply::World(_)
+                | Reply::Computer(_)
                 | Reply::McpServer(_)
                 | Reply::McpToolList(..)
                 | Reply::McpOAuth(_)

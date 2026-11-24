@@ -3460,19 +3460,135 @@ fn runtime_section(w: &mut World, s: &mut State, body: Entity) {
         quiet(w, body, "Saving…");
     }
     runtime_more(w, s, body);
-    if more(
-        w,
-        body,
-        s,
-        "runtime.more",
-        "More runtime settings",
-        "Computer control, activity",
-    ) {
+    computer_and_activity(w, s, body);
+}
+
+/// Computer readiness and world activity: both only read.
+fn computer_and_activity(w: &mut World, s: &mut State, body: Entity) {
+    use super::world as wd;
+    let meta = match &s.computer {
+        Some(Ok(d)) if d.is_empty() => "No drivers".to_string(),
+        Some(Ok(d)) if d.len() == 1 => wd::control(&d[0]).to_string(),
+        Some(Ok(d)) => format!("{} drivers", d.len()),
+        Some(Err(_)) => "Unavailable".into(),
+        None => String::new(),
+    };
+    if more(w, body, s, "runtime.computer", "Computer control", &meta) {
         quiet(
             w,
             body,
-            "Computer control and world activity are coming to this app soon. Until then, change them in the original Medousa app.",
+            "What each computer driver may do on this workshop’s machine. Checking never asks the system for a permission.",
         );
+        match s.computer.clone() {
+            Some(Ok(drivers)) if drivers.is_empty() => {
+                quiet(
+                    w,
+                    body,
+                    "No computer drivers are registered on this workshop.",
+                );
+            }
+            Some(Ok(drivers)) => {
+                for d in drivers {
+                    label(w, body, &wd::driver_name(&d), Typography::Emphasis);
+                    if let Err(e) = &d.preflight {
+                        quiet(w, body, &format!("Couldn’t check this driver: {e}"));
+                        continue;
+                    }
+                    quiet(w, body, wd::control(&d));
+                    for (id, name, ready) in wd::PERMISSIONS {
+                        let (state, hint) = wd::permission(&d, id, ready);
+                        let side = runtime_row(w, body, name, &hint);
+                        let v = label(w, side, state, Typography::Label);
+                        w.get_mut::<Layout>(v).unwrap().width = Size::Hug;
+                    }
+                }
+                quiet(
+                    w,
+                    body,
+                    "Watching the computer live, and picking a paired workshop to run it, are still in the original Medousa app.",
+                );
+            }
+            Some(Err(e)) => {
+                let e = e.clone();
+                quiet(w, body, &super::sharing::missing_or(&e, "Computer control"));
+            }
+            None => {
+                quiet(w, body, "Checking…");
+            }
+        }
+    }
+
+    let meta = match &s.world {
+        Some(Ok(items)) if items.is_empty() => "Nothing yet".to_string(),
+        Some(Ok(items)) => format!("{} recent", items.len()),
+        Some(Err(_)) => "Unavailable".into(),
+        None => String::new(),
+    };
+    if more(w, body, s, "runtime.activity", "World activity", &meta) {
+        quiet(
+            w,
+            body,
+            "Authority, outcomes, recovery and promoted evidence from browser and computer worlds, newest first.",
+        );
+        match s.world.clone() {
+            Some(Ok(items)) => {
+                let evidence = items.iter().filter(|i| i.evidence).count();
+                let row = panel(
+                    w,
+                    body,
+                    Layout {
+                        width: Size::Hug,
+                        height: Size::Hug,
+                        gap: 6.,
+                        ..Layout::row()
+                    },
+                );
+                for (only, name) in [
+                    (false, format!("All {}", items.len())),
+                    (true, format!("Evidence {evidence}")),
+                ] {
+                    let h = button(w, row, s, &name, Action::WorldFilter(only), true);
+                    if s.world_evidence == only {
+                        mark(w, h.root);
+                    }
+                }
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis() as u64);
+                let shown: Vec<_> = items
+                    .iter()
+                    .filter(|i| !s.world_evidence || i.evidence)
+                    .collect();
+                if shown.is_empty() {
+                    quiet(
+                        w,
+                        body,
+                        if s.world_evidence {
+                            "No sensitive or failed activity was promoted in this page."
+                        } else {
+                            "No governed browser or computer activity yet."
+                        },
+                    );
+                }
+                for item in shown {
+                    let (summary, meta) = wd::lines(&item.event);
+                    let mut title = wd::title(&item.event);
+                    if item.evidence {
+                        title.push_str(" · Evidence");
+                    }
+                    let side = runtime_row(w, body, &title, &format!("{summary}\n{meta}"));
+                    let v = quiet(w, side, &wd::when(item.event.recorded_at_ms, now));
+                    w.get_mut::<Layout>(v).unwrap().width = Size::Hug;
+                }
+            }
+            Some(Err(e)) => {
+                let e = e.clone();
+                quiet(w, body, &super::sharing::missing_or(&e, "World activity"));
+            }
+            None => {
+                quiet(w, body, "Reading the workshop ledger…");
+            }
+        }
     }
 }
 

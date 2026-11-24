@@ -197,7 +197,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,providers,agent-more,mcp,mcp-add,accounts,external,conversation-add,runtime,runtime-lists,runtime-more,sharing,channels,providers}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,providers,agent-more,mcp,mcp-add,accounts,external,conversation-add,runtime,runtime-lists,runtime-more,runtime-activity,sharing,channels,providers}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -604,6 +604,47 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "runtime-more");
+        with_state(app.world_mut(), |_, s| {
+            s.open.remove("runtime.workers");
+            s.open.remove("runtime.versions");
+            s.open.insert("runtime.computer");
+            s.open.insert("runtime.activity");
+            s.computer = Some(Ok(vec![world::Driver {
+                driver: serde_json::json!({"driver_id": "mac", "display_name": "This Mac"}),
+                preflight: Ok(serde_json::json!({
+                    "preflight": {"platform": "macos", "permissions": [
+                        {"permission": "accessibility", "status": "granted"},
+                        {"permission": "screen_capture", "status": "denied",
+                         "guidance": "Allow Screen Recording in System Settings → Privacy & Security."},
+                        {"permission": "input_control", "status": "granted"}]},
+                    "control": {"holder": "available", "requester_has_control": false}
+                })),
+            }]));
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            let mut a = world_event(3, "action_failed", "Clicked Send in Mail");
+            a.recorded_at_ms = now - 4 * 60_000;
+            a.status = Some("needs_reconciliation".into());
+            let mut b = world_event(2, "action_committed", "Typed a reply in Notes");
+            b.recorded_at_ms = now - 2 * 3_600_000;
+            b.status = Some("confirmed".into());
+            let mut c = world_event(1, "control_acquired", "");
+            c.recorded_at_ms = now - 3 * 86_400_000;
+            s.world = Some(Ok(vec![
+                world::Item { event: a, evidence: true },
+                world::Item { event: b, evidence: false },
+                world::Item { event: c, evidence: false },
+            ]));
+            s.redraw = true;
+        });
+        rndr_paint::frame(&mut app);
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., -1600.];
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "runtime-activity");
         app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., 0.];
         with_state(app.world_mut(), |_, s| {
             s.section = Section::Sharing;
@@ -2542,4 +2583,67 @@ fn versions_turn_on_through_the_engine_and_show_the_vault() {
     app.update();
     let t = texts(app.world());
     assert!(t.iter().any(|x| x == "On · main · 2 changed"), "{t:?}");
+}
+
+fn world_event(sequence: u64, kind: &str, summary: &str) -> medousa_types::WorldTimelineEvent {
+    serde_json::from_value(serde_json::json!({
+        "schema_version": 1, "sequence": sequence, "recorded_at_ms": 1, "world_id": "w",
+        "authority_id": "a", "driver_id": "d", "ownership": "o", "surface": "computer",
+        "world_revision": 1, "occurred_at_ms": 1, "principal_kind": "agent",
+        "event_type": kind, "summary": summary,
+    }))
+    .unwrap()
+}
+
+#[test]
+fn world_activity_filters_to_evidence_and_computer_shows_permissions() {
+    let mut app = runtime_open(serde_json::json!({}));
+    let (world_read, computer_read) = {
+        let s = state(app.world()).unwrap();
+        (s.world_reading.unwrap(), s.computer_reading.unwrap())
+    };
+    apply(
+        app.world_mut(),
+        Update {
+            serial: world_read,
+            result: Ok(Reply::World(vec![
+                world::Item {
+                    event: world_event(2, "action_failed", "Clicked Send"),
+                    evidence: true,
+                },
+                world::Item {
+                    event: world_event(1, "control_acquired", "Opened Notes"),
+                    evidence: false,
+                },
+            ])),
+        },
+    );
+    apply(
+        app.world_mut(),
+        Update {
+            serial: computer_read,
+            result: Ok(Reply::Computer(vec![world::Driver {
+                driver: serde_json::json!({"driver_id": "mac"}),
+                preflight: Ok(serde_json::json!({
+                    "preflight": {"platform": "macos", "permissions": [
+                        {"permission": "accessibility", "status": "granted"}]},
+                    "control": {"holder": "agent", "requester_has_control": false}
+                })),
+            }])),
+        },
+    );
+    app.update();
+    click(&mut app, "World activity");
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "Action failed · Evidence"), "{t:?}");
+    assert!(t.iter().any(|x| x == "Took control"));
+    click(&mut app, "Evidence 1");
+    let t = texts(app.world());
+    assert!(!t.iter().any(|x| x == "Took control"), "only evidence");
+
+    click(&mut app, "Computer control");
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "macOS"), "{t:?}");
+    assert!(t.iter().any(|x| x == "Medousa is operating"));
+    assert!(t.iter().any(|x| x == "Ready"));
 }
