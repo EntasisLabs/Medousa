@@ -144,16 +144,13 @@ fn swap(world: &mut World, target: u64) -> bool {
         return false;
     };
     let m = world.resource::<Model>().unwrap();
-    // Catalogs and device-local chrome are shared. Selection, drafts, admission,
-    // mode/depth and canonical Chat remain strictly conversation-owned.
+    // Only device chrome and the unified index are shared. Command channels and
+    // catalogs remain with the immutable owner of each retained conversation.
     let selected = next
         .model
         .selected
         .and_then(|i| next.model.models.get(i))
         .cloned();
-    next.model.commands = m.commands.clone();
-    next.model.models = m.models.clone();
-    next.model.modes = m.modes.clone();
     next.model.sessions = m.sessions.clone();
     next.model.session_cursor = m.session_cursor.clone();
     next.model.search_query = m.search_query.clone();
@@ -353,11 +350,22 @@ pub(super) fn open(world: &mut World, session: Option<String>) {
     let document = world.resource_mut::<SourceDocuments>().unwrap().open("");
     let mut next = Model::new(document);
     let m = world.resource::<Model>().unwrap();
-    next.commands = m.commands.clone();
-    next.models = m.models.clone();
-    next.modes = m.modes.clone();
+    if world.resource::<crate::workshops::Workshops>().is_some() {
+        let Some(owner) = crate::workshops::owner(world, session.as_deref()) else {
+            return;
+        };
+        next.owner = owner.clone();
+        next.commands = crate::workshops::commands(world, &owner);
+        (next.models, next.modes) = crate::workshops::catalog(world, &owner);
+        next.selected = (!next.models.is_empty()).then_some(0);
+    } else {
+        next.owner = m.owner.clone();
+        next.commands = m.commands.clone();
+        next.models = m.models.clone();
+        next.modes = m.modes.clone();
+        next.selected = m.selected;
+    }
     next.sessions = m.sessions.clone();
-    next.selected = m.selected;
     next.session_cursor = m.session_cursor.clone();
     next.search_query = m.search_query.clone();
     next.sidebar_open = m.sidebar_open;
@@ -381,6 +389,47 @@ pub(super) fn open(world: &mut World, session: Option<String>) {
     world.insert(ui.content, Hidden);
     dispatch(world, session.map(Command::Open).unwrap_or(Command::New));
     world.resource_mut::<Focus>().unwrap().entity = None;
+}
+pub(super) fn catalog(
+    world: &mut World,
+    owner: &str,
+    models: Vec<(String, String)>,
+    modes: Vec<(String, String, bool)>,
+    rows: Vec<(String, String)>,
+    cursor: Option<String>,
+) {
+    fn update(
+        m: &mut Model,
+        owner: &str,
+        models: &[(String, String)],
+        modes: &[(String, String, bool)],
+        rows: &[(String, String)],
+        cursor: &Option<String>,
+    ) {
+        m.sessions = rows.into();
+        m.session_cursor = cursor.clone();
+        m.sidebar_key.clear();
+        if m.owner == owner {
+            let selected = m.selected.and_then(|i| m.models.get(i)).cloned();
+            m.selected = selected
+                .and_then(|s| models.iter().position(|v| *v == s))
+                .or_else(|| (!models.is_empty()).then_some(0));
+            m.models = models.into();
+            m.modes = modes.into();
+            restore_history_model(m);
+        }
+    }
+    update(
+        world.resource_mut::<Model>().unwrap(),
+        owner,
+        &models,
+        &modes,
+        &rows,
+        &cursor,
+    );
+    for parked in world.resource_mut::<Deck>().unwrap().parked.values_mut() {
+        update(&mut parked.model, owner, &models, &modes, &rows, &cursor);
+    }
 }
 fn register(world: &mut World) {
     if world

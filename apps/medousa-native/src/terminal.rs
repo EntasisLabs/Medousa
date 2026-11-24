@@ -493,6 +493,22 @@ fn connect(w: &mut World, d: &mut Dock, new: bool, initial: bool) {
     }
     d.redraw = true;
 }
+pub(crate) fn can_rebind(w: &World) -> bool {
+    w.resource::<DockState>()
+        .and_then(|d| d.0.as_ref())
+        .is_none_or(|d| d.panes.is_empty())
+}
+/// A disconnected source must never retain another daemon's terminal service.
+pub(crate) fn disable(w: &mut World) {
+    let (tx, _) = mpsc::channel(1);
+    let (_, rx) = mpsc::channel(1);
+    let (wake, _) = feed::open(w, FeedConfig::queue(1));
+    w.insert_resource(Service {
+        tx,
+        rx: Mutex::new(rx),
+        _wake: wake,
+    });
+}
 pub fn action(w: &mut World, host: &HostIntent) -> bool {
     let HostIntent::Command(id) = host else {
         return false;

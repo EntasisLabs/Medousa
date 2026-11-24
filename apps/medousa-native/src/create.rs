@@ -225,6 +225,25 @@ fn state_mut(w: &mut World) -> Option<&mut State> {
     w.resource_mut::<Host>().and_then(|h| h.0.as_mut())
 }
 
+pub(crate) fn reset_source(w: &mut World) {
+    use rndr_canvas::{CanvasStore, CreateRequest, MemoryStore};
+    let store = MemoryStore::new();
+    let id = format!("native-unbound-{}", next());
+    store
+        .create(CreateRequest {
+            id: id.clone(),
+            title: "No workshop document selected".into(),
+            scene: Scene::medousa(),
+        })
+        .expect("placeholder");
+    canvas_view::install(
+        w,
+        CanvasView::new(
+            CanvasEditor::remote(store.get(&id).expect("placeholder")),
+            SLOT,
+        ),
+    );
+}
 pub fn mount(w: &mut World, parent: Entity) {
     let root = w.spawn((Layout {
         width: Size::Fill,
@@ -272,6 +291,23 @@ pub fn activate(w: &mut World) {
     }
 }
 
+pub(crate) fn can_rebind(w: &World) -> bool {
+    can_deactivate(w)
+        && w.resource::<CanvasView>()
+            .is_none_or(|v| !v.editor.is_saving() && !v.editor.is_stalled())
+        && state(w).is_none_or(|s| {
+            s.creating.is_none()
+                && s.importing.is_none()
+                && !s.ask.sending()
+                && s.ask.pending.is_none()
+                && s.ask.decision.is_none()
+                && s.ask.draft.trim().is_empty()
+                && s.ask
+                    .field
+                    .and_then(|e| w.get::<Label>(e))
+                    .is_none_or(|l| l.text.trim().is_empty())
+        })
+}
 pub fn can_deactivate(w: &World) -> bool {
     // A text node mid-edit commits on the next click; leaving would strand it.
     w.resource::<CanvasView>()
@@ -361,7 +397,12 @@ pub fn take_wheel(w: &mut World) {
 
 pub fn sync(w: &mut World) {
     let active = crate::surfaces::active(w) == crate::surfaces::SurfaceId::Create;
-    if active && w.resource::<CanvasView>().is_some() {
+    if active
+        && state(w).and_then(|s| s.open.as_deref()).is_some_and(|id| {
+            w.resource::<CanvasView>()
+                .is_some_and(|v| v.editor.document_id() == id)
+        })
+    {
         // A press on the canvas itself takes keyboard focus from the
         // sidebar. Not a press on the controls floating over it: clearing
         // focus there cancels the button's own press before it activates.
@@ -401,7 +442,9 @@ pub fn sync(w: &mut World) {
         }
     }
     with_state(w, |w, s| {
-        if let Some(v) = w.resource_mut::<CanvasView>() {
+        if let Some(v) = w.resource_mut::<CanvasView>()
+            && s.open.as_deref() == Some(v.editor.document_id())
+        {
             let id = v.editor.document_id().to_string();
             for request in v.editor.take_outgoing() {
                 let kind = match request {
@@ -676,6 +719,13 @@ fn decode(data: &CreativeAssetData) -> Result<Response, CanvasError> {
 }
 
 /// GPU textures are cached by id, so each project's asset gets its own.
+fn scoped_texture_id(w: &World, project: &str, asset: &str) -> u64 {
+    let Some(binding) = crate::workshops::binding(w, crate::surfaces::SurfaceId::Create) else {
+        return texture_id(project, asset);
+    };
+    let key = serde_json::to_string(&(binding.authority, project)).expect("texture key");
+    texture_id(&key, asset)
+}
 fn texture_id(project: &str, asset: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -831,7 +881,7 @@ fn apply_update(w: &mut World, s: &mut State, u: Update) {
                 rgba,
                 document,
             } = imported;
-            let texture = texture_id(&id, &asset);
+            let texture = scoped_texture_id(w, &id, &asset);
             let loaded = rndr_render::load_rgba(w, texture, width, height, rgba).is_ok();
             let Some(v) = w.resource_mut::<CanvasView>() else {
                 return;
@@ -873,7 +923,7 @@ fn apply_update(w: &mut World, s: &mut State, u: Update) {
                 // on the next reopen is enough.
                 return;
             };
-            let texture = texture_id(&id, &asset);
+            let texture = scoped_texture_id(w, &id, &asset);
             if rndr_render::load_rgba(w, texture, width, height, rgba).is_ok()
                 && let Some(v) = w.resource_mut::<CanvasView>()
                 && v.editor.document_id() == id

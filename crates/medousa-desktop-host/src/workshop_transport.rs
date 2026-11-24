@@ -147,6 +147,29 @@ pub async fn workshop_delete_json<T: DeserializeOwned>(
     serde_json::from_str(&response).map_err(|err| err.to_string())
 }
 
+/// SDK adapters supply an already-resolved, immutable workshop config. This
+/// path preserves conditional/idempotency headers and never resolves another
+/// workshop or replays a mutation after an uncertain connection failure.
+pub async fn workshop_body_request(
+    config: &WorkshopTransportConfig,
+    method: &str,
+    path: &str,
+    body: Vec<u8>,
+    content_type: &str,
+    headers: Vec<(String, String)>,
+) -> Result<serde_json::Value, String> {
+    let payload = RequestPayload::Raw {
+        bytes: body,
+        content_type: content_type.into(),
+        extra_headers: headers,
+    };
+    let response = workshop_request(config, method, path, payload, false).await?;
+    if response.trim().is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
+    serde_json::from_str(&response).map_err(|e| e.to_string())
+}
+
 pub async fn workshop_json_request(
     config: &WorkshopTransportConfig,
     method: &str,

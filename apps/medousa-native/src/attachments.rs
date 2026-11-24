@@ -52,7 +52,7 @@ impl Component for View {}
 /// Host must execute every drained command and apply the returned update.
 #[derive(Debug)]
 pub struct AttachmentCommand {
-    session: String,
+    pub(crate) session: String,
     id: u64,
 }
 pub struct AttachmentUpdate {
@@ -323,7 +323,7 @@ async fn upload(
 ) -> Result<MediaRef, String> {
     let path = medousa_sdk::transport::path_with_query(
         medousa_sdk::operations::MEDIA_UPLOAD_POST.path,
-        &[("session_id", session.into())],
+        &[("session_id", crate::routing::wire_owned(session))],
     );
     let value = client
         .transport()

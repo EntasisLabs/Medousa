@@ -33,6 +33,12 @@ struct RowDialog {
     target: RowTarget,
 }
 fn target_current(world: &World, target: &RowTarget) -> bool {
+    if let Some(key) = crate::routing::SessionKey::parse(&target.session) {
+        return key.authority == target.authority
+            && world
+                .resource::<Model>()
+                .is_some_and(|m| m.sessions.iter().any(|r| r.0 == target.session));
+    }
     scope(world).as_deref() == Some(target.authority.as_str())
         && world
             .resource::<Model>()
@@ -305,6 +311,12 @@ fn pin_store(path: std::path::PathBuf) -> PinStore {
         updates: std::sync::Mutex::new(updates),
     }
 }
+#[cfg(test)]
+pub(super) fn expand_fixture_groups(world: &mut World) {
+    ensure(world);
+    world.resource_mut::<State>().unwrap().collapsed.clear();
+    world.resource_mut::<Model>().unwrap().sidebar_key.clear();
+}
 fn ensure(world: &mut World) {
     if world.resource::<State>().is_none() {
         let mut state = State::default();
@@ -351,7 +363,9 @@ fn scope(world: &World) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 fn pinned(world: &World, session: &str) -> bool {
-    scope(world)
+    crate::routing::SessionKey::parse(session)
+        .map(|k| k.authority)
+        .or_else(|| scope(world))
         .and_then(|scope| {
             world
                 .resource::<State>()?
@@ -363,7 +377,10 @@ fn pinned(world: &World, session: &str) -> bool {
 }
 fn set_pin(world: &mut World, session: &str, value: bool) {
     ensure(world);
-    let Some(scope) = scope(world) else {
+    let Some(scope) = crate::routing::SessionKey::parse(session)
+        .map(|k| k.authority)
+        .or_else(|| scope(world))
+    else {
         return;
     };
     let s = world.resource_mut::<State>().unwrap();
@@ -617,14 +634,18 @@ pub(super) fn render(
                 props,
                 NavigationMeta {
                     selected: selected == Some(id),
+                    secondary: Some(crate::workshops::source_for_session(world, id)),
                     ..Default::default()
                 },
             )
             .unwrap();
             world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
-            world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(visual::ROW_HEIGHT);
+            world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(52.);
             world.insert(h.root, Radius(visual::CONTROL_RADIUS));
-            if let Some(authority) = &authority {
+            let row_authority = crate::routing::SessionKey::parse(id)
+                .map(|k| k.authority)
+                .or_else(|| authority.clone());
+            if let Some(authority) = &row_authority {
                 world.insert(h.root, ContextTarget);
                 world.insert(
                     h.root,

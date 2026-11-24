@@ -527,7 +527,9 @@ pub async fn execute(
     command: RuntimeCommand,
 ) -> Result<RuntimeUpdate, String> {
     let mut may_have_mutated = false;
-    let result = execute_inner(client, &command, &mut may_have_mutated).await;
+    let mut wire = command.clone();
+    wire.session = crate::routing::wire_owned(&wire.session);
+    let result = execute_inner(client, &wire, &mut may_have_mutated).await;
     // Even transport errors return a scoped update so the pending state clears.
     Ok(RuntimeUpdate {
         command,

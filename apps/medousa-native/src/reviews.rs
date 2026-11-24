@@ -263,6 +263,19 @@ fn known_file(s: &State, path: &str) -> bool {
         .is_some_and(|files| files.iter().any(|f| f["path"].as_str() == Some(path)))
 }
 
+pub(crate) fn can_rebind(w: &mut World) -> bool {
+    let Some(mut s) = w.resource_mut::<State>().map(std::mem::take) else {
+        return true;
+    };
+    capture(w, &mut s);
+    let safe = s.mutation_pending.is_none()
+        && !s.uncertain
+        && s.confirmation.is_none()
+        && s.draft.body.trim().is_empty()
+        && s.drafts.values().all(|d| d.body.trim().is_empty());
+    w.insert_resource(s);
+    safe
+}
 pub fn mount(w: &mut World, parent: Entity) {
     view::mount(w, parent);
 }

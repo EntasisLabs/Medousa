@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Key {
-    session: String,
+    pub(crate) session: String,
     media: String,
     detailed: bool,
 }
@@ -802,7 +802,7 @@ fn path(key: &Key) -> String {
     let id = urlencoding::encode(&key.media);
     medousa_sdk::transport::path_with_query(
         &format!("/v1/media/{id}"),
-        &[("session_id", key.session.clone())],
+        &[("session_id", crate::routing::wire_owned(&key.session))],
     )
 }
 pub async fn execute(client: &MedousaClient, key: Key) -> PreviewUpdate {

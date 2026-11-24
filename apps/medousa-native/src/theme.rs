@@ -190,44 +190,27 @@ pub fn swatches() -> Vec<Swatch> {
         .collect()
 }
 
-/// Saves `id` as the active workshop's theme in the registry medousa-home
-/// reads, so both shells open in it. Blocking file IO: run off the frame.
+/// Device-local native appearance. Concurrent sources cannot select the
+/// client's theme through a legacy active-workshop setting.
 pub fn save_active_id(id: &str) -> Result<(), String> {
-    use medousa_desktop_host::workshop_registry::{load_registry, save_registry};
-    let mut registry = load_registry()?;
-    let active = registry.active_workshop_id.clone();
-    let workshop = registry
-        .workshops
-        .iter_mut()
-        .find(|w| w.id == active)
-        .ok_or("No active workshop to save the theme for")?;
-    let mut state = workshop.client_state.clone().unwrap_or(
-        medousa_desktop_host::workshop_registry::WorkshopClientState {
-            last_session_id: None,
-            color_theme_id: None,
-        },
-    );
-    state.color_theme_id = Some(id.to_string());
-    workshop.client_state = Some(state);
-    workshop.updated_at = medousa_desktop_host::workshop_registry::now_iso();
-    save_registry(&registry)
+    let dir = medousa_desktop_host::paths::medousa_config_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("native-appearance.json");
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(
+        &temporary,
+        serde_json::to_vec(&serde_json::json!({"theme":id})).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
+    std::fs::rename(temporary, path).map_err(|e| e.to_string())
 }
 
-/// The theme chosen in Medousa for the active workshop, shared with
-/// medousa-home through the workshop registry. Read-only: this never migrates
-/// or saves the registry. Unreadable or unset → default.
+/// Read only native device appearance; never consult a daemon selection.
 pub fn active_id() -> String {
-    use medousa_desktop_host::workshop_registry::{
-        WorkshopRegistry, active_workshop, workshops_registry_path,
-    };
-    std::fs::read_to_string(workshops_registry_path())
+    std::fs::read(medousa_desktop_host::paths::medousa_config_dir().join("native-appearance.json"))
         .ok()
-        .and_then(|raw| serde_json::from_str::<WorkshopRegistry>(&raw).ok())
-        .and_then(|registry| {
-            active_workshop(&registry)
-                .and_then(|w| w.client_state.as_ref())
-                .and_then(|state| state.color_theme_id.clone())
-        })
+        .and_then(|raw| serde_json::from_slice::<serde_json::Value>(&raw).ok())
+        .and_then(|v| v["theme"].as_str().map(str::to_owned))
         .filter(|id| !id.trim().is_empty())
         .unwrap_or_else(default_id)
 }

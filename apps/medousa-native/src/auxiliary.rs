@@ -22,6 +22,11 @@ pub enum Command {
     PeerManagement(crate::peer_management::Command),
     Workshop(crate::ui::workshop_status::Command),
 }
+#[derive(Clone)]
+struct Stamp {
+    view: crate::surfaces::SurfaceId,
+    binding: crate::routing::Binding,
+}
 enum Update {
     Note(crate::notes::NoteUpdate),
     Code(crate::code::CodeUpdate),
@@ -51,19 +56,20 @@ struct AuxiliaryWake;
 impl Event for AuxiliaryWake {}
 #[derive(Clone)]
 struct Updates {
-    tx: mpsc::Sender<Update>,
+    tx: mpsc::Sender<(Option<Stamp>, Update)>,
     wake: feed::Sender<AuxiliaryWake>,
+    stamp: Option<Stamp>,
 }
 impl Updates {
-    fn send(&self, update: Update) -> Result<(), mpsc::SendError<Update>> {
-        self.tx.send(update)?;
+    fn send(&self, update: Update) -> Result<(), ()> {
+        self.tx.send((self.stamp.clone(), update)).map_err(|_| ())?;
         let _ = self.wake.try_send(AuxiliaryWake);
         Ok(())
     }
 }
 pub struct Auxiliary {
-    tx: tokio::sync::mpsc::UnboundedSender<Command>,
-    rx: Mutex<mpsc::Receiver<Update>>,
+    tx: tokio::sync::mpsc::UnboundedSender<(Option<Stamp>, Command)>,
+    rx: Mutex<mpsc::Receiver<(Option<Stamp>, Update)>>,
     pub error: Option<String>,
     _wake: Feed<AuxiliaryWake>,
 }
@@ -76,14 +82,15 @@ impl Auxiliary {
         let updates = Updates {
             tx: tx_updates,
             wake: sender,
+            stamp: None,
         };
         std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
                 .expect("native action runtime");
-            runtime.block_on(async move { while let Some(command)=commands.recv().await {
-                let client=client.clone(); let updates=updates.clone(); let previews=previews.clone();
+            runtime.block_on(async move { while let Some((stamp,command))=commands.recv().await {
+                let client=client.clone(); let mut updates=updates.clone(); updates.stamp=stamp; let previews=previews.clone();
                 tokio::spawn(async move {
                     if let Command::Stream(source)=command {
                         let session=source.session.clone();let agent=source.agent_session_id.clone();
@@ -119,15 +126,29 @@ impl Auxiliary {
         }
     }
     pub fn send(&self, command: Command) {
-        let _ = self.tx.send(command);
+        let _ = self.tx.send((None, command));
     }
 }
 pub fn tick(world: &mut World) {
-    let updates = world
-        .resource::<Auxiliary>()
-        .map(|a| a.rx.lock().unwrap().try_iter().collect::<Vec<_>>())
-        .unwrap_or_default();
-    for update in updates {
+    let updates: Vec<_> = if let Some(s) = world.resource::<crate::workshops::Workshops>() {
+        s.auxiliaries
+            .values()
+            .flat_map(|aux| aux.rx.lock().unwrap().try_iter().collect::<Vec<_>>())
+            .collect()
+    } else {
+        world
+            .resource::<Auxiliary>()
+            .map(|aux| aux.rx.lock().unwrap().try_iter().collect())
+            .unwrap_or_default()
+    };
+    for (stamp, update) in updates {
+        if let Some(stamp) = stamp {
+            if !crate::workshops::binding(world, stamp.view)
+                .is_some_and(|b| b.accepts(&stamp.binding))
+            {
+                continue;
+            }
+        }
         match update {
             Update::PeerManagement(u) => crate::peer_management::apply(world, u),
             Update::Peers(u) => crate::peers::apply(world, u),
@@ -161,92 +182,186 @@ pub fn tick(world: &mut World) {
                     crate::ui::runtime_error(world, &session, error);
                 }
             },
-            Update::Error(error) => world.resource_mut::<Auxiliary>().unwrap().error = Some(error),
+            Update::Error(error) => {
+                if let Some(aux) = world.resource_mut::<Auxiliary>() {
+                    aux.error = Some(error);
+                }
+            }
         }
     }
 }
 
 // Run after UI reconciliation: newly mounted previews and button actions must
 // dispatch before the event-driven window parks, not on a future user event.
+fn available(world: &World, view: crate::surfaces::SurfaceId) -> bool {
+    world
+        .resource::<crate::workshops::Workshops>()
+        .is_none_or(|s| {
+            s.bindings
+                .get(&view)
+                .is_some_and(|b| s.auxiliaries.contains_key(&b.authority))
+        })
+}
 pub fn dispatch(world: &mut World) {
+    if world
+        .resource::<crate::workshops::Workshops>()
+        .is_some_and(|s| s.auxiliaries.is_empty())
+    {
+        return;
+    }
     media_preview::tick(world);
-    let commands = crate::notes::drain_commands(world)
-        .into_iter()
-        .map(Command::Note)
-        .chain(
+    let commands = (if available(world, crate::surfaces::SurfaceId::Notes) {
+        crate::notes::drain_commands(world)
+    } else {
+        vec![]
+    })
+    .into_iter()
+    .map(Command::Note)
+    .chain(
+        (if available(world, crate::surfaces::SurfaceId::Calendar) {
             crate::calendar::take_commands(world)
-                .into_iter()
-                .map(Command::Calendar),
-        )
-        .chain(
+        } else {
+            vec![]
+        })
+        .into_iter()
+        .map(Command::Calendar),
+    )
+    .chain(
+        (if available(world, crate::surfaces::SurfaceId::Settings) {
             crate::settings::take_commands(world)
-                .into_iter()
-                .map(Command::Settings),
-        )
-        .chain(
+        } else {
+            vec![]
+        })
+        .into_iter()
+        .map(Command::Settings),
+    )
+    .chain(
+        (if available(world, crate::surfaces::SurfaceId::Create) {
             crate::create::take_commands(world)
-                .into_iter()
-                .map(Command::Create),
-        )
-        .chain(
+        } else {
+            vec![]
+        })
+        .into_iter()
+        .map(Command::Create),
+    )
+    .chain(
+        (if available(world, crate::surfaces::SurfaceId::Peers) {
             crate::peers::take_commands(world)
-                .into_iter()
-                .map(Command::Peers),
-        )
-        .chain(
+        } else {
+            vec![]
+        })
+        .into_iter()
+        .map(Command::Peers),
+    )
+    .chain(
+        (if available(world, crate::surfaces::SurfaceId::Settings) {
             crate::ui::workshop_status::take_commands(world)
-                .into_iter()
-                .map(Command::Workshop),
-        )
-        .chain(
+        } else {
+            vec![]
+        })
+        .into_iter()
+        .map(Command::Workshop),
+    )
+    .chain(
+        (if available(world, crate::surfaces::SurfaceId::Peers) {
             crate::peer_management::take_commands(world)
-                .into_iter()
-                .map(Command::PeerManagement),
-        )
-        .chain(
+        } else {
+            vec![]
+        })
+        .into_iter()
+        .map(Command::PeerManagement),
+    )
+    .chain(
+        (if available(world, crate::surfaces::SurfaceId::Reviews) {
             crate::reviews::take_commands(world)
-                .into_iter()
-                .map(Command::Review),
-        )
-        .chain(
+        } else {
+            vec![]
+        })
+        .into_iter()
+        .map(Command::Review),
+    )
+    .chain(
+        (if available(world, crate::surfaces::SurfaceId::Code) {
             crate::code::take_commands(world)
-                .into_iter()
-                .map(Command::Code),
-        )
-        .chain(
-            media_preview::drain_commands(world)
-                .into_iter()
-                .map(Command::Preview),
-        )
-        .chain(
-            context::drain_commands(world)
-                .into_iter()
-                .map(Command::Context),
-        )
-        .chain(
-            approvals::drain_commands(world)
-                .into_iter()
-                .map(Command::Approval),
-        )
-        .chain(
-            attachments::drain_commands(world)
-                .into_iter()
-                .map(Command::Attachment),
-        )
-        .chain(
-            runtimes::drain_commands(world)
-                .into_iter()
-                .map(Command::Runtime),
-        )
-        .chain(
-            runtimes::drain_streams(world)
-                .into_iter()
-                .map(Command::Stream),
-        )
-        .collect::<Vec<_>>();
-    if let Some(aux) = world.resource::<Auxiliary>() {
-        for command in commands {
-            aux.send(command);
+        } else {
+            vec![]
+        })
+        .into_iter()
+        .map(Command::Code),
+    )
+    .chain(
+        media_preview::drain_commands(world)
+            .into_iter()
+            .map(Command::Preview),
+    )
+    .chain(
+        context::drain_commands(world)
+            .into_iter()
+            .map(Command::Context),
+    )
+    .chain(
+        approvals::drain_commands(world)
+            .into_iter()
+            .map(Command::Approval),
+    )
+    .chain(
+        attachments::drain_commands(world)
+            .into_iter()
+            .map(Command::Attachment),
+    )
+    .chain(
+        runtimes::drain_commands(world)
+            .into_iter()
+            .map(Command::Runtime),
+    )
+    .chain(
+        runtimes::drain_streams(world)
+            .into_iter()
+            .map(Command::Stream),
+    )
+    .collect::<Vec<_>>();
+    for command in commands {
+        send(world, command);
+    }
+}
+/// Capture one session owner or one view's immutable binding for this request.
+pub(crate) fn send(world: &World, command: Command) {
+    use crate::surfaces::SurfaceId as V;
+    if let Some(s) = world.resource::<crate::workshops::Workshops>() {
+        let view = match &command {
+            Command::Note(_) => Some(V::Notes),
+            Command::Create(_) => Some(V::Create),
+            Command::Code(_) => Some(V::Code),
+            Command::Review(_) => Some(V::Reviews),
+            Command::Calendar(_) => Some(V::Calendar),
+            Command::Settings(_) | Command::Workshop(_) => Some(V::Settings),
+            Command::Peers(_) | Command::PeerManagement(_) => Some(V::Peers),
+            _ => None,
+        };
+        let (owner, stamp) = if let Some(view) = view {
+            let Some(binding) = s.bindings.get(&view).cloned() else {
+                return;
+            };
+            (binding.authority.clone(), Some(Stamp { view, binding }))
+        } else {
+            let session = match &command {
+                Command::Preview(c) => &c.session,
+                Command::Attachment(c) => &c.session,
+                Command::Context(c) => &c.session,
+                Command::Approval(c) => &c.session,
+                Command::Runtime(c) => &c.session,
+                Command::Stream(c) => &c.session,
+                _ => unreachable!(),
+            };
+            let Some(key) = crate::routing::SessionKey::parse(session) else {
+                return;
+            };
+            (key.authority, None)
+        };
+        if let Some(aux) = s.auxiliaries.get(&owner) {
+            let _ = aux.tx.send((stamp, command));
         }
+    } else if let Some(aux) = world.resource::<Auxiliary>() {
+        aux.send(command);
     }
 }

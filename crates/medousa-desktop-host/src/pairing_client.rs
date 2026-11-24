@@ -164,6 +164,20 @@ struct PhoneIdentity {
 pub async fn pair_complete_from_qr(
     request: PairCompleteFromQrRequest,
 ) -> Result<PairCompleteFromQrResult, String> {
+    pair_complete_inner(request, false).await
+}
+
+/// Same QR signature verification and saved credentials, without activating or
+/// migrating a legacy global workshop selection.
+pub async fn pair_complete_from_qr_concurrent(
+    request: PairCompleteFromQrRequest,
+) -> Result<PairCompleteFromQrResult, String> {
+    pair_complete_inner(request, true).await
+}
+async fn pair_complete_inner(
+    request: PairCompleteFromQrRequest,
+    concurrent: bool,
+) -> Result<PairCompleteFromQrResult, String> {
     let parsed_qr = parse_pair_qr_url(&request.qr_url)?;
     let daemon_url = normalize_daemon_url(&request.daemon_url)?;
     let role = crate::workshop_registry::normalize_connection_role(
@@ -257,18 +271,22 @@ pub async fn pair_complete_from_qr(
             .ok()
     };
 
-    let workshop_id = crate::workshop_registry::register_paired_workshop(
-        crate::workshop_registry::RegisterPairedInput {
-            pairing_id: pairing_id.clone(),
-            phone_id: identity.phone_id.clone(),
-            workshop_device_id: status.device_id.clone(),
-            workshop_peer_name: status.peer_name.clone(),
-            daemon_url: daemon_url.clone(),
-            paired_at: chrono::Utc::now().to_rfc3339(),
-            has_iroh_ticket: iroh_ticket.is_some(),
-            role: role.to_string(),
-        },
-    )?;
+    let register: fn(crate::workshop_registry::RegisterPairedInput) -> Result<String, String> =
+        if concurrent {
+            crate::workshop_registry::register_paired_workshop_concurrent
+        } else {
+            crate::workshop_registry::register_paired_workshop
+        };
+    let workshop_id = register(crate::workshop_registry::RegisterPairedInput {
+        pairing_id: pairing_id.clone(),
+        phone_id: identity.phone_id.clone(),
+        workshop_device_id: status.device_id.clone(),
+        workshop_peer_name: status.peer_name.clone(),
+        daemon_url: daemon_url.clone(),
+        paired_at: chrono::Utc::now().to_rfc3339(),
+        has_iroh_ticket: iroh_ticket.is_some(),
+        role: role.to_string(),
+    })?;
 
     save_pairing_credentials(
         &workshop_id,

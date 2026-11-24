@@ -1,5 +1,65 @@
 //! Test-only loopback HTTP fixtures. Never contact a daemon/provider or keychain.
 use super::*;
+
+#[tokio::test]
+async fn two_authorities_with_colliding_ids_fail_and_recover_without_fallback() {
+    let a = format!("auth_{}", "a".repeat(64));
+    let b = format!("auth_{}", "b".repeat(64));
+    let mut body_b = history_body(true);
+    body_b["authority_id"] = json!(b);
+    for row in body_b["turns"].as_array_mut().unwrap() {
+        row["caused_by"]["authority_id"] = json!(b);
+    }
+    let mut unavailable = active_wire(false);
+    unavailable.status = 503;
+    let (ca, sa) = fixture(vec![
+        unavailable,
+        active_wire(false),
+        history_wire(true),
+        active_wire(false),
+    ]);
+    let (cb, sb) = fixture(vec![
+        active_wire(false),
+        json_wire("GET", "/v1/sessions/s/history", body_b),
+        active_wire(false),
+    ]);
+    let ka = crate::routing::qualify(&a, "s");
+    let kb = crate::routing::qualify(&b, "s");
+    assert_ne!(ka, kb);
+    assert!(Command::Open(ka.clone()).into_wire(&b).is_err());
+    let Command::Open(raw_a) = Command::Open(ka.clone()).into_wire(&a).unwrap() else {
+        panic!()
+    };
+    let Command::Open(raw_b) = Command::Open(kb.clone()).into_wire(&b).unwrap() else {
+        panic!()
+    };
+    assert_eq!(raw_a, "s");
+    assert_eq!(raw_b, "s");
+    let (ra, rb) = tokio::join!(history(&ca, &raw_a), history(&cb, &raw_b));
+    assert!(ra.is_err());
+    let rb = rb.unwrap();
+    let recovered = history(&ca, &raw_a).await.unwrap();
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(16));
+    assert!(emit(&Sink::new(tx.clone(), a.clone(), 100), 1, recovered));
+    assert!(emit(&Sink::new(tx, b.clone(), 101), 2, rb));
+    app.update();
+    let replies = rndr_core::events::<Reply>(app.world());
+    assert_eq!(replies.len(), 2);
+    assert!(
+        replies
+            .iter()
+            .any(|r| matches!(&r.update,Update::History(s,owner,..) if s==&ka&&owner==&a))
+    );
+    assert!(
+        replies
+            .iter()
+            .any(|r| matches!(&r.update,Update::History(s,owner,..) if s==&kb&&owner==&b))
+    );
+    sa.join().unwrap();
+    sb.join().unwrap();
+}
+
 use rndr_core::{App, FeedConfig};
 use serde_json::{Value, json};
 use std::{

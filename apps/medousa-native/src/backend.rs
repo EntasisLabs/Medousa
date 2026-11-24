@@ -119,8 +119,107 @@ pub struct Reply {
     pub update: Update,
 }
 impl Event for Reply {}
-fn emit(tx: &feed::Sender<Reply>, generation: u64, update: Update) -> bool {
+/// A backend has one immutable owning authority for its entire lifetime.
+#[derive(Clone)]
+pub(crate) struct Sink {
+    tx: feed::Sender<Reply>,
+    pub(crate) authority: String,
+    catalog_route: u64,
+}
+impl From<feed::Sender<Reply>> for Sink {
+    fn from(tx: feed::Sender<Reply>) -> Self {
+        Self {
+            tx,
+            authority: String::new(),
+            catalog_route: 0,
+        }
+    }
+}
+impl Sink {
+    pub(crate) fn new(tx: feed::Sender<Reply>, authority: String, catalog_route: u64) -> Self {
+        Self {
+            tx,
+            authority,
+            catalog_route,
+        }
+    }
+    pub(crate) fn send(&self, mut reply: Reply) -> Result<(), ()> {
+        let qualify = |s: &mut String| *s = crate::routing::qualify(&self.authority, s);
+        match &mut reply.update {
+            Update::History(session, authority, ..)
+            | Update::SettledHistory(session, authority, ..) => {
+                if !self.authority.is_empty() && *authority != self.authority {
+                    reply.update = Update::Failure(
+                        "Workshop authority changed. Reconnect explicitly; no data was redirected."
+                            .into(),
+                    );
+                } else {
+                    qualify(session);
+                }
+            }
+            Update::Collaboration { session, .. }
+            | Update::PeerCollaboration { session, .. }
+            | Update::PeerStream { session, .. }
+            | Update::ThreadReply { session, .. }
+            | Update::Renamed { session, .. }
+            | Update::Deleted(session) => qualify(session),
+            Update::Forked { source, session } => {
+                qualify(source);
+                qualify(session);
+            }
+            Update::Sessions(rows) => {
+                for (session, _) in rows {
+                    qualify(session);
+                }
+            }
+            Update::SessionsPage {
+                rows, summaries, ..
+            } => {
+                for (session, _) in rows {
+                    qualify(session);
+                }
+                for row in summaries {
+                    qualify(&mut row.session_id);
+                }
+            }
+            _ => {}
+        }
+        self.tx.send(reply).map_err(|_| ())
+    }
+}
+fn emit(tx: &Sink, generation: u64, update: Update) -> bool {
     tx.send(Reply { generation, update }).is_ok()
+}
+impl Command {
+    pub(crate) fn session_owner(&self) -> Option<String> {
+        let session = match self {
+            Self::Open(s) | Self::Delete(s) | Self::Fork(s) | Self::SetMode(s, _) => s,
+            Self::Rename { session, .. }
+            | Self::Pin { session, .. }
+            | Self::Collaboration { session, .. }
+            | Self::PeerCollaboration { session, .. }
+            | Self::ThreadReply { session, .. } => session,
+            Self::Send(request) => &request.session_id,
+            _ => return None,
+        };
+        crate::routing::SessionKey::parse(session).map(|k| k.authority)
+    }
+    fn into_wire(mut self, authority: &str) -> Result<Self, String> {
+        let session = match &mut self {
+            Self::Open(s) | Self::Delete(s) | Self::Fork(s) | Self::SetMode(s, _) => Some(s),
+            Self::Rename { session, .. }
+            | Self::Pin { session, .. }
+            | Self::Collaboration { session, .. }
+            | Self::PeerCollaboration { session, .. }
+            | Self::ThreadReply { session, .. } => Some(session),
+            Self::Send(request) => Some(&mut request.session_id),
+            _ => None,
+        };
+        if let Some(session) = session {
+            *session = crate::routing::checked_wire(authority, session)?;
+        }
+        Ok(self)
+    }
 }
 
 pub fn client(origin: &str, data_dir: &std::path::Path) -> Result<MedousaClient, String> {
@@ -426,10 +525,11 @@ async fn settled_history(client: &MedousaClient, session: &str) -> Update {
 async fn follow(
     client: Arc<MedousaClient>,
     path: String,
-    tx: feed::Sender<Reply>,
+    tx: impl Into<Sink>,
     generation: u64,
     session: String,
 ) {
+    let tx = tx.into();
     let path = match stream_path(&path, client.base_url()) {
         Ok(path) => path.to_string(),
         Err(()) => {
@@ -507,6 +607,7 @@ pub fn run(
         .build()
         .expect("network runtime");
     runtime.block_on(async move {
+        let tx = Sink::from(tx);
         let client = match client(&origin, &data_dir) {
             Ok(c) => Arc::new(c),
             Err(e) => {
@@ -517,11 +618,12 @@ pub fn run(
         serve(client, commands, tx).await;
     });
 }
-async fn serve(
+pub(crate) async fn serve(
     client: Arc<MedousaClient>,
     mut commands: mpsc::UnboundedReceiver<Request>,
-    tx: feed::Sender<Reply>,
+    tx: impl Into<Sink>,
 ) {
+    let tx = tx.into();
     // Independent, read-only catalogs must not serialize startup or gate history.
     // Own these tasks until shutdown rather than detaching network work.
     let mut metadata_tasks = tokio::task::JoinSet::new();
@@ -535,7 +637,7 @@ async fn serve(
                     "Chat list unavailable. Check the local daemon connection and retry.".into(),
                 )
             });
-            emit(&tx, 0, initial);
+            emit(&tx, tx.catalog_route, initial);
             timing("sessions", started);
         });
     }
@@ -562,10 +664,16 @@ async fn serve(
                             ))
                         })
                         .collect();
-                    emit(&tx, 0, Update::Models(models));
+                    emit(&tx, tx.catalog_route, Update::Models(models));
                 }
                 Err(_) => {
-                    emit(&tx, 0, Update::Notice(concat!("Model catalog unavailable; no inference until a model is selected. ", "Check the local daemon model configuration.").into()));
+                    emit(
+                        &tx,
+                        tx.catalog_route,
+                        Update::Notice(
+                            "Model catalog unavailable; reconnect this workshop to retry.".into(),
+                        ),
+                    );
                 }
             }
             timing("models", started);
@@ -583,12 +691,12 @@ async fn serve(
                         .into_iter()
                         .map(|m| (m.mode.as_str().into(), m.label, m.available))
                         .collect();
-                    emit(&tx, 0, Update::Modes(modes));
+                    emit(&tx, tx.catalog_route, Update::Modes(modes));
                 }
                 Err(_) => {
                     emit(
                         &tx,
-                        0,
+                        tx.catalog_route,
                         Update::Notice(
                             "Mode registry unavailable; mode availability could not be confirmed."
                                 .into(),
@@ -609,6 +717,13 @@ async fn serve(
         command,
     }) = commands.recv().await
     {
+        let command = match command.into_wire(&tx.authority) {
+            Ok(command) => command,
+            Err(error) => {
+                emit(&tx, generation, Update::Failure(error));
+                continue;
+            }
+        };
         while metadata_tasks.try_join_next().is_some() {}
         stream_tasks.retain(|_, task| !task.is_finished());
         mode_tasks.retain(|_, task| !task.is_finished());

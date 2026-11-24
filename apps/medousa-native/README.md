@@ -8,17 +8,21 @@ cargo run
 ```
 
 Uses the sibling RNDR checkout at `../../../../rndr`, shared
-`medousa-app-core`, and shared desktop-host connection discovery. On launch it
-attempts to attach to the configured local daemon using the existing local
-credentials. It does **not** start, install, or restart a daemon on launch. The explicit,
-confirmed Peers LAN control can restart only the managed personal engine.
+`medousa-app-core`, and the shared desktop-host saved-connection and trusted-pairing
+paths. On launch it attaches to saved sources concurrently, without a global
+active-workshop selection. **Workshops / setup** adds a trusted pairing, reconnects
+one source, or deliberately starts the bundled Personal daemon. It does **not**
+start, install, or restart a daemon merely on launch. The explicit, confirmed
+Peers LAN control can restart only the managed personal engine.
+See [Native workshops](../../docs/guides/native-workshops.md) for source-labelled
+chats, view-local destinations, offline behavior and current scope.
 An unavailable daemon is an ordinary connection error, not a separate preview application.
 
 Colors come from the same theme catalog as the Tauri shell. The native app
 embeds `themes/medousa-themes.json`, generated from `apps/medousa-home/themes`
 with `npm run themes:native` (CI checks it with `npm run check:native-themes`
-and the vitest catalog test). At launch it uses the color theme chosen for the
-active workshop in the workshop registry, falling back to Obsidian, and follows
+and the vitest catalog test). At launch it uses the native device-local color
+theme, falling back to Obsidian, and follows
 the system light/dark setting. `src/theme.rs` maps Medousa's roles onto RNDR
 tokens; RNDR's high-contrast palette still takes precedence.
 
@@ -64,8 +68,8 @@ or an accepted proposal appear without reopening it.
 
 **Settings** (the gear at the foot of the rail, or **⌘,**) has medousa-home's
 sections in the same groups. **Look** switches the theme at once and saves it
-for the active workshop, where medousa-home reads it too. **Connection** shows
-the active workshop, the engine's status and version, and this app's version.
+as a native device preference. **Connection** shows the Settings view's bound
+workshop, the engine's status and version, and this app's version.
 **Accounts** lists review providers and the accounts connected to the workshop, signs in with a device code (the provider's page opens and the app checks for approval), and disconnects accounts. **Medousa Agent** sets the stance, answer depth and conversation model in the workshop's runtime defaults, the record medousa-home edits, and shows the other model roles. Its Provider keys list each provider with a key or base URL to set (the catalog medousa-home uses, now shared in desktop-host); a key is typed into a masked field, kept by the workshop's engine and never shown again, a base URL can be overridden or returned to the default, and clearing a key takes a second press. A custom provider's id is kept on the workshop's machine, so it is offered only for a workshop this Mac runs. Below them, Fallback models sets up to two backups for the conversation model; Coding runtime picks the preferred runtime and an ordered list of fallbacks; Stage routing edits one stage's provider, model and fallback chain at a time; Mode suggestions sets how much Medousa may switch modes on her own and how long a suggestion lasts; and Artifacts turns automatic cleanup on or off with how long and how many per chat to keep. **Packages** lists the optional binaries, installs or updates them into the data folder with a progress bar, removes optional ones, and opens Medousa Installer for repairs. **MCP** shows the gateway and its servers, adds and edits servers (a local command with arguments, or an HTTP or SSE URL with an optional bearer token typed into a masked field and kept in secure storage), turns servers on or off, removes them (a second press confirms), and starts or restarts the gateway on this Mac so changes apply; saving a server restarts it. Each server's Tools list turns tools on or off and edits their discovery hints, restarting the gateway to apply; a server with a sign-in signs in through the system browser while the engine runs the OAuth exchange and keeps the tokens. A workshop elsewhere manages its own servers, though signing in still works from here. **External Agents** shows each coding agent the workshop can run (Codex, Cursor, Hermes, Claude Code and others) and whether it is signed in; on a workshop on this Mac it installs the Codex, Cursor and Hermes CLIs with the vendors' installers, signs them in (Codex by device code, the others in a terminal) and waits for the CLI to report it, and signs them out. Its conversations list (Muse, Instinct, Dots, Grok) removes them, with a second press to confirm, and rotates a Grok bot's callback key, which is shown once. Adding one follows medousa-home: a Grok bot takes its name, webhook URL and webhook key (its callback key is then shown once), and a Dots session its Slack channel, dot ID and Slack user token, both secrets in masked fields. Muse and Instinct go through the linked WhatsApp: the form shows its pairing QR, refreshed every few seconds, and on a workshop this Mac runs starts the WhatsApp adapter if it isn't running; Instinct then takes a phone number, and Muse finds its chat by a code sent from WhatsApp. **Runtime Controls** edits the same runtime defaults one field at a time: tool posture, specialists and the web search provider through pickers, search fallbacks, shell tools, the network ceiling, thinking traces and telemetry as on/off switches, and tool rounds, shell limits, tool budgets and verifier floors with − and + steppers. Turning shell tools on with no binary allowlist asks first. The allowed tools, allowed binaries and writable roots are comma-separated fields, each with its own Save. Host env overrides list variable names only, since values may be secrets: a variable is added with a masked value (adding a name again replaces it) and removed with a second press. Worker capacity steps the global queue capacity and each lane's share, refusing a save whose shares exceed the total; it applies after an engine restart. Versions turns vault history on or off through the engine and shows its branch, changes and Git. Computer control shows each computer driver's permissions (controls and text, focused-window pixels, foreground input) and who holds control, without asking the system for anything; watching the computer live and choosing a paired workshop to run it are still in the original app. World activity lists the latest governed browser and computer events, newest first, with promoted evidence marked and an Evidence filter. **Sharing** turns Shared mode on or off, shows the phone pairing QR with its short code, countdown and invite link (refreshed when it expires, with Rotate invite), lists paired phones and removes them with a second press, and on a workshop this Mac runs switches LAN pairing, which restarts the engine. Its Channels part sets up Telegram, Discord, Slack and WhatsApp on a workshop this Mac runs: each shows Needs setup, Ready or Connected, and opens a form for its tokens, who may reach Medousa and heartbeat nudges. Tokens are typed into masked fields, kept by the engine and never shown again; Save & connect writes the channel's settings and starts, restarts or stops its adapter. A workshop elsewhere sets its channels up there. Peers and trusted workshops open the Peers screen; canvas backups are still set up in the original app.
 
 The Chat surface contains a left conversation sidebar and native chat workspace.
@@ -124,7 +128,8 @@ cover creation, root-qualified rename/move, confirmed trash deletion, restore,
 daemon-index search, vault listing/linking/switching, and clean document closure.
 Vault switches require all documents closed; drafts cannot silently cross roots.
 Editing remains retained Markdown source, not inline rich-text.
-It uses the current native app connection; it does not add remote pairing.
+It uses the Notes view's explicit workshop binding, independent of chats and
+other artifact views. Native trusted pairing is available in Workshops / setup.
 
 ## Code
 

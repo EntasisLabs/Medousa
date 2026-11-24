@@ -21,7 +21,7 @@ rndr_paint = { path = "../../../../rndr/crates/rndr_paint", features = ["highlig
 rndr_render = { path = "../../../../rndr/crates/rndr_render", default-features = false, features = ["parley", "accesskit", "svg"] }
 medousa-sdk = { path = "../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-app-core = { path = "../../crates/medousa-app-core" }
-medousa-desktop-host = { path = "../../crates/medousa-desktop-host" }
+medousa-desktop-host = { path = "../../crates/medousa-desktop-host", features = ["legacy-client-network"] }
 medousa-types = { path = "../../crates/medousa-types" }
 medousa-local-credential = { path = "../../crates/medousa-local-credential" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
@@ -36,9 +36,11 @@ mime_guess = "2"
 urlencoding = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 
+bytes = "1"
+sha2 = "0.10"
+
 [dev-dependencies]
 tempfile = "3"
-bytes = "1"
 
 # Interactive builds must optimize the renderer/text stack too. Debug assertions
 # remain on; this is not a substitute for application hot-path fixes.

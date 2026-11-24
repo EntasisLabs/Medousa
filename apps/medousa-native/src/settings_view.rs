@@ -665,7 +665,7 @@ fn connection(w: &mut World, s: &mut State, body: Entity) {
     quiet(
         w,
         body,
-        "Switching, adding or repairing workshops still happens in the original Medousa app for now.",
+        "Use Workshops / setup above to add a trusted workshop or reconnect a saved source. Existing chats and other views keep their own workshop; there is no global switch.",
     );
 }
 

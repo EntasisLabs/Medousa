@@ -442,6 +442,27 @@ fn can_deactivate_views(world: &World, n: &Notes) -> bool {
                 .is_none_or(|d| !d.is_composing())
     })
 }
+/// A source change is stronger than navigation: no draft, conflict or uncertain
+/// write may be discarded or rebound to a different daemon.
+pub(crate) fn can_rebind(world: &mut World) -> bool {
+    let Some(mut n) = world.resource_mut::<Notes>().map(std::mem::take) else {
+        return true;
+    };
+    capture(world, &mut n);
+    capture_rich(world, &mut n);
+    let safe = can_deactivate_views(world, &n)
+        && n.core
+            .snapshot(None)
+            .buffers
+            .iter()
+            .all(|b| !b.dirty && !b.conflict)
+        && n.saves.is_empty()
+        && n.remote.is_empty()
+        && n.uncertain.is_empty()
+        && n.management.pending.is_none();
+    *world.resource_mut::<Notes>().unwrap() = n;
+    safe
+}
 /// Surface navigation must not interrupt native IME composition.
 pub fn can_deactivate(world: &World) -> bool {
     world

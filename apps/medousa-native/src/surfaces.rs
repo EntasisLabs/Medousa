@@ -19,7 +19,7 @@ const PEERS: u64 = 0x5355_0006;
 const CREATE: u64 = 0x5355_0007;
 const SETTINGS: u64 = 0x5355_0008;
 const SURFACE_COUNT: usize = 8;
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SurfaceId {
     Chat,
     Notes,
@@ -43,6 +43,55 @@ impl SurfaceId {
             Self::Settings => 7,
         }
     }
+}
+/// Rebinding clears only this view, after all edits/mutations are safe. In-flight
+/// reads are fenced by the captured binding epoch in the auxiliary dispatcher.
+pub(crate) fn rebind(world: &mut World, target: SurfaceId) -> bool {
+    let initial = crate::workshops::binding(world, target).is_none();
+    let safe = initial
+        || match target {
+            SurfaceId::Notes => crate::notes::can_rebind(world),
+            SurfaceId::Create => crate::create::can_rebind(world),
+            SurfaceId::Reviews => crate::reviews::can_rebind(world),
+            SurfaceId::Code => crate::code::can_rebind(world),
+            _ => false,
+        };
+    if !safe {
+        return false;
+    }
+    if !matches!(
+        target,
+        SurfaceId::Notes | SurfaceId::Create | SurfaceId::Reviews | SurfaceId::Code
+    ) {
+        return initial;
+    }
+    let root = world.resource::<SurfaceHost>().unwrap().roots[target.index()];
+    for child in children_of(world, root) {
+        despawn(world, child);
+    }
+    match target {
+        SurfaceId::Notes => {
+            crate::notes::mount(world, root);
+            crate::notes::activate(world);
+        }
+        SurfaceId::Create => {
+            crate::create::reset_source(world);
+            crate::create::mount(world, root);
+            crate::create::activate(world);
+        }
+        SurfaceId::Reviews => {
+            crate::reviews::mount(world, root);
+            crate::reviews::activate(world);
+        }
+        SurfaceId::Code => {
+            crate::code::mount(world, root);
+            crate::code::activate(world);
+        }
+        _ => unreachable!(),
+    }
+    world.resource_mut::<SurfaceHost>().unwrap().focus[target.index()] = None;
+    world.resource_mut::<Focus>().unwrap().entity = None;
+    true
 }
 struct SurfaceHost {
     active: SurfaceId,
@@ -185,6 +234,9 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Layout::column()
         },
     );
+    if world.resource::<crate::workshops::Workshops>().is_some() {
+        crate::workshops::mount(world, content);
+    }
     let roots = [
         "Chat", "Notes", "Code", "Create", "Reviews", "Calendar", "Peers", "Settings",
     ]

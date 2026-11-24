@@ -370,7 +370,7 @@ impl Subscriptions {
         session: String,
         reading: &Reading,
         client: std::sync::Arc<medousa_sdk::MedousaClient>,
-        tx: rndr_core::feed::Sender<Reply>,
+        tx: crate::backend::Sink,
     ) {
         let Some((key, turn, url)) = reading.stream() else {
             return;

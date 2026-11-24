@@ -441,6 +441,45 @@ pub fn active_local_data_dir_for_url(url: &str) -> Option<PathBuf> {
 
 pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, String> {
     let mut registry = ensure_migrated()?;
+    let id = upsert_paired_workshop(&mut registry, input)?;
+    save_registry(&registry)?;
+    Ok(id)
+}
+
+/// Concurrent clients preserve the legacy selection byte-for-byte in meaning;
+/// no migration, activation, daemon-url write or process switch is performed.
+pub fn register_paired_workshop_concurrent(input: RegisterPairedInput) -> Result<String, String> {
+    let path = workshops_registry_path();
+    let mut registry: WorkshopRegistry = match fs::read(&path) {
+        Ok(raw) => serde_json::from_slice(&raw).map_err(|e| e.to_string())?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => default_registry(),
+        Err(e) => return Err(e.to_string()),
+    };
+    if registry.version != REGISTRY_VERSION {
+        return Err("Unsupported workshop registry version".into());
+    }
+    let mut ids = std::collections::HashSet::new();
+    if registry.workshops.iter().any(|w| !ids.insert(&w.id)) {
+        return Err("Duplicate saved workshop identity".into());
+    }
+    let id = upsert_paired_workshop(&mut registry, input)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let temp = path.with_extension(format!("native-{}.tmp", std::process::id()));
+    fs::write(
+        &temp,
+        serde_json::to_vec_pretty(&registry).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    fs::rename(temp, path).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+fn upsert_paired_workshop(
+    registry: &mut WorkshopRegistry,
+    input: RegisterPairedInput,
+) -> Result<String, String> {
     let role = normalize_connection_role(&input.role);
     let workshop_id = if role == "peer" {
         format!("peer-{}", input.workshop_device_id)
@@ -506,6 +545,5 @@ pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, St
         });
     }
 
-    save_registry(&registry)?;
     Ok(workshop_id)
 }

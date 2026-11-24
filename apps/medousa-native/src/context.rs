@@ -565,7 +565,7 @@ pub async fn execute(
     let result = async {
         let path = expand_path(
             "/v1/sessions/{session_id}/stickies",
-            &[("session_id", &command.session)],
+            &[("session_id", &crate::routing::wire_owned(&command.session))],
         )?;
         let value = match &command.body {
             Some(body) => {

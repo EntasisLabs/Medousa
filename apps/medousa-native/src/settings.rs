@@ -1702,15 +1702,27 @@ fn agent_sign_in(account: &str) -> Result<Reply, String> {
     agents::begin_terminal_login(account).map(Reply::SigningIn)
 }
 
-fn workshop() -> Result<Option<Workshop>, String> {
-    use medousa_desktop_host::workshop_registry::{active_workshop, load_registry};
-    let registry = load_registry()?;
-    Ok(active_workshop(&registry).map(|w| Workshop {
-        label: w.label.clone(),
-        kind: w.kind.clone(),
-        url: w.url.clone(),
-        data_dir: w.data_dir.clone(),
-    }))
+fn workshop(origin: &str) -> Result<Option<Workshop>, String> {
+    use medousa_desktop_host::workshop_registry::{WorkshopRegistry, workshops_registry_path};
+    let bytes = match std::fs::read(workshops_registry_path()) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    let registry: WorkshopRegistry = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    Ok(registry
+        .workshops
+        .iter()
+        .find(|w| {
+            medousa_desktop_host::workshop_runtime::resolve_workshop_url(w).trim_end_matches('/')
+                == origin.trim_end_matches('/')
+        })
+        .map(|w| Workshop {
+            label: w.label.clone(),
+            kind: w.kind.clone(),
+            url: w.url.clone(),
+            data_dir: w.data_dir.clone(),
+        }))
 }
 
 pub async fn execute(client: &MedousaClient, command: Command) -> Update {
@@ -1722,10 +1734,13 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
             .map(|h| Reply::Health(Box::new(h)))
             .map_err(|e| e.to_string()),
         // Registry reads and writes are small but blocking file IO.
-        Kind::Workshop => tokio::task::spawn_blocking(workshop)
-            .await
-            .map_err(|e| e.to_string())
-            .and_then(|r| r.map(Reply::Workshop)),
+        Kind::Workshop => {
+            let origin = client.base_url().to_owned();
+            tokio::task::spawn_blocking(move || workshop(&origin))
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map(Reply::Workshop))
+        }
         Kind::SaveTheme(id) => {
             tokio::task::spawn_blocking(move || crate::theme::save_active_id(&id))
                 .await

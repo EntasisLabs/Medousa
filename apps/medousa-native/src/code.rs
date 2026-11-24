@@ -673,6 +673,23 @@ pub fn activate(w: &mut World) {
         }
     }
 }
+pub(crate) fn can_rebind(w: &mut World) -> bool {
+    if !can_deactivate(w) || !crate::terminal::can_rebind(w) {
+        return false;
+    }
+    let Some(mut c) = w.resource_mut::<Code>().map(std::mem::take) else {
+        return true;
+    };
+    capture(w, &mut c);
+    let safe = c
+        .buffers
+        .values()
+        .all(|b| !b.dirty() && !b.uncertain && b.remote.is_none())
+        && c.sessions.is_empty()
+        && c.pending.is_empty();
+    w.insert_resource(c);
+    safe
+}
 pub fn can_deactivate(w: &World) -> bool {
     w.resource::<Code>().is_none_or(|c| !composing(w, c))
 }

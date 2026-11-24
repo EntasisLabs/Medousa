@@ -1,4 +1,7 @@
 //! App-owned orchestration. RNDR owns controls/editing; app-core owns chat state.
+#[cfg(test)]
+#[path = "workshop_tests.rs"]
+mod workshop_tests;
 use crate::{
     approvals, attachments, auxiliary,
     backend::{Command, Reply, Request, Update},
@@ -58,6 +61,7 @@ const DELETE_CANCEL: u64 = 25;
 pub struct Model {
     collaboration: collaboration::State,
     pub chat: Chat,
+    pub(crate) owner: String,
     pub commands: Option<tokio::sync::mpsc::UnboundedSender<Request>>,
     generation: u64,
     requested_session: Option<String>,
@@ -94,6 +98,7 @@ impl Model {
         Model {
             collaboration: collaboration::State::default(),
             chat: Chat::connecting(),
+            owner: String::new(),
             commands: None,
             generation: 0,
             requested_session: None,
@@ -1207,6 +1212,35 @@ fn depth_options() -> Vec<SelectOption> {
         .collect()
 }
 fn dispatch(world: &mut World, command: Command) {
+    if world.resource::<crate::workshops::Workshops>().is_some() {
+        match &command {
+            Command::List(query) => {
+                crate::workshops::dispatch_list(world, query.clone(), false);
+                return;
+            }
+            Command::More { query, .. } => {
+                crate::workshops::dispatch_list(world, query.clone(), true);
+                return;
+            }
+            _ => {}
+        }
+        let target = command
+            .session_owner()
+            .unwrap_or_else(|| world.resource::<Model>().unwrap().owner.clone());
+        let tx = crate::workshops::commands(world, &target);
+        let m = world.resource_mut::<Model>().unwrap();
+        if tx.is_none_or(|tx| {
+            tx.send(Request {
+                generation: m.generation,
+                command,
+            })
+            .is_err()
+        }) {
+            m.loading = false;
+            m.chat.status = "Owning workshop unavailable. Reconnect that source; this item cannot use another daemon.".into();
+        }
+        return;
+    }
     let m = world.resource_mut::<Model>().unwrap();
     if m.commands.as_ref().is_none_or(|tx| {
         tx.send(Request {
@@ -1253,6 +1287,7 @@ fn switch_document(world: &mut World, session: &str) -> Result<(), String> {
     Ok(())
 }
 fn update(world: &mut World) {
+    crate::workshops::tick(world);
     auxiliary::tick(world);
     for reply in events::<Reply>(world).to_vec() {
         apply_reply(world, reply);
@@ -1316,10 +1351,11 @@ fn update(world: &mut World) {
     rndr_ui::source_tools::apply_find_bars(world);
     for intent in take_action_intents(world) {
         let host = controls::host_intent(world, &intent);
-        if host
-            .as_ref()
-            .is_some_and(|h| crate::surfaces::action(world, h) || workshop_status::action(world, h))
-        {
+        if host.as_ref().is_some_and(|h| {
+            crate::workshops::action(world, h)
+                || crate::surfaces::action(world, h)
+                || workshop_status::action(world, h)
+        }) {
             continue;
         }
         match crate::surfaces::active(world) {
@@ -1653,7 +1689,38 @@ fn action(world: &mut World, id: u64) {
     }
 }
 fn apply_reply(world: &mut World, reply: Reply) {
-    conversations::reply(world, reply);
+    if !crate::workshops::receive(world, &reply) {
+        conversations::reply(world, reply);
+    }
+}
+/// Called only when an exact saved connection has advertised its authority.
+pub(crate) fn workshop_ready(world: &mut World, owner: &str) {
+    let commands = crate::workshops::commands(world, owner);
+    let (models, modes) = crate::workshops::catalog(world, owner);
+    let model = world.resource_mut::<Model>().unwrap();
+    if model.owner.is_empty() && model.chat.session().is_none() {
+        model.owner = owner.into();
+        model.commands = commands;
+        model.models = models;
+        model.modes = modes;
+        model.loading = false;
+        model.chat.status = "Connected. Choose a destination above, then New chat.".into();
+    }
+}
+pub(crate) fn workshop_catalog(
+    world: &mut World,
+    owner: &str,
+    models: Vec<(String, String)>,
+    modes: Vec<(String, String, bool)>,
+    rows: Vec<(String, String)>,
+    summaries: Vec<medousa_types::SessionHistorySummary>,
+    cursor: Option<String>,
+) {
+    conversations::catalog(world, owner, models, modes, rows, cursor);
+    chat_sidebar::receive(world, summaries, false);
+}
+pub(crate) fn rebind_workshop_view(world: &mut World, surface: crate::surfaces::SurfaceId) -> bool {
+    crate::surfaces::rebind(world, surface)
 }
 fn apply_current_reply(world: &mut World, reply: Reply) {
     let m = world.resource::<Model>().unwrap();
@@ -1735,13 +1802,15 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
                 world.resource_mut::<Model>().unwrap().chat.fail(e);
                 return;
             }
-            if let Some(aux) = world.resource::<auxiliary::Auxiliary>() {
-                aux.send(auxiliary::Command::Approval(approvals::refresh(&session)));
-            }
+            auxiliary::send(
+                world,
+                auxiliary::Command::Approval(approvals::refresh(&session)),
+            );
             runtimes::refresh(world, &session);
-            if let Some(aux) = world.resource::<auxiliary::Auxiliary>() {
-                aux.send(auxiliary::Command::Context(context::refresh(&session)));
-            }
+            auxiliary::send(
+                world,
+                auxiliary::Command::Context(context::refresh(&session)),
+            );
             let active = active.map(|t| TurnFact {
                 turn_id: t.turn_id,
                 mode: "interactive".into(),
@@ -1948,10 +2017,14 @@ fn sync(world: &mut World) {
         world.resource_mut::<Model>().unwrap().approval_refresh = std::time::Instant::now();
         if let Some(session) = m.chat.session() {
             runtimes::refresh(world, session);
-            if let Some(aux) = world.resource::<auxiliary::Auxiliary>() {
-                aux.send(auxiliary::Command::Approval(approvals::refresh(session)));
-                aux.send(auxiliary::Command::Context(context::refresh(session)));
-            }
+            auxiliary::send(
+                world,
+                auxiliary::Command::Approval(approvals::refresh(session)),
+            );
+            auxiliary::send(
+                world,
+                auxiliary::Command::Context(context::refresh(session)),
+            );
         }
     }
 

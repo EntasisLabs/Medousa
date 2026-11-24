@@ -525,7 +525,9 @@ pub async fn execute(
     client: &MedousaClient,
     command: ApprovalCommand,
 ) -> Result<ApprovalUpdate, String> {
-    let result = execute_inner(client, &command).await;
+    let mut wire = command.clone();
+    wire.session = crate::routing::wire_owned(&wire.session);
+    let result = execute_inner(client, &wire).await;
     // Transport errors are scoped updates too, so UI busy states always settle.
     Ok(ApprovalUpdate { command, result })
 }
