@@ -13,6 +13,7 @@ struct BandStrip(TabStripHandle);
 impl Component for BandStrip {}
 struct Chrome {
     band: Entity,
+    more: Entity,
     body: Entity,
     leading: Entity,
     chat: Entity,
@@ -109,7 +110,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     let fallback = text(world, tabs, "New conversation", Typography::Emphasis).unwrap();
     world.get_mut::<Layout>(fallback).unwrap().width = Size::Fill;
     button(world, chat, NEW, "New chat", true);
-    button(world, chat, DETAILS, "Info", true);
+    let more = button(world, chat, CONVERSATION_MENU, "Conversation", true).root;
     let destination = text(world, band, "Notes", Typography::Emphasis).unwrap();
     world.get_mut::<Layout>(destination).unwrap().width = Size::Fill;
     let documents = std::array::from_fn(|_| {
@@ -176,6 +177,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     );
     world.insert_resource(Chrome {
         band,
+        more,
         body,
         leading,
         chat,
@@ -186,6 +188,10 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         caption,
     });
     body
+}
+/// The open conversation's ⋯ button, which its menu hangs from.
+pub(crate) fn conversation_button(world: &World) -> Option<Entity> {
+    world.resource::<Chrome>().map(|c| c.more)
 }
 /// The window band, for overlays that hang from it.
 pub(crate) fn band(world: &World) -> Option<Entity> {

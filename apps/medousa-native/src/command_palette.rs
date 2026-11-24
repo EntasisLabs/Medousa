@@ -119,9 +119,9 @@ fn commands(world: &World) -> (Vec<PaletteCommand>, Vec<String>) {
     out.push(command(
         CONNECTION,
         if online {
-            "Runtime and connection details"
+            "Connection settings"
         } else {
-            "Reconnect · connection details"
+            "Reconnect · connection settings"
         },
         "Workshop",
         Icon::Info,
@@ -220,10 +220,7 @@ fn run(world: &mut World, id: ItemId) {
             chat(world);
             super::action(world, RELOAD);
         }
-        CONNECTION => {
-            chat(world);
-            super::action(world, DETAILS);
-        }
+        CONNECTION => crate::settings::show_connection(world),
         ACTIVITY => workshop_status::open_activity(world),
         id if id >= CONVERSATION => {
             let index = (id - CONVERSATION) as usize;

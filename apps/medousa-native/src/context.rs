@@ -452,6 +452,21 @@ fn mutation(session: &str, s: &Session, mut body: Value) -> Option<ContextComman
         body: Some(body),
     })
 }
+/// Show the on-screen conversation's notes, as opening the panel does.
+pub fn expand(world: &mut World) {
+    let toggle = world
+        .resource::<Context>()
+        .filter(|c| !c.expanded)
+        .and_then(|c| {
+            c.actions
+                .iter()
+                .find(|(_, (_, a))| matches!(a, Action::Toggle))
+                .map(|(id, _)| *id)
+        });
+    if let Some(id) = toggle {
+        action(world, &HostIntent::Command(id));
+    }
+}
 /// Consume the HostIntent returned by controls::host_intent. Command ids are
 /// globally distinct, so unrelated controls are not intercepted.
 pub fn action(world: &mut World, intent: &HostIntent) -> bool {

@@ -256,8 +256,7 @@ pub(super) fn action(world: &mut World, intent: &HostIntent) -> bool {
     };
     match intent {
         HostIntent::Command(CONNECTION) => {
-            crate::surfaces::select(world, crate::surfaces::SurfaceId::Chat);
-            super::action(world, DETAILS);
+            crate::settings::show_connection(world);
             true
         }
         HostIntent::Command(ACTIVITY) => {

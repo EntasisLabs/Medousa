@@ -105,7 +105,7 @@ fn cohesive_composer_geometry_and_header_accessibility() {
         );
         assert!(card.h < 125., "idle card stays compact: {card:?}");
         assert!(shell.x + shell.w <= width);
-        for name in ["Toggle conversation sidebar", "Open work threads"] {
+        for name in ["Toggle conversation sidebar", "Conversation actions"] {
             assert!(
                 w.query::<Semantics>()
                     .iter()

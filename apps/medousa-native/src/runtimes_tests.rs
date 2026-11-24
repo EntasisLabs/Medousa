@@ -543,3 +543,66 @@ async fn stream_negotiates_v3_and_returns_canonical_session_scoped_commands() {
     assert!(rx.recv().await.unwrap().is_err());
     h.join().unwrap();
 }
+#[test]
+fn runtime_menu_lists_ready_runtimes_and_folds_setup_into_one_entry() {
+    let mut app = App::new();
+    app.add_plugin(rndr_ui::UiPlugin);
+    app.world_mut().insert_resource(Runtimes::default());
+    let anchor = app.world_mut().spawn((Layout {
+        width: Size::Px(120.),
+        height: Size::Px(30.),
+        ..Layout::row()
+    },));
+    app.update();
+    let missing = json!({"runtime":"hermes","available":true,"uses_native_turns":false,"binary_present":false,"detail":"Hermes CLI not found"});
+    app.world_mut().resource_mut::<Runtimes>().unwrap().catalog =
+        serde_json::from_value(json!([runtime(), missing])).unwrap();
+    open(app.world_mut(), anchor, "s");
+    app.update();
+    let w = app.world();
+    let shown = |mut e: Entity| loop {
+        if w.has::<Hidden>(e) {
+            return false;
+        }
+        match w.get::<Parent>(e) {
+            Some(p) => e = p.entity,
+            None => return true,
+        }
+    };
+    let labels: Vec<String> = w
+        .query::<Label>()
+        .iter()
+        .filter(|(e, _)| shown(*e))
+        .map(|(_, l)| l.text.clone())
+        .collect();
+    for expected in ["Medousa", "fixture", "Needs setup (1)", "Refresh runtimes"] {
+        assert!(
+            labels.iter().any(|l| l == expected),
+            "{expected} in {labels:?}"
+        );
+    }
+    // An unavailable runtime never sits among the choices themselves.
+    assert!(!labels.iter().any(|l| l.starts_with("hermes")));
+    // Picking a ready runtime queues the same select the panel used to.
+    let menu = w.resource::<Runtimes>().unwrap().menu.as_ref().unwrap();
+    let (root, item) = (
+        menu.handle.root,
+        *menu
+            .picks
+            .iter()
+            .find(|(_, p)| matches!(p, Pick::Run(Operation::Select { runtime, .. }) if runtime == "fixture"))
+            .unwrap()
+            .0,
+    );
+    rndr_core::send(
+        app.world_mut(),
+        rndr_ui::menu::MenuPicked { menu: root, item },
+    );
+    app.update();
+    menu_events(app.world_mut(), Some("s"));
+    let queued = drain_commands(app.world_mut());
+    assert!(matches!(
+        queued.as_slice(),
+        [RuntimeCommand { operation: Operation::Select { runtime, .. }, .. }] if runtime == "fixture"
+    ));
+}

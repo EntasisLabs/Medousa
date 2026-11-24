@@ -67,10 +67,7 @@ fn shared(ui: Ui) -> Shared {
         sessions: ui.sessions,
         search: ui.search,
         details: ui.details,
-        rename: ui.rename,
-        session_actions: ui.session_actions,
         context: ui.context,
-        runtime: ui.runtime,
     }
 }
 pub(super) fn mount(world: &mut World, parent: Entity) -> Entity {
@@ -207,7 +204,7 @@ fn focus(world: &mut World, target: u64) {
             .chat
             .session()
             .map(str::to_owned);
-        runtimes::sync(world, ui.runtime, session.as_deref());
+        runtimes::show(world, session.as_deref());
         attachments::sync(world, ui.attachments, session.as_deref());
     }
 }
@@ -598,6 +595,10 @@ fn reorder(ids: &mut Vec<String>, source: &str, target: &str, after: bool) -> bo
 }
 pub(super) fn tab_events(world: &mut World) {
     chat_sidebar::input(world);
+    let session = world
+        .resource::<Model>()
+        .and_then(|m| m.chat.session().map(str::to_owned));
+    runtimes::menu_events(world, session.as_deref());
     for event in events::<TabStripEvent>(world).to_vec() {
         if !world
             .resource::<Deck>()

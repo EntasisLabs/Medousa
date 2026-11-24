@@ -8,11 +8,7 @@ use medousa_sdk::{
 };
 use medousa_types::*;
 use rndr_core::*;
-use rndr_ui::{
-    Typography, UiId,
-    controls::{self, ButtonProps, HostIntent},
-    text,
-};
+use rndr_ui::menu::{MenuAt, MenuEntry, MenuHandle, MenuItem, MenuPicked, open_menu};
 use std::{
     collections::HashMap,
     sync::atomic::{AtomicU64, Ordering},
@@ -147,26 +143,34 @@ struct Runtimes {
     sessions: HashMap<String, Session>,
     queue: Vec<RuntimeCommand>,
     streams: Vec<RuntimeStream>,
-    actions: HashMap<Entity, RuntimeCommand>,
+    menu: Option<RuntimeMenu>,
     visible: Option<String>,
-    rendered: u64,
     revision: u64,
+}
+/// The open runtime menu: what each item does, for the session it was built for.
+struct RuntimeMenu {
+    handle: MenuHandle,
+    session: String,
+    picks: HashMap<u64, Pick>,
+}
+enum Pick {
+    Run(Operation),
+    Setup,
 }
 fn enabled(runtime: &AgentRuntimeInfo) -> bool {
     runtime.available
         && (runtime.uses_native_turns
             || (runtime.binary_present && runtime.auth_status.as_deref() != Some("signed_out")))
 }
-pub fn setup(world: &mut World, parent: Entity) -> Entity {
+pub fn setup(world: &mut World) {
     world.insert_resource(Runtimes::default());
-    let root = world.spawn((Layout {
-        width: Size::Fill,
-        height: Size::Hug,
-        gap: 4.,
-        ..Layout::column()
-    },));
-    set_parent(world, root, parent);
-    root
+}
+/// The conversation now on screen; [`active`] and [`busy`] answer for it.
+pub fn show(world: &mut World, session: Option<&str>) {
+    let state = world.resource_mut::<Runtimes>().expect("runtime setup");
+    if state.visible.as_deref() != session {
+        state.visible = session.map(str::to_owned);
+    }
 }
 pub fn active(world: &World) -> ActiveRuntime {
     let Some(state) = world.resource::<Runtimes>() else {
@@ -300,185 +304,212 @@ pub fn cancel(world: &mut World, session: &str) -> bool {
         });
     agent.is_some_and(|agent| queue(world, session, Operation::Cancel { agent }))
 }
-fn button(
-    world: &mut World,
-    root: Entity,
-    state: &mut Runtimes,
-    session: &str,
-    label: String,
-    operation: Operation,
-    enabled: bool,
-) {
-    let serial = id();
-    let mut props = ButtonProps::new(label, HostIntent::Command(serial));
-    props.enabled = enabled;
-    let handle = controls::Button::mount(world, root, UiId(serial), props).unwrap();
-    state.actions.insert(
-        handle.root,
-        RuntimeCommand {
-            session: session.into(),
-            serial,
-            operation,
-        },
-    );
+/// What the composer's runtime chip reads for `session`.
+pub fn label(world: &World, session: Option<&str>) -> String {
+    let active = session
+        .and_then(|id| world.resource::<Runtimes>()?.sessions.get(id))
+        .map(|s| s.active.clone())
+        .unwrap_or_default();
+    match active {
+        ActiveRuntime::Native => "Medousa".into(),
+        ActiveRuntime::Agent { runtime, .. } => runtime,
+        ActiveRuntime::Provider { conversation_id } => world
+            .resource::<Runtimes>()
+            .and_then(|r| r.conversations.iter().find(|c| c.id == conversation_id))
+            .map_or_else(|| "Connected".into(), |c| c.label.clone()),
+    }
 }
-pub fn sync(world: &mut World, root: Entity, session: Option<&str>) {
-    let mut state = std::mem::take(world.resource_mut::<Runtimes>().expect("runtime setup"));
-    let revision = state.revision
-        + session
-            .and_then(|id| state.sessions.get(id))
-            .map_or(0, |s| s.revision);
-    if state.visible.as_deref() == session && state.rendered == revision {
-        *world.resource_mut::<Runtimes>().unwrap() = state;
-        return;
+/// Choose who answers `session`: Medousa, an installed agent runtime or a
+/// connected conversation, with the agent's own options in submenus. Runtimes
+/// that still need installing collapse into one submenu leading to Packages.
+pub fn open(world: &mut World, anchor: Entity, session: &str) {
+    if let Some(old) = world.resource_mut::<Runtimes>().unwrap().menu.take() {
+        old.handle.close(world);
     }
-    for child in children_of(world, root) {
-        despawn(world, child);
-    }
-    state.actions.clear();
-    state.visible = session.map(str::to_owned);
-    state.rendered = revision;
-    if let Some(session) = session {
-        let s = state.sessions.entry(session.into()).or_default();
-        let active = s.active.clone();
-        let ready = s.pending.is_none() && !s.uncertain && !s.running;
-        let closed = s.closed;
-        let configs = s.configs.clone();
-        let error = s.error.clone();
-        text(
-            world,
-            root,
-            &match &active {
-                ActiveRuntime::Native => "Runtime · Medousa".into(),
-                ActiveRuntime::Agent { runtime, .. } => format!("Runtime · {runtime}"),
-                ActiveRuntime::Provider { .. } => "Runtime · Connected conversation".into(),
-            },
-            Typography::Secondary,
-        )
-        .unwrap();
-        if let Some(error) = error {
-            text(world, root, &error, Typography::Secondary).unwrap();
+    let state = world.resource_mut::<Runtimes>().unwrap();
+    let s = state.sessions.entry(session.into()).or_default();
+    let active = s.active.clone();
+    let ready = s.pending.is_none() && !s.uncertain && !s.running;
+    let closed = s.closed;
+    let configs = s.configs.clone();
+    let error = s.error.clone();
+    let pending = s.pending.is_some();
+    let catalog = state.catalog.clone();
+    let conversations = state.conversations.clone();
+    let mut picks = HashMap::new();
+    // The current choice reads checked, not dimmed; picking it does nothing.
+    let mut item = |label: String, pick: Option<Pick>, checked: Option<bool>, enabled: bool| {
+        let serial = id();
+        if let Some(pick) = pick {
+            picks.insert(serial, pick);
         }
-        let previous = match &active {
-            ActiveRuntime::Agent {
-                agent_session_id, ..
-            } if !closed => Some(agent_session_id.clone()),
-            _ => None,
-        };
-        button(
-            world,
-            root,
-            &mut state,
-            session,
-            "Medousa".into(),
-            Operation::Select {
+        let mut item = MenuItem::new(serial, label).enabled(enabled);
+        if let Some(checked) = checked {
+            item = item.checked(checked);
+        }
+        MenuEntry::from(item)
+    };
+    let previous = match &active {
+        ActiveRuntime::Agent {
+            agent_session_id, ..
+        } if !closed => Some(agent_session_id.clone()),
+        _ => None,
+    };
+    let mut entries = Vec::new();
+    if let Some(error) = error {
+        entries.push(MenuEntry::Group(error));
+    }
+    entries.push(MenuEntry::Group("Runtime".into()));
+    let native = active == ActiveRuntime::Native;
+    entries.push(item(
+        "Medousa".into(),
+        (!native).then(|| {
+            Pick::Run(Operation::Select {
                 runtime: "medousa".into(),
                 previous: previous.clone(),
-            },
-            ready && active != ActiveRuntime::Native,
-        );
-        for row in state
-            .catalog
-            .clone()
-            .into_iter()
-            .filter(|r| !r.uses_native_turns && r.runtime != "medousa")
-        {
-            let available = enabled(&row);
-            let label = if available {
-                row.runtime.clone()
-            } else {
-                format!(
-                    "{} · {}",
-                    row.runtime,
-                    row.detail
-                        .as_deref()
-                        .or(row.auth_detail.as_deref())
-                        .unwrap_or("Unavailable / sign in required")
-                )
-            };
-            let selected =
-                matches!(&active, ActiveRuntime::Agent { runtime, .. } if runtime == &row.runtime);
-            button(
-                world,
-                root,
-                &mut state,
-                session,
-                label,
-                Operation::Select {
+            })
+        }),
+        Some(native),
+        ready,
+    ));
+    let (installed, missing): (Vec<_>, Vec<_>) = catalog
+        .into_iter()
+        .filter(|r| !r.uses_native_turns && r.runtime != "medousa")
+        .partition(enabled);
+    for row in installed {
+        let selected =
+            matches!(&active, ActiveRuntime::Agent { runtime, .. } if runtime == &row.runtime);
+        entries.push(item(
+            row.runtime.clone(),
+            (!selected || closed).then(|| {
+                Pick::Run(Operation::Select {
                     runtime: row.runtime,
                     previous: previous.clone(),
-                },
-                ready && available && (!selected || closed),
-            );
-        }
-        // Provider conversations are actual server records, never hard-coded runtime IDs.
-        for row in state.conversations.clone() {
-            button(
-                world,
-                root,
-                &mut state,
-                session,
-                format!("Connected · {} ({:?})", row.label, row.provider),
-                Operation::Provider(row.id),
-                ready && previous.is_none(),
-            );
-        }
-        if let ActiveRuntime::Agent {
-            agent_session_id, ..
-        } = active
-        {
-            for config in configs {
-                for choice in config.options {
-                    let selected = choice.value == config.current_value;
-                    button(
-                        world,
-                        root,
-                        &mut state,
-                        session,
-                        format!(
-                            "{} · {}{}",
-                            config.name,
-                            choice.name,
-                            if selected { " ✓" } else { "" }
-                        ),
-                        Operation::Config {
-                            agent: agent_session_id.clone(),
-                            config: config.id.clone(),
-                            value: choice.value,
-                        },
-                        ready && !selected,
-                    );
-                }
-            }
-        }
-        let pending = state.sessions[session].pending.is_some();
-        button(
-            world,
-            root,
-            &mut state,
-            session,
-            "Refresh runtimes / connections".into(),
-            Operation::Refresh,
-            !pending,
-        );
+                })
+            }),
+            Some(selected),
+            ready,
+        ));
     }
-    *world.resource_mut::<Runtimes>().unwrap() = state;
+    // Provider conversations are actual server records, never hard-coded runtime IDs.
+    if !conversations.is_empty() {
+        entries.push(MenuEntry::Separator);
+        entries.push(MenuEntry::Group("Connected".into()));
+        for row in conversations {
+            let selected = matches!(&active, ActiveRuntime::Provider { conversation_id } if conversation_id == &row.id);
+            entries.push(item(
+                format!("{} · {:?}", row.label, row.provider),
+                (!selected).then(|| Pick::Run(Operation::Provider(row.id))),
+                Some(selected),
+                ready && (selected || previous.is_none()),
+            ));
+        }
+    }
+    if let ActiveRuntime::Agent {
+        agent_session_id, ..
+    } = &active
+    {
+        let options: Vec<_> = configs
+            .into_iter()
+            .filter(|c| !c.options.is_empty())
+            .map(|config| {
+                let choices = config
+                    .options
+                    .iter()
+                    .map(|choice| {
+                        let selected = choice.value == config.current_value;
+                        item(
+                            choice.name.clone(),
+                            (!selected).then(|| {
+                                Pick::Run(Operation::Config {
+                                    agent: agent_session_id.clone(),
+                                    config: config.id.clone(),
+                                    value: choice.value.clone(),
+                                })
+                            }),
+                            Some(selected),
+                            ready,
+                        )
+                    })
+                    .collect();
+                MenuEntry::submenu(config.name.clone(), choices)
+            })
+            .collect();
+        if !options.is_empty() {
+            entries.push(MenuEntry::Separator);
+            entries.extend(options);
+        }
+    }
+    entries.push(MenuEntry::Separator);
+    if !missing.is_empty() {
+        let rows = missing
+            .into_iter()
+            .map(|row| {
+                let detail = row
+                    .detail
+                    .as_deref()
+                    .or(row.auth_detail.as_deref())
+                    .unwrap_or("Install or sign in");
+                item(
+                    format!("{} · {detail}", row.runtime),
+                    Some(Pick::Setup),
+                    None,
+                    true,
+                )
+            })
+            .collect::<Vec<_>>();
+        entries.push(MenuEntry::submenu(
+            format!("Needs setup ({})", rows.len()),
+            rows,
+        ));
+    }
+    entries.push(item(
+        "Refresh runtimes".into(),
+        Some(Pick::Run(Operation::Refresh)),
+        None,
+        !pending,
+    ));
+    if let Ok(handle) = open_menu(world, anchor, MenuAt::Below, &entries) {
+        world.resource_mut::<Runtimes>().unwrap().menu = Some(RuntimeMenu {
+            handle,
+            session: session.into(),
+            picks,
+        });
+    }
 }
-pub fn action(world: &mut World, intent: &ActionIntent) -> bool {
-    if controls::host_intent(world, intent).is_none() {
-        return false;
+/// Apply a pick from the runtime menu. Picks for a conversation no longer
+/// shown are dropped rather than applied to whichever is current now.
+pub fn menu_events(world: &mut World, current: Option<&str>) {
+    for event in events::<MenuPicked>(world).to_vec() {
+        let Some(state) = world.resource_mut::<Runtimes>() else {
+            return;
+        };
+        if state
+            .menu
+            .as_ref()
+            .is_none_or(|m| m.handle.root != event.menu)
+        {
+            continue;
+        }
+        let mut menu = state.menu.take().unwrap();
+        if current != Some(menu.session.as_str()) {
+            continue;
+        }
+        match menu.picks.remove(&event.item) {
+            Some(Pick::Run(operation)) => {
+                queue(world, &menu.session, operation);
+            }
+            Some(Pick::Setup) => crate::settings::show_packages(world),
+            None => {}
+        }
     }
-    let command = world
+    let closed = world
         .resource::<Runtimes>()
-        .and_then(|r| r.actions.get(&intent.entity))
-        .cloned();
-    let Some(command) = command else {
-        return false;
-    };
-    if world.resource::<Runtimes>().unwrap().visible.as_deref() == Some(&command.session) {
-        queue(world, &command.session, command.operation);
+        .and_then(|r| r.menu.as_ref())
+        .is_some_and(|m| !m.handle.is_open(world));
+    if closed {
+        world.resource_mut::<Runtimes>().unwrap().menu = None;
     }
-    true
 }
 pub fn drain_commands(world: &mut World) -> Vec<RuntimeCommand> {
     std::mem::take(&mut world.resource_mut::<Runtimes>().unwrap().queue)

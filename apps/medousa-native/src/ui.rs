@@ -43,6 +43,8 @@ const BEHAVIOR: u64 = 33;
 const TOGGLE_SEARCH: u64 = 34;
 const DETAILS: u64 = 30;
 const MODEL_SEARCH: u64 = 31;
+const RUNTIME: u64 = 35;
+const CONVERSATION_MENU: u64 = 36;
 const SIDEBAR: u64 = 32;
 const NEW: u64 = 1;
 const SEARCH: u64 = 2;
@@ -53,13 +55,8 @@ const SESSION: u64 = 1000;
 const MODEL_PREV: u64 = 6;
 const MODEL_NEXT: u64 = 7;
 const MORE: u64 = 8;
-const RENAME: u64 = 20;
-const FORK: u64 = 21;
 const PIN: u64 = 22;
 const UNPIN: u64 = 26;
-const DELETE: u64 = 23;
-const DELETE_CONFIRM: u64 = 24;
-const DELETE_CANCEL: u64 = 25;
 
 pub struct Model {
     collaboration: collaboration::State,
@@ -77,7 +74,6 @@ pub struct Model {
     depth: usize,
     search_query: String,
     session_cursor: Option<String>,
-    delete_target: Option<String>,
     pending_media: Vec<medousa_types::MediaRef>,
     model_filter: String,
     model_page: usize,
@@ -114,7 +110,6 @@ impl Model {
             depth: 1,
             search_query: String::new(),
             session_cursor: None,
-            delete_target: None,
             pending_media: vec![],
             model_filter: String::new(),
             model_page: 0,
@@ -142,8 +137,6 @@ struct Ui {
     sessions: Entity,
     search: Entity,
     status: Entity,
-    rename: Entity,
-    session_actions: Entity,
     timeline: Entity,
     empty_presence: Entity,
     presence_tail: Entity,
@@ -155,7 +148,6 @@ struct Ui {
     depth: Entity,
     approvals: Entity,
     attachments: Entity,
-    runtime: Entity,
     context: Entity,
     controls: Entity,
     footer: Entity,
@@ -244,8 +236,9 @@ fn button(
         SEND => Some("Send message".into()),
         STOP => Some("Stop response".into()),
         SIDEBAR => Some("Toggle conversation sidebar".into()),
-        DETAILS if title == "Info" => Some("Open work threads".into()),
-        DETAILS => Some("Runtime and conversation details".into()),
+        CONVERSATION_MENU => Some("Conversation actions".into()),
+        DETAILS => Some("Context and sticky notes".into()),
+        RUNTIME => Some("Choose runtime".into()),
         _ => None,
     };
     props.variant = if id == SEND || id == STOP {
@@ -255,7 +248,7 @@ fn button(
     };
     let icon = match (id, title) {
         (SIDEBAR, "Chats") => Some((Icon::PanelLeft, "Toggle conversation sidebar")),
-        (DETAILS, "Info") => Some((Icon::Info, "Open work threads")),
+        (CONVERSATION_MENU, _) => Some((Icon::Ellipsis, "Conversation actions")),
         (TOGGLE_SEARCH, _) => Some((Icon::Search, "Search conversations")),
         (NEW, "New chat") => Some((Icon::Plus, "New chat")),
         (40, "Split") => Some((Icon::PanelLeft, "Split conversation pane")),
@@ -281,7 +274,7 @@ fn button(
     {
         world.get_mut::<Layout>(h.root).unwrap().width = Size::Px(match id {
             SEND | STOP => 54.,
-            DETAILS | SIDEBAR => {
+            DETAILS | SIDEBAR | CONVERSATION_MENU => {
                 if icon.is_some() {
                     32.
                 } else {
@@ -430,56 +423,20 @@ fn setup(world: &mut World) {
     let dock_title = text(
         world,
         dock_header,
-        "Conversation details",
+        "Context & sticky notes",
         Typography::Label,
     )
     .unwrap();
     world.get_mut::<Layout>(dock_title).unwrap().width = Size::Fill;
     button(world, dock_header, DETAILS, "×", true);
-    let session_actions = container(
-        world,
-        Some(details),
-        Layout {
-            width: Size::Fill,
-            gap: 4.,
-            ..Layout::column()
-        },
-    );
-    let rename = world.spawn((
-        Layout {
-            width: Size::Fill,
-            height: Size::Px(30.),
-            ..Layout::column()
-        },
-        Label::new(""),
-        TextField,
-        Focusable,
-        Placeholder::new("Conversation title"),
-    ));
-    set_parent(world, rename, session_actions);
-    for (id, label) in [
-        (RENAME, "Rename"),
-        (FORK, "Fork"),
-        (PIN, "Pin"),
-        (UNPIN, "Unpin"),
-        (DELETE, "Delete"),
-        (DELETE_CONFIRM, "Confirm deletion"),
-        (DELETE_CANCEL, "Keep chat"),
-    ] {
-        button(world, session_actions, id, label, false);
-    }
-    button(world, details, RELOAD, "Reload conversation", true);
     let context = context::setup(world, details);
-    let runtime = runtimes::setup(world, details);
+    runtimes::setup(world);
     let shared = Shared {
         sidebar: sidebar.root,
         sessions,
         search,
         details,
-        rename,
-        session_actions,
         context,
-        runtime,
     };
     let parent = conversations::mount(world, details_split.leading);
     let ui = mount_view(world, parent, shared);
@@ -492,10 +449,7 @@ struct Shared {
     sessions: Entity,
     search: Entity,
     details: Entity,
-    rename: Entity,
-    session_actions: Entity,
     context: Entity,
-    runtime: Entity,
 }
 fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     let Shared {
@@ -503,10 +457,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         sessions,
         search,
         details,
-        rename,
-        session_actions,
         context,
-        runtime,
     } = shared;
     let parent = container(
         world,
@@ -617,6 +568,8 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     let compose = Surface::Raised
         .mount(world, composer_shell, UiId(3))
         .unwrap();
+    // Earlier collaborations: a right-aligned chip under the card.
+    collaboration::place_chip(world, &exchange, composer_shell);
     *world.get_mut::<Layout>(compose.root).unwrap() = Layout {
         width: Size::Fill,
         height: Size::Hug,
@@ -701,7 +654,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     world.get_mut::<Layout>(attachments).unwrap().width = Size::Px(28.);
     // One row of controls inside the card, as every polished composer does:
     // attach · agent · mode · behavior ··· model · send.
-    let runtime_trigger = button(world, controls, DETAILS, "Medousa  ⌄", true);
+    let runtime_trigger = button(world, controls, RUNTIME, "Medousa  ⌄", true);
     fit_trigger(world, runtime_trigger);
     let mode = SingleSelect::mount(
         world,
@@ -917,8 +870,6 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         sessions,
         search,
         status,
-        rename,
-        session_actions,
         timeline,
         empty_presence,
         exchange,
@@ -929,7 +880,6 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         depth,
         approvals,
         attachments,
-        runtime,
         context,
         controls,
         footer,
@@ -1401,10 +1351,7 @@ fn update(world: &mut World) {
             crate::surfaces::SurfaceId::Chat => {}
         }
         conversations::focus_entity(world, intent.entity);
-        if approvals::action(world, &intent)
-            || attachments::action(world, &intent)
-            || runtimes::action(world, &intent)
-        {
+        if approvals::action(world, &intent) || attachments::action(world, &intent) {
             continue;
         }
         if collaboration::action(world, &intent) {
@@ -1478,6 +1425,27 @@ fn action(world: &mut World, id: u64) {
         DETAILS => {
             let m = world.resource_mut::<Model>().unwrap();
             m.details_open = !m.details_open;
+            if m.details_open {
+                context::expand(world);
+            }
+        }
+        CONVERSATION_MENU => {
+            if let Some(anchor) = chrome::conversation_button(world) {
+                chat_sidebar::conversation_menu(world, anchor);
+            }
+        }
+        RUNTIME => {
+            let session = world
+                .resource::<Model>()
+                .unwrap()
+                .chat
+                .session()
+                .map(str::to_owned);
+            if let Some(session) = session {
+                let label = format!("{}  ⌄", runtimes::label(world, Some(&session)));
+                let chip = button(world, ui.controls, RUNTIME, &label, true);
+                runtimes::open(world, chip.root, &session);
+            }
         }
         MODEL_SEARCH => {
             close_popup(world, ui.behavior, true);
@@ -1512,53 +1480,6 @@ fn action(world: &mut World, id: u64) {
                     },
                 );
             }
-        }
-        RENAME | FORK | PIN | UNPIN | DELETE | DELETE_CONFIRM | DELETE_CANCEL => {
-            let m = world.resource::<Model>().unwrap();
-            if m.loading {
-                return;
-            }
-            let Some(session) = m.chat.session().map(str::to_owned) else {
-                return;
-            };
-            let command = match id {
-                RENAME => {
-                    let title = world
-                        .get::<Label>(ui.rename)
-                        .unwrap()
-                        .text
-                        .trim()
-                        .to_owned();
-                    if title.is_empty() {
-                        return;
-                    }
-                    Command::Rename { session, title }
-                }
-                FORK => Command::Fork(session),
-                PIN | UNPIN => Command::Pin {
-                    session,
-                    pinned: id == PIN,
-                },
-                DELETE => {
-                    world.resource_mut::<Model>().unwrap().delete_target = Some(session);
-                    return;
-                }
-                DELETE_CANCEL => {
-                    world.resource_mut::<Model>().unwrap().delete_target = None;
-                    return;
-                }
-                _ => {
-                    let Some(target) = world.resource_mut::<Model>().unwrap().delete_target.take()
-                    else {
-                        return;
-                    };
-                    if target != session {
-                        return;
-                    }
-                    Command::Delete(target)
-                }
-            };
-            dispatch(world, command);
         }
         MODEL_PREV | MODEL_NEXT => {
             let m = world.resource_mut::<Model>().unwrap();
@@ -2012,7 +1933,9 @@ fn sync(world: &mut World) {
         world.remove::<Hidden>(ui.status);
     }
     approvals::sync(world, ui.approvals, m.chat.session(), m.chat.snapshot());
-    runtimes::sync(world, ui.runtime, m.chat.session());
+    runtimes::show(world, m.chat.session());
+    let chip = format!("{}  ⌄", runtimes::label(world, m.chat.session()));
+    button(world, ui.controls, RUNTIME, &chip, true);
     context::sync(world, ui.context, m.chat.session());
     let refresh = world
         .resource::<Model>()
@@ -2218,30 +2141,6 @@ fn sync(world: &mut World) {
         world.insert(stop.root, Hidden);
     }
     let selected_session = m.chat.session();
-    let enabled = selected_session.is_some() && !m.loading;
-    for (key, title) in [
-        (RENAME, "Rename"),
-        (FORK, "Fork"),
-        (PIN, "Pin"),
-        (UNPIN, "Unpin"),
-        (DELETE, "Delete"),
-    ] {
-        button(world, ui.session_actions, key, title, enabled);
-    }
-    let confirming = world.resource::<Model>().unwrap().delete_target.as_deref()
-        == selected_session
-        && selected_session.is_some();
-    for (key, title) in [
-        (DELETE_CONFIRM, "Confirm deletion"),
-        (DELETE_CANCEL, "Keep chat"),
-    ] {
-        let h = button(world, ui.session_actions, key, title, confirming);
-        if confirming {
-            world.remove::<Hidden>(h.root);
-        } else {
-            world.insert(h.root, Hidden);
-        }
-    }
     let more = button(
         world,
         world.get::<Parent>(ui.sessions).unwrap().entity,
@@ -2827,7 +2726,7 @@ mod tests {
         assert!((after - before - 50.).abs() < 2., "{before} -> {after}");
     }
     #[test]
-    fn workspace_details_actions_fit_in_the_dock() {
+    fn workspace_details_dock_fits_beside_the_composer() {
         let (mut app, _rx) = idle_fixture();
         action(app.world_mut(), DETAILS);
         for _ in 0..8 {
@@ -2838,11 +2737,6 @@ mod tests {
         assert!(
             dock.w >= 280. && dock.h > 700. && dock.x + dock.w <= 1201.,
             "{dock:?}"
-        );
-        let rename = app.world().get::<Rect>(ui.rename).unwrap();
-        assert!(
-            rename.x >= dock.x && rename.x + rename.w <= dock.x + dock.w,
-            "{rename:?}, {dock:?}"
         );
         let compose = app.world().get::<Rect>(ui.compose).unwrap();
         assert!(

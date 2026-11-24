@@ -16,6 +16,8 @@ const ROW_DELETE: u64 = 0x5347_1004;
 const ROW_FORK: u64 = 0x5347_1005;
 const ROW_CONFIRM: u64 = 0x5347_1006;
 const ROW_CANCEL: u64 = 0x5347_1007;
+const ROW_RELOAD: u64 = 0x5347_1008;
+const ROW_CONTEXT: u64 = 0x5347_1009;
 #[derive(Clone)]
 struct RowTarget {
     session: String,
@@ -32,20 +34,17 @@ struct RowDialog {
     field: Option<Entity>,
     target: RowTarget,
 }
+/// A row's session is still listed, or is the open conversation (which may
+/// sit beyond the loaded page of history), under the same authority.
 fn target_current(world: &World, target: &RowTarget) -> bool {
+    let known = world.resource::<Model>().is_some_and(|m| {
+        m.sessions.iter().any(|r| r.0 == target.session)
+            || m.chat.session() == Some(target.session.as_str())
+    });
     if let Some(key) = crate::routing::SessionKey::parse(&target.session) {
-        return key.authority == target.authority
-            && world
-                .resource::<Model>()
-                .is_some_and(|m| m.sessions.iter().any(|r| r.0 == target.session));
+        return key.authority == target.authority && known;
     }
-    scope(world).as_deref() == Some(target.authority.as_str())
-        && world
-            .resource::<Model>()
-            .unwrap()
-            .sessions
-            .iter()
-            .any(|r| r.0 == target.session)
+    scope(world).as_deref() == Some(target.authority.as_str()) && known
 }
 /// Read the existing RNDR context gesture/menu events; no competing input system.
 /// Invoked by the conversation event pass, including keyboard Menu/Shift+F10.
@@ -88,6 +87,8 @@ pub(super) fn input(world: &mut World) {
             ROW_RENAME | ROW_DELETE => {
                 dialog(world, menu.anchor, menu.target, event.item == ROW_RENAME)
             }
+            ROW_RELOAD => super::action(world, RELOAD),
+            ROW_CONTEXT => super::action(world, DETAILS),
             _ => {}
         }
     }
@@ -98,25 +99,8 @@ pub(super) fn input(world: &mut World) {
         if !target_current(world, &target) {
             continue;
         }
-        let ready = world.resource::<State>().unwrap().pins_ready;
-        let entries = [
-            MenuItem::new(ROW_OPEN, "Open conversation").into(),
-            MenuItem::new(
-                ROW_PIN,
-                if pinned(world, &target.session) {
-                    "Unpin conversation"
-                } else {
-                    "Pin conversation"
-                },
-            )
-            .enabled(ready)
-            .into(),
-            MenuItem::new(ROW_RENAME, "Rename conversation…").into(),
-            MenuItem::new(ROW_FORK, "Fork conversation").into(),
-            MenuItem::new(ROW_DELETE, "Delete conversation…")
-                .danger()
-                .into(),
-        ];
+        let mut entries = vec![MenuItem::new(ROW_OPEN, "Open conversation").into()];
+        entries.extend(session_entries(world, &target));
         if let Ok(handle) = open_menu(world, event.entity, MenuAt::Point(event.at), &entries) {
             world.resource_mut::<State>().unwrap().menu = Some(RowMenu {
                 handle,
@@ -124,6 +108,70 @@ pub(super) fn input(world: &mut World) {
                 anchor: event.entity,
             });
         }
+    }
+}
+/// Pin, rename, fork and delete, shared by a row's context menu and the
+/// open conversation's menu so both read and behave the same.
+fn session_entries(world: &World, target: &RowTarget) -> Vec<rndr_ui::menu::MenuEntry> {
+    let ready = world.resource::<State>().unwrap().pins_ready;
+    vec![
+        MenuItem::new(
+            ROW_PIN,
+            if pinned(world, &target.session) {
+                "Unpin conversation"
+            } else {
+                "Pin conversation"
+            },
+        )
+        .enabled(ready)
+        .into(),
+        MenuItem::new(ROW_RENAME, "Rename conversation…").into(),
+        MenuItem::new(ROW_FORK, "Fork conversation").into(),
+        MenuItem::new(ROW_DELETE, "Delete conversation…")
+            .danger()
+            .into(),
+    ]
+}
+/// The open conversation's menu, from the window band's ⋯ button.
+pub(super) fn conversation_menu(world: &mut World, anchor: Entity) {
+    ensure(world);
+    let Some(session) = world
+        .resource::<Model>()
+        .and_then(|m| m.chat.session().map(str::to_owned))
+    else {
+        return;
+    };
+    let Some(authority) = crate::routing::SessionKey::parse(&session)
+        .map(|k| k.authority)
+        .or_else(|| scope(world))
+    else {
+        return;
+    };
+    let target = RowTarget { session, authority };
+    if !target_current(world, &target) {
+        return;
+    }
+    if let Some(old) = world.resource_mut::<State>().unwrap().menu.take() {
+        old.handle.close(world);
+    }
+    let details = world.resource::<Model>().unwrap().details_open;
+    let mut entries = session_entries(world, &target);
+    let delete = entries.pop().unwrap();
+    entries.extend([
+        MenuItem::new(ROW_RELOAD, "Reload conversation").into(),
+        rndr_ui::menu::MenuEntry::Separator,
+        MenuItem::new(ROW_CONTEXT, "Context & sticky notes")
+            .checked(details)
+            .into(),
+        rndr_ui::menu::MenuEntry::Separator,
+        delete,
+    ]);
+    if let Ok(handle) = open_menu(world, anchor, MenuAt::Below, &entries) {
+        world.resource_mut::<State>().unwrap().menu = Some(RowMenu {
+            handle,
+            target,
+            anchor,
+        });
     }
 }
 fn dialog(world: &mut World, anchor: Entity, target: RowTarget, rename: bool) {
@@ -647,6 +695,8 @@ pub(super) fn render(
                     40.
                 });
             world.insert(h.root, Radius(visual::CONTROL_RADIUS));
+            // The selected fill is enough; the edge bar read as a second cue.
+            world.insert(h.root, controls::QuietSelection);
             let row_authority = crate::routing::SessionKey::parse(id)
                 .map(|k| k.authority)
                 .or_else(|| authority.clone());
@@ -727,6 +777,34 @@ mod tests {
             .hydrate(session.into(), authority.into(), vec![], None)
             .unwrap();
         app.update();
+    }
+    #[test]
+    fn open_conversation_menu_holds_its_actions_and_rows_select_by_fill() {
+        let mut app = fixture();
+        hydrate(&mut app, "today", "authority-a");
+        for _ in 0..3 {
+            app.update();
+        }
+        assert!(
+            app.world()
+                .has::<controls::QuietSelection>(row(app.world(), 0, 0))
+        );
+        let anchor = crate::ui::chrome::conversation_button(app.world()).unwrap();
+        conversation_menu(app.world_mut(), anchor);
+        app.update();
+        let w = app.world();
+        let menu = w.resource::<State>().unwrap().menu.as_ref().unwrap().handle;
+        for id in [
+            ROW_PIN,
+            ROW_RENAME,
+            ROW_FORK,
+            ROW_RELOAD,
+            ROW_CONTEXT,
+            ROW_DELETE,
+        ] {
+            assert!(menu.item(w, id).is_some(), "{id:x}");
+        }
+        assert!(menu.item(w, ROW_OPEN).is_none(), "already open");
     }
     #[test]
     fn pins_are_a_separate_scoped_destination_and_do_not_navigate_or_send() {

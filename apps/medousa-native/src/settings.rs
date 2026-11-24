@@ -827,6 +827,23 @@ pub(crate) fn show_connection_fixture(w: &mut World) {
     }
 }
 
+/// Show Settings → Packages, where unavailable runtimes are installed.
+pub(crate) fn show_packages(w: &mut World) {
+    show(w, Section::Packages);
+}
+/// Show Settings → Connection, for the workshop connection's status.
+pub(crate) fn show_connection(w: &mut World) {
+    show(w, Section::Connection);
+}
+fn show(w: &mut World, section: Section) {
+    crate::surfaces::select(w, crate::surfaces::SurfaceId::Settings);
+    let id = next();
+    if let Some(s) = state_mut(w) {
+        s.actions.insert(id, Action::Section(section));
+    }
+    action(w, &HostIntent::Command(id));
+}
+
 #[cfg(test)]
 pub(crate) fn workshop_label_fixture(w: &World) -> Option<String> {
     state(w)?.workshop.as_ref().map(|s| s.label.clone())

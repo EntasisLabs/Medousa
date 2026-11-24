@@ -190,6 +190,10 @@ fn label(world: &mut World, parent: Entity, text: &str) -> Entity {
     set_parent(world, e, parent);
     e
 }
+/// Seat the earlier-collaborations chip in its row under the composer.
+pub(super) fn place_chip(world: &mut World, view: &View, parent: Entity) {
+    set_parent(world, view.earlier, parent);
+}
 pub(crate) fn selected(world: &World) -> Option<&str> {
     world.resource::<Model>()?.collaboration.selected.as_deref()
 }
@@ -204,21 +208,30 @@ pub(crate) fn open(world: &mut World, id: String, origin: Entity) {
     state.refreshed = None;
     state.peers.refreshed = None;
     state.reply_notice = None;
+    state.earlier_open = false;
     close_popup(world, ui.behavior, false);
+    close_popup(world, ui.exchange.earlier_rows, false);
     visible(world, ui.exchange.root, true);
     world.resource_mut::<Focus>().unwrap().entity = Some(ui.exchange.back);
 }
 
 pub(super) fn mount(world: &mut World, parent: Entity, thread_parent: Entity) -> View {
+    // Collaborations with no place in the transcript are an index, not a
+    // message: a chip under the composer opens them in a popup.
     let earlier = container(
         world,
         Some(parent),
         Layout {
             width: Size::Fill,
             height: Size::Hug,
-            padding: 8.,
-            gap: 4.,
-            ..Layout::column()
+            ..Layout::row()
+        },
+    );
+    world.insert(
+        earlier,
+        Align {
+            items: Items::Center,
+            justify: Justify::End,
         },
     );
     world.insert(earlier, Hidden);
@@ -239,12 +252,44 @@ pub(super) fn mount(world: &mut World, parent: Entity, thread_parent: Entity) ->
     );
     let earlier_rows = container(
         world,
-        Some(earlier),
+        None,
         Layout {
-            width: Size::Fill,
+            width: Size::Px(380.),
             height: Size::Hug,
+            padding: 8.,
             gap: 4.,
             ..Layout::column()
+        },
+    );
+    world.insert(earlier_rows, Hidden);
+    world.insert(
+        earlier_rows,
+        AnchoredPopup {
+            anchor: earlier_button.root,
+            max_height: 480.,
+            closed: |world, _| {
+                if let Some(m) = world.resource_mut::<Model>() {
+                    m.collaboration.earlier_open = false;
+                }
+            },
+        },
+    );
+    world.insert(earlier_rows, PopupPlacement::Below);
+    visual::plane(world, earlier_rows, visual::raised());
+    world.insert(earlier_rows, Radius(visual::CONTROL_RADIUS));
+    world.insert(
+        earlier_rows,
+        Border {
+            color: visual::color(world, visual::stroke()),
+            width: 1.,
+        },
+    );
+    world.insert(earlier_rows, visual::SemanticBorder(visual::stroke()));
+    world.insert(
+        earlier_rows,
+        Semantics {
+            name: Some("Earlier collaborations".into()),
+            ..Default::default()
         },
     );
     let root = container(
@@ -572,13 +617,10 @@ fn anchor<'a>(snapshot: &'a ChatSnapshot, row: &WorkCardDetail) -> Option<&'a st
         .map(|item| item.id.as_str())
 }
 fn marker(world: &mut World, parent: Entity, row: &WorkCardDetail, earlier: bool) {
+    // Inside the earlier-collaborations popup the heading already says so.
     let text = format!(
         "{}{} · {}  ›",
-        if earlier {
-            "Earlier collaboration · "
-        } else {
-            "Working with "
-        },
+        if earlier { "" } else { "Working with " },
         title(row),
         lifecycle(row)
     );
@@ -803,19 +845,37 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
     let peer_count = peers::markers(world, ui, snapshot, &state.peers, false, state.earlier_open);
     earlier |= peer_count > 0;
     visible(world, ui.exchange.earlier, earlier);
-    visible(world, ui.exchange.earlier_rows, state.earlier_open);
+    let shown = !world.has::<Hidden>(ui.exchange.earlier_rows);
+    let popup = ui.exchange.earlier_rows;
+    let opened = state.earlier_open && earlier && !shown && open_popup(world, popup);
+    // A popup stays open only while focus is inside it, including after a
+    // dismiss or restore rebuilds the control that had it.
+    let focus = world.resource::<Focus>().and_then(|f| f.entity);
+    let inside =
+        focus.is_some_and(|e| world.is_alive(e) && crate::surfaces::descendant(world, e, popup));
+    if opened || (state.earlier_open && shown && !inside) {
+        let mut stack = children_of(world, popup);
+        stack.reverse();
+        while let Some(e) = stack.pop() {
+            if request_focus(world, e) {
+                break;
+            }
+            let mut children = children_of(world, e);
+            children.reverse();
+            stack.extend(children);
+        }
+    } else if !state.earlier_open && shown {
+        close_popup(world, ui.exchange.earlier_rows, false);
+    }
     let count = rows
         .iter()
         .filter(|row| anchor(snapshot, row).is_none())
         .count()
         + peer_count;
-    let earlier_text = format!("Earlier collaborations ({count})");
-    if let Some(face) = world
-        .get::<Parent>(ui.exchange.earlier_label)
-        .map(|p| p.entity)
-    {
-        crate::native_style::disclosure(world, face, face, state.earlier_open);
-    }
+    let earlier_text = format!(
+        "{count} earlier collaboration{}",
+        if count == 1 { "" } else { "s" }
+    );
     // RNDR republishes a button's label from its props, so update through
     // the control rather than its Label.
     if world.get::<Label>(ui.exchange.earlier_label).unwrap().text != earlier_text {

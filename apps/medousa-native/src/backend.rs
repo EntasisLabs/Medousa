@@ -30,10 +30,6 @@ pub enum Command {
     },
     Delete(String),
     Fork(String),
-    Pin {
-        session: String,
-        pinned: bool,
-    },
     Open(String),
     Collaboration {
         session: String,
@@ -195,7 +191,6 @@ impl Command {
         let session = match self {
             Self::Open(s) | Self::Delete(s) | Self::Fork(s) | Self::SetMode(s, _) => s,
             Self::Rename { session, .. }
-            | Self::Pin { session, .. }
             | Self::Collaboration { session, .. }
             | Self::PeerCollaboration { session, .. }
             | Self::ThreadReply { session, .. } => session,
@@ -208,7 +203,6 @@ impl Command {
         let session = match &mut self {
             Self::Open(s) | Self::Delete(s) | Self::Fork(s) | Self::SetMode(s, _) => Some(s),
             Self::Rename { session, .. }
-            | Self::Pin { session, .. }
             | Self::Collaboration { session, .. }
             | Self::PeerCollaboration { session, .. }
             | Self::ThreadReply { session, .. } => Some(session),
@@ -868,12 +862,6 @@ pub(crate) async fn serve(
                     }
                 }),
             Command::Fork(session) => fork(&client, &session).await,
-            // Tauri pins are local-storage UI preferences, not daemon session
-            // facts. Never invent a pin route or falsely acknowledge a write.
-            Command::Pin { session, pinned } => Ok(Update::Notice(format!(
-                "{} {session}: pinning is a local UI preference; no daemon pin endpoint is available.",
-                if pinned { "Pin" } else { "Unpin" }
-            ))),
             Command::Collaboration { .. }
             | Command::PeerCollaboration { .. }
             | Command::ThreadReply { .. } => {
