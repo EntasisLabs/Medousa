@@ -825,11 +825,28 @@ pub fn action_icons(world: &mut World) {
         let mut fixed = false;
         while let Some(e) = node {
             if world.has::<rndr_core::Button>(e) {
+                // Compact icon buttons become the standard square, so every
+                // view's hover fill has one shape and margin.
+                if let Some(layout) = world.get_mut::<Layout>(e) {
+                    let square = Size::Px(ACTION_SIZE);
+                    if matches!(layout.width, Size::Px(w) if (24. ..=ACTION_SIZE).contains(&w))
+                        && !matches!(layout.height, Size::Px(h) if h > ACTION_SIZE)
+                        && (layout.width != square || layout.height != square)
+                    {
+                        layout.width = Size::Px(ACTION_SIZE);
+                        layout.height = Size::Px(ACTION_SIZE);
+                    }
+                }
                 fixed = world.get::<Layout>(e).is_some_and(|l| {
                     matches!(l.height, Size::Px(_)) && matches!(l.width, Size::Px(_))
                 });
                 if fixed {
                     world.insert(e, Align::center());
+                    if let Some(layout) = world.get_mut::<Layout>(e) {
+                        if layout.padding != 0. {
+                            layout.padding = 0.;
+                        }
+                    }
                 }
                 break;
             }

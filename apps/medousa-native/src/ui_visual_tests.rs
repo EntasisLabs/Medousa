@@ -1138,7 +1138,7 @@ fn command_palette_visual_acceptance() {
 }
 
 #[test]
-fn icon_buttons_centre_their_glyph_in_the_hover_face() {
+fn icon_buttons_are_one_square_shape_with_a_centred_glyph() {
     let (mut app, _rx) = fixture();
     for surface in [
         crate::surfaces::SurfaceId::Chat,
@@ -1180,6 +1180,18 @@ fn icon_buttons_centre_their_glyph_in_the_hover_face() {
                 continue;
             }
             assert_eq!((l.w, l.h), (visual::ACTION_ICON, visual::ACTION_ICON));
+            // One shape everywhere: compact actions are the standard square.
+            // (A tab's close glyph is smaller and belongs to its tab.)
+            if r.w >= 24.
+                && w.get::<Semantics>(root).and_then(|s| s.name.as_deref()) != Some("Send message")
+            {
+                assert_eq!(
+                    (r.w, r.h),
+                    (visual::ACTION_SIZE, visual::ACTION_SIZE),
+                    "{surface:?} {:?}",
+                    w.get::<Semantics>(root).and_then(|s| s.name.clone())
+                );
+            }
             let dx = (l.x + l.w / 2.) - (r.x + r.w / 2.);
             let dy = (l.y + l.h / 2.) - (r.y + r.h / 2.);
             assert!(

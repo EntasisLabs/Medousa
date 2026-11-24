@@ -138,6 +138,8 @@ pub fn sync(world: &mut World, root: Entity, session: Option<&str>) {
         controls::IconButton::icon(world, root, UiId(PICK), Icon::Plus, "Attach files", props)
             .expect("attachment control");
     world.get_mut::<LabelBox>(pick.label).unwrap().inset_x = 0.;
+    // The standard square action; the shared icon pass sizes its face.
+    world.get_mut::<Layout>(pick.root).unwrap().width = Size::Px(crate::native_style::ACTION_SIZE);
     crate::native_style::action_hint(world, pick.root, "Attach files");
     for item in items {
         let row = world.spawn((Layout {

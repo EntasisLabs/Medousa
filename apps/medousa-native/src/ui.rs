@@ -277,9 +277,13 @@ fn button(
             SEND | STOP => 54.,
             DETAILS | SIDEBAR | CONVERSATION_MENU => {
                 // Square, like the band's other icon buttons.
-                if icon.is_some() { 28. } else { 64. }
+                if icon.is_some() {
+                    visual::ACTION_SIZE
+                } else {
+                    64.
+                }
             }
-            40 | 41 | NEW | TOGGLE_SEARCH | BEHAVIOR => 28.,
+            40 | 41 | NEW | TOGGLE_SEARCH | BEHAVIOR => visual::ACTION_SIZE,
             MODEL_PREV | MODEL_NEXT => 70.,
             MODEL_SEARCH => 150.,
             _ => 90.,
@@ -649,7 +653,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         },
     );
     let attachments = attachments::setup(world, controls, attachment_tray);
-    world.get_mut::<Layout>(attachments).unwrap().width = Size::Px(28.);
+    world.get_mut::<Layout>(attachments).unwrap().width = Size::Px(visual::ACTION_SIZE);
     // One row of controls inside the card, as every polished composer does:
     // attach · agent · mode · behavior ··· model · send.
     let runtime_trigger = button(world, controls, RUNTIME, "Medousa  ⌄", true);
