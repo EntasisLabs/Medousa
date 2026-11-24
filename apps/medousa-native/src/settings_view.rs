@@ -1638,12 +1638,330 @@ fn external_agents(w: &mut World, s: &mut State, body: Entity) {
                 button(w, line, s, "Cancel", Action::CancelRemove, true);
             }
         }
+        match s.conv_form.clone() {
+            Some(form) if form.provider == provider => conversation_form(w, s, body, &form, title),
+            _ => {
+                let row = panel(
+                    w,
+                    body,
+                    Layout {
+                        width: Size::Hug,
+                        height: Size::Hug,
+                        ..Layout::row()
+                    },
+                );
+                named_button(
+                    w,
+                    row,
+                    s,
+                    if provider == ExternalProvider::GrokBot {
+                        "Add bot"
+                    } else {
+                        "Add session"
+                    },
+                    format!("Add {title}"),
+                    Action::ConversationAdd(provider),
+                    true,
+                );
+            }
+        }
     }
-    quiet(
+}
+
+/// Adds one conversation, after medousa-home's: Grok and Dots take their
+/// details; Muse and Instinct go through the linked WhatsApp.
+fn conversation_form(
+    w: &mut World,
+    s: &mut State,
+    body: Entity,
+    form: &super::external::ConvForm,
+    title: &str,
+) {
+    let p = panel(
         w,
         body,
-        "Adding a conversation isn’t in this app yet; add one in the original Medousa app.",
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            padding: 12.,
+            ..Layout::column()
+        },
     );
+    let grok = form.provider == ExternalProvider::GrokBot;
+    field(
+        w,
+        p,
+        s,
+        "conv.label",
+        if grok { "Bot label" } else { "Session name" },
+        "",
+        "",
+        false,
+    );
+    match form.provider {
+        ExternalProvider::Dots => {
+            quiet(
+                w,
+                p,
+                "Add your dot and the Medousa Slack app to a dedicated channel. The outgoing user token must belong to the dot’s owner and have chat:write access. The Slack adapter is set up under Sharing → Channels.",
+            );
+            field(
+                w,
+                p,
+                s,
+                "conv.target",
+                "Slack channel ID",
+                "",
+                "C0123456789",
+                false,
+            );
+            field(
+                w,
+                p,
+                s,
+                "conv.dot_user",
+                "Dot Slack member or bot ID",
+                "",
+                "U0123456789",
+                false,
+            );
+            field(
+                w,
+                p,
+                s,
+                "conv.slack_token",
+                "Your Slack user token",
+                "",
+                "xoxp-…",
+                true,
+            );
+        }
+        ExternalProvider::GrokBot => {
+            field(w, p, s, "conv.target", "Bot name", "", "", false);
+            field(
+                w,
+                p,
+                s,
+                "conv.webhook_url",
+                "Webhook POST URL",
+                "",
+                "https://…",
+                false,
+            );
+            field(w, p, s, "conv.webhook_key", "Webhook key", "", "", true);
+        }
+        _ => whatsapp_part(w, s, p, form),
+    }
+    let row = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    let saving = form.saving.is_some();
+    let ready = form.provider != ExternalProvider::Muse
+        || form
+            .discovery
+            .as_ref()
+            .is_some_and(|d| d.observed_chat_jid.is_some());
+    named_button(
+        w,
+        row,
+        s,
+        if saving { "Connecting…" } else { "Connect" },
+        format!("Connect {title}"),
+        Action::ConversationSave,
+        !saving && ready,
+    );
+    named_button(
+        w,
+        row,
+        s,
+        "Cancel",
+        format!("Cancel adding {title}"),
+        Action::ConversationCancel,
+        !saving,
+    );
+    if !form.note.is_empty() {
+        let note = form.note.clone();
+        label(w, p, &note, Typography::Label);
+    }
+}
+
+/// The linked WhatsApp for Muse and Instinct: its pairing QR or state, then
+/// Instinct's number or Muse's chat discovery.
+fn whatsapp_part(w: &mut World, s: &mut State, p: Entity, form: &super::external::ConvForm) {
+    use medousa_types::ExternalWhatsAppPairingState as Wa;
+    let local = s.local();
+    quiet(
+        w,
+        p,
+        &format!(
+            "Uses the WhatsApp adapter from Packages, set up under Sharing → Channels with deliver bind 127.0.0.1:7423. {}",
+            if local {
+                "Medousa starts it when you add a session."
+            } else {
+                "Start the adapter on the workshop machine."
+            }
+        ),
+    );
+    match form
+        .pairing
+        .as_ref()
+        .map(|r| (&r.pairing, &r.adapter_error))
+    {
+        Some((Ok(pairing), adapter_error)) => {
+            match (pairing.state, &pairing.qr) {
+                (Wa::QrReady, Some((qw, qh, rgba))) => {
+                    if s.wa_loaded != s.wa_image {
+                        let _ = rndr_render::load_rgba(w, s.wa_image, *qw, *qh, rgba.clone());
+                        s.wa_loaded = s.wa_image;
+                    }
+                    let mat = w.spawn((
+                        Layout {
+                            width: Size::Px(244.),
+                            height: Size::Px(244.),
+                            padding: 12.,
+                            ..Layout::column()
+                        },
+                        Color::rgba(1., 1., 1., 1.),
+                        Radius(14.),
+                    ));
+                    set_parent(w, mat, p);
+                    let image = w.spawn((
+                        Layout {
+                            width: Size::Px(220.),
+                            height: Size::Px(220.),
+                            ..Layout::column()
+                        },
+                        ImageView::new(s.wa_image),
+                        Semantics {
+                            name: Some("WhatsApp Linked Devices pairing QR".into()),
+                            ..Default::default()
+                        },
+                    ));
+                    set_parent(w, image, mat);
+                    quiet(
+                        w,
+                        p,
+                        "On your phone: WhatsApp → Settings → Linked Devices → Link a Device, then scan this. It refreshes when it expires.",
+                    );
+                }
+                (Wa::Connected, _) => {
+                    label(
+                        w,
+                        p,
+                        if form.provider == ExternalProvider::Muse {
+                            "WhatsApp linked. Find the Muse chat below."
+                        } else {
+                            "WhatsApp linked. Enter Instinct’s international number below."
+                        },
+                        Typography::Label,
+                    );
+                }
+                (Wa::LoggedOut, _) => {
+                    label(
+                        w,
+                        p,
+                        "WhatsApp signed out. Save WhatsApp again under Sharing → Channels to restart the adapter and get a new QR.",
+                        Typography::Label,
+                    );
+                }
+                _ => {
+                    quiet(
+                        w,
+                        p,
+                        "Waiting for the workshop’s WhatsApp pairing QR. If WhatsApp is already linked and this stays blank, update the WhatsApp adapter in Packages and restart it.",
+                    );
+                }
+            }
+            if let Some(e) = adapter_error {
+                label(
+                    w,
+                    p,
+                    &format!("The WhatsApp adapter couldn’t start: {e}"),
+                    Typography::Label,
+                );
+            }
+        }
+        Some((Err(e), _)) => {
+            quiet(w, p, &format!("Pairing status unavailable: {e}"));
+        }
+        None => {
+            quiet(w, p, "Checking WhatsApp…");
+        }
+    }
+    if form.provider == ExternalProvider::Instinct {
+        field(
+            w,
+            p,
+            s,
+            "conv.target",
+            "Instinct WhatsApp phone number",
+            "Include the country code.",
+            "+1 555 123 4567",
+            false,
+        );
+        return;
+    }
+    let row = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    let looking = form.discovery_reading.is_none();
+    button(
+        w,
+        row,
+        s,
+        if form.discovery.is_some() {
+            "Restart discovery"
+        } else {
+            "Find Muse chat"
+        },
+        Action::MuseFind,
+        looking,
+    );
+    if let Some(d) = form.discovery.clone() {
+        if d.observed_chat_jid.is_none() {
+            button(w, row, s, "Check for code", Action::MuseCheck, looking);
+        }
+        let code = label(w, p, &d.challenge, Typography::Emphasis);
+        w.insert(
+            code,
+            TextStyle {
+                family: "monospace".into(),
+                ..Default::default()
+            },
+        );
+        quiet(
+            w,
+            p,
+            &format!(
+                "Send this code in your Muse chat on WhatsApp: {}",
+                d.challenge
+            ),
+        );
+        quiet(
+            w,
+            p,
+            if d.observed_chat_jid.is_some() {
+                "Chat ID observed. This does not verify delivery to Muse."
+            } else {
+                "Waiting for the linked adapter to see your code. Discovery expires after five minutes."
+            },
+        );
+    }
 }
 
 fn mcp(w: &mut World, s: &mut State, body: Entity) {

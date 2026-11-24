@@ -579,6 +579,20 @@ pub fn sync(daemon_url: &str) -> Result<(), String> {
     }
 }
 
+/// Starts the WhatsApp adapter if it isn't running, for a conversation that
+/// pairs through it, as medousa-home's `messaging_ensure_whatsapp_adapter`.
+pub fn ensure_whatsapp(daemon_url: &str) -> Result<(), String> {
+    let dir = data_dir();
+    if adapter_running(&dir, "whatsapp") {
+        return Ok(());
+    }
+    let s = summary();
+    if !should_run(&s, "whatsapp") {
+        return Err("Configure WhatsApp in Settings → Sharing → Channels first.".into());
+    }
+    start(&dir, "whatsapp", daemon_url, &s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

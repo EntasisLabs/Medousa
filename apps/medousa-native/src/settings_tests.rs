@@ -197,7 +197,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,mcp-add,accounts,external,runtime,runtime-lists,sharing,channels,providers}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,mcp-add,accounts,external,conversation-add,runtime,runtime-lists,sharing,channels,providers}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -371,7 +371,8 @@ fn settings_visual_acceptance() {
             });
             s.drafts.insert("mcp.id", "linear".into());
             s.drafts.insert("mcp.title", "Linear".into());
-            s.drafts.insert("mcp.url", "https://mcp.linear.app/mcp".into());
+            s.drafts
+                .insert("mcp.url", "https://mcp.linear.app/mcp".into());
             s.drafts.insert("mcp.token", "lin_api_secret".into());
             s.redraw = true;
         });
@@ -435,6 +436,51 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "external");
+        with_state(app.world_mut(), |_, s| {
+            use medousa_types::{ExternalWhatsAppPairingState as Wa, ExternalWhatsAppPairingStatus};
+            // A checkerboard stands in for WhatsApp's QR.
+            let mut cells = String::new();
+            for y in 0..21 {
+                for x in 0..21 {
+                    if (x * 7 + y * 3) % 5 < 2 {
+                        cells.push_str(&format!(r#"<rect x="{x}" y="{y}" width="1" height="1"/>"#));
+                    }
+                }
+            }
+            let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21">{cells}</svg>"#);
+            let mut form = external::ConvForm::new(medousa_types::ExternalProvider::Muse);
+            form.pairing = Some(external::PairingRead {
+                pairing: Ok(external::pairing(ExternalWhatsAppPairingStatus {
+                    state: Wa::QrReady,
+                    qr_svg: Some(svg),
+                    expires_at: Some(chrono::Utc::now() + chrono::Duration::seconds(60)),
+                })),
+                adapter_error: None,
+            });
+            form.discovery = Some(medousa_types::ExternalMuseDiscoveryStatus {
+                challenge: "MDS-7Q4K".into(),
+                observed_chat_jid: None,
+                expires_at: chrono::Utc::now() + chrono::Duration::seconds(300),
+            });
+            s.conv_form = Some(form);
+            s.wa_image += 1;
+            s.agent_note.clear();
+            s.drafts.insert("conv.label", "Muse".into());
+            s.redraw = true;
+        });
+        rndr_paint::frame(&mut app);
+        let body = state(app.world()).unwrap().body;
+        let scroll = app.world().get::<Parent>(body).unwrap().entity;
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., -900.];
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "conversation-add");
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., 0.];
+        with_state(app.world_mut(), |_, s| {
+            s.conv_form = None;
+            s.forget_fields(&external::CONV_FIELDS);
+        });
         with_state(app.world_mut(), |_, s| {
             s.section = Section::Runtime;
             s.defaults = Some(serde_json::json!({
@@ -1916,4 +1962,162 @@ fn editing_a_remote_server_fills_the_form_and_keeps_its_token_hidden() {
     );
     click(&mut app, "Cancel server");
     assert!(state(app.world()).unwrap().mcp_form.is_none());
+}
+
+fn conversations_open(kind: &str) -> App {
+    let mut app = external_open(kind);
+    app.world_mut().insert_resource(Viewport::new(1200., 3000.));
+    click(&mut app, "Muse, Instinct, Dots & Grok");
+    app
+}
+
+#[test]
+fn adding_a_grok_bot_shows_its_callback_key_once() {
+    let mut app = conversations_open("local");
+    click(&mut app, "Add Grok Bot");
+    for (name, text) in [
+        ("Bot label", "Routines"),
+        ("Bot name", "routine-bot"),
+        ("Webhook POST URL", "https://x.ai/hook"),
+        ("Webhook key", "wk-secret"),
+    ] {
+        click(&mut app, name);
+        type_text(&mut app, text);
+    }
+    assert!(
+        app.world()
+            .has::<Secure>(named(app.world(), "Webhook key").unwrap())
+    );
+    click(&mut app, "Connect Grok Bot");
+    let serial = state(app.world())
+        .unwrap()
+        .conv_form
+        .as_ref()
+        .unwrap()
+        .saving
+        .expect("connecting");
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::Created(Box::new(
+                serde_json::from_value(serde_json::json!({
+                    "conversation": conversation("grok-2", "grok_bot", "Routines", "routine-bot"),
+                    "callback_key": "cb-123"
+                }))
+                .unwrap(),
+            ))),
+        },
+    );
+    app.update();
+    let s = state(app.world()).unwrap();
+    assert!(s.conv_form.is_none() && !s.drafts.contains_key("conv.webhook_key"));
+    assert_eq!(s.callback_key, Some(("grok-2".into(), "cb-123".into())));
+    assert!(s.agents_reading.is_some(), "the list is read again");
+}
+
+#[test]
+fn a_dots_session_names_what_is_missing() {
+    let mut app = conversations_open("local");
+    click(&mut app, "Add Dots");
+    click(&mut app, "Session name");
+    type_text(&mut app, "Team");
+    click(&mut app, "Connect Dots");
+    assert_eq!(
+        state(app.world()).unwrap().conv_form.as_ref().unwrap().note,
+        "Enter the Slack channel ID."
+    );
+    click(&mut app, "Cancel adding Dots");
+    assert!(state(app.world()).unwrap().conv_form.is_none());
+}
+
+#[test]
+fn muse_pairs_through_whatsapp_and_finds_its_chat() {
+    use medousa_types::{ExternalWhatsAppPairingState as Wa, ExternalWhatsAppPairingStatus};
+    let mut app = conversations_open("local");
+    click(&mut app, "Add Muse");
+    let serial = state(app.world())
+        .unwrap()
+        .conv_form
+        .as_ref()
+        .unwrap()
+        .pairing_reading
+        .expect("pairing read on open");
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"><rect width="1" height="1"/></svg>"#;
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::Pairing(Box::new(external::PairingRead {
+                pairing: Ok(external::pairing(ExternalWhatsAppPairingStatus {
+                    state: Wa::QrReady,
+                    qr_svg: Some(svg.into()),
+                    expires_at: Some(chrono::Utc::now() + chrono::Duration::seconds(60)),
+                })),
+                adapter_error: None,
+            }))),
+        },
+    );
+    app.update();
+    assert!(
+        app.world()
+            .entities_with::<Semantics>()
+            .into_iter()
+            .any(|e| app
+                .world()
+                .get::<Semantics>(e)
+                .and_then(|s| s.name.as_deref())
+                == Some("WhatsApp Linked Devices pairing QR"))
+    );
+
+    click(&mut app, "Find Muse chat");
+    let found = |app: &mut App, jid: Option<&str>| {
+        let serial = state(app.world())
+            .unwrap()
+            .conv_form
+            .as_ref()
+            .unwrap()
+            .discovery_reading
+            .expect("discovery in flight");
+        apply(
+            app.world_mut(),
+            Update {
+                serial,
+                result: Ok(Reply::Discovery(Box::new(
+                    medousa_types::ExternalMuseDiscoveryStatus {
+                        challenge: "MDS-42".into(),
+                        observed_chat_jid: jid.map(String::from),
+                        expires_at: chrono::Utc::now() + chrono::Duration::seconds(300),
+                    },
+                ))),
+            },
+        );
+        app.update();
+    };
+    found(&mut app, None);
+    assert!(
+        texts(app.world())
+            .iter()
+            .any(|x| x == "Send this code in your Muse chat on WhatsApp: MDS-42")
+    );
+    click(&mut app, "Check for code");
+    found(&mut app, None);
+    assert_eq!(
+        state(app.world()).unwrap().conv_form.as_ref().unwrap().note,
+        "The linked adapter has not seen this code yet."
+    );
+    click(&mut app, "Check for code");
+    found(&mut app, Some("120@g.us"));
+    click(&mut app, "Session name");
+    type_text(&mut app, "Muse");
+    click(&mut app, "Connect Muse");
+    assert!(
+        state(app.world())
+            .unwrap()
+            .conv_form
+            .as_ref()
+            .unwrap()
+            .saving
+            .is_some()
+    );
 }

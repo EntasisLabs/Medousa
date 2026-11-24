@@ -130,6 +130,13 @@ enum Action {
     ConversationRemove(String),
     CancelRemove,
     ConversationRotate(String),
+    /// Opens the Add form for a provider; Cancel closes it.
+    ConversationAdd(medousa_types::ExternalProvider),
+    ConversationCancel,
+    /// Muse: start finding the chat, or check for the code now.
+    MuseFind,
+    MuseCheck,
+    ConversationSave,
     CopyCallbackKey,
     DismissCallbackKey,
     /// Leaves agent shell tools off after the empty-allowlist warning.
@@ -206,6 +213,12 @@ enum Kind {
     AgentSignOut(String),
     ConversationRemove(String),
     ConversationRotate(String),
+    /// WhatsApp pairing; given this Mac's engine URL, the adapter is started
+    /// first when it isn't running.
+    WhatsAppPairing(Option<String>),
+    /// Starts Muse discovery, or reads it.
+    MuseDiscovery(bool),
+    ConversationCreate(Box<medousa_types::CreateExternalConversationRequest>),
     /// Shared mode, paired devices and, given this Mac's workshop URL, LAN
     /// pairing.
     Sharing(Option<String>),
@@ -250,6 +263,9 @@ enum Reply {
     Channels(Box<medousa_desktop_host::channels::Summary>),
     Providers(Box<providers::Read>),
     McpServer(Box<Option<(medousa_desktop_host::mcp::Upsert, bool)>>),
+    Pairing(Box<external::PairingRead>),
+    Discovery(Box<medousa_types::ExternalMuseDiscoveryStatus>),
+    Created(Box<medousa_types::CreateExternalConversationResponse>),
 }
 
 /// The MCP server form: which server it edits (none when adding), how it
@@ -410,6 +426,10 @@ pub(crate) struct State {
     agent_note: String,
     conversation_confirm: Option<String>,
     callback_key: Option<(String, String)>,
+    /// Adding a conversation, and the WhatsApp QR's image ids.
+    conv_form: Option<external::ConvForm>,
+    wa_image: u64,
+    wa_loaded: u64,
     /// Disclosures open on this visit, by key.
     open: HashSet<&'static str>,
     actions: HashMap<u64, Action>,
@@ -462,6 +482,26 @@ impl State {
             self.channels_reading = Some(self.enqueue(Kind::Channels));
             self.redraw = true;
         }
+    }
+    /// Reads the WhatsApp pairing for an open Muse or Instinct form; on
+    /// opening it, a workshop on this Mac starts the adapter if needed.
+    fn read_pairing(&mut self, opening: bool) {
+        let ensure = (opening && self.local())
+            .then(|| self.workshop.as_ref().map(|w| w.url.clone()))
+            .flatten()
+            .or_else(|| (opening && self.local()).then(String::new));
+        let Some(f) = self.conv_form.as_ref() else {
+            return;
+        };
+        if !f.whatsapp() || f.pairing_reading.is_some() {
+            return;
+        }
+        let serial = self.enqueue(Kind::WhatsAppPairing(ensure));
+        if let Some(f) = self.conv_form.as_mut() {
+            f.pairing_reading = Some(serial);
+            f.next_poll = std::time::Instant::now() + PAIR_POLL;
+        }
+        self.redraw = true;
     }
     fn read_providers(&mut self) {
         if self.providers_reading.is_none() {
@@ -607,6 +647,9 @@ pub fn mount(w: &mut World, parent: Entity) {
         agent_note: String::new(),
         conversation_confirm: None,
         callback_key: None,
+        conv_form: None,
+        wa_image: 0x5741_0000_0000,
+        wa_loaded: 0,
         actions: HashMap::new(),
         queue: vec![],
         redraw: true,
@@ -898,6 +941,55 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 }
             }
             Action::DismissCallbackKey => s.callback_key = None,
+            Action::ConversationAdd(provider) => {
+                s.forget_fields(&external::CONV_FIELDS);
+                s.conv_form = Some(external::ConvForm::new(provider));
+                s.read_pairing(true);
+            }
+            Action::ConversationCancel => {
+                s.forget_fields(&external::CONV_FIELDS);
+                s.conv_form = None;
+            }
+            Action::MuseFind | Action::MuseCheck => {
+                let start = matches!(a, Action::MuseFind);
+                if let Some(f) = s.conv_form.as_mut()
+                    && f.discovery_reading.is_none()
+                {
+                    f.note = if start {
+                        String::new()
+                    } else {
+                        "Checking whether the linked adapter saw your code…".into()
+                    };
+                    let serial = next();
+                    s.queue.push(Command {
+                        serial,
+                        kind: Kind::MuseDiscovery(start),
+                    });
+                    if let Some(f) = s.conv_form.as_mut() {
+                        f.discovery_reading = Some(serial);
+                    }
+                }
+            }
+            Action::ConversationSave => {
+                if let Some(form) = s.conv_form.clone()
+                    && form.saving.is_none()
+                {
+                    match external::request(&form, &s.drafts) {
+                        Ok(req) => {
+                            let serial = s.enqueue(Kind::ConversationCreate(Box::new(req)));
+                            if let Some(f) = s.conv_form.as_mut() {
+                                f.saving = Some(serial);
+                                f.note.clear();
+                            }
+                        }
+                        Err(e) => {
+                            if let Some(f) = s.conv_form.as_mut() {
+                                f.note = e;
+                            }
+                        }
+                    }
+                }
+            }
             Action::Toggle(key) => {
                 if s.open.remove(key) {
                     s.forget_fields(runtime::drafts_for(key));
@@ -1234,6 +1326,31 @@ pub fn sync(w: &mut World) {
                 s.read_sharing();
             }
         }
+        // An open Muse or Instinct form follows the WhatsApp pairing, and a
+        // Muse discovery waits for its code, as medousa-home polls.
+        if s.section == Section::ExternalAgents
+            && active
+            && let Some(f) = s.conv_form.as_ref()
+            && f.whatsapp()
+            && f.saving.is_none()
+            && std::time::Instant::now() >= f.next_poll
+        {
+            let muse_waiting = f.provider == medousa_types::ExternalProvider::Muse
+                && f.discovery_reading.is_none()
+                && f.discovery
+                    .as_ref()
+                    .is_some_and(|d| d.observed_chat_jid.is_none());
+            s.read_pairing(false);
+            if muse_waiting {
+                let serial = s.enqueue(Kind::MuseDiscovery(false));
+                if let Some(f) = s.conv_form.as_mut() {
+                    f.discovery_reading = Some(serial);
+                }
+            }
+            if let Some(f) = s.conv_form.as_mut() {
+                f.next_poll = std::time::Instant::now() + PAIR_POLL;
+            }
+        }
         if s.redraw && active {
             view::render(w, s);
             s.redraw = false;
@@ -1520,6 +1637,78 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
                 .and_then(|r| r.map(|()| Reply::McpDone("Server removed".into())))
         }
         Kind::McpRestart => restart_mcp(client).await,
+        Kind::WhatsAppPairing(ensure) => {
+            let read = || async {
+                client
+                    .http()
+                    .get::<medousa_types::ExternalWhatsAppPairingStatus>(
+                        "/v1/external-conversations/whatsapp/pairing",
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
+            };
+            let mut status = read().await;
+            let mut adapter_error = None;
+            let waiting = status.as_ref().map_or(true, |p| {
+                p.state == medousa_types::ExternalWhatsAppPairingState::Waiting
+            });
+            if let Some(url) = ensure
+                && waiting
+            {
+                // An empty URL means the engine this app talks to.
+                let url = if url.is_empty() {
+                    client.base_url().to_string()
+                } else {
+                    url
+                };
+                match tokio::task::spawn_blocking(move || {
+                    medousa_desktop_host::channels::ensure_whatsapp(&url)
+                })
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r)
+                {
+                    Ok(()) => status = read().await,
+                    Err(e) => adapter_error = Some(e),
+                }
+            }
+            let pairing = match status {
+                Ok(p) => tokio::task::spawn_blocking(move || external::pairing(p))
+                    .await
+                    .map_err(|e| e.to_string()),
+                Err(e) => Err(e),
+            };
+            Ok(Reply::Pairing(Box::new(external::PairingRead {
+                pairing,
+                adapter_error,
+            })))
+        }
+        Kind::MuseDiscovery(start) => {
+            let path = "/v1/external-conversations/muse/discovery";
+            let found = if start {
+                client
+                    .http()
+                    .post_empty::<medousa_types::ExternalMuseDiscoveryStatus>(path)
+                    .await
+            } else {
+                client
+                    .http()
+                    .get::<medousa_types::ExternalMuseDiscoveryStatus>(path)
+                    .await
+            };
+            found
+                .map(|d| Reply::Discovery(Box::new(d)))
+                .map_err(|e| e.to_string())
+        }
+        Kind::ConversationCreate(req) => client
+            .http()
+            .post::<medousa_types::CreateExternalConversationResponse, _>(
+                "/v1/external-conversations",
+                &*req,
+            )
+            .await
+            .map(|r| Reply::Created(Box::new(r)))
+            .map_err(|e| e.to_string()),
         Kind::McpServer(id) => {
             tokio::task::spawn_blocking(move || medousa_desktop_host::mcp::server_config(&id))
                 .await
@@ -1766,6 +1955,59 @@ fn capture(w: &World, s: &mut State) {
 
 pub fn apply(w: &mut World, u: Update) {
     with_state(w, |_, s| {
+        if let Some(f) = s.conv_form.as_mut() {
+            if f.pairing_reading == Some(u.serial) {
+                f.pairing_reading = None;
+                if let Ok(Reply::Pairing(read)) = u.result {
+                    if read.pairing.as_ref().is_ok_and(|p| p.qr.is_some()) {
+                        s.wa_image += 1;
+                    }
+                    f.pairing = Some(*read);
+                }
+                s.redraw = true;
+                return;
+            }
+            if f.discovery_reading == Some(u.serial) {
+                f.discovery_reading = None;
+                match u.result {
+                    Ok(Reply::Discovery(d)) => {
+                        let manual = !f.note.is_empty();
+                        f.note = if d.observed_chat_jid.is_none() && manual {
+                            "The linked adapter has not seen this code yet.".into()
+                        } else {
+                            String::new()
+                        };
+                        f.discovery = Some(*d);
+                    }
+                    Err(e) => {
+                        f.discovery = None;
+                        f.note = e;
+                    }
+                    _ => {}
+                }
+                s.redraw = true;
+                return;
+            }
+            if f.saving == Some(u.serial) {
+                f.saving = None;
+                match u.result {
+                    Ok(Reply::Created(made)) => {
+                        let made = *made;
+                        if let Some(key) = made.callback_key {
+                            s.callback_key = Some((made.conversation.id.clone(), key));
+                        }
+                        s.agent_note = format!("{} connected.", made.conversation.label);
+                        s.forget_fields(&external::CONV_FIELDS);
+                        s.conv_form = None;
+                        s.read_agents();
+                    }
+                    Err(e) => f.note = e,
+                    _ => {}
+                }
+                s.redraw = true;
+                return;
+            }
+        }
         if s.providers_reading == Some(u.serial) {
             s.providers_reading = None;
             match u.result {
@@ -2197,7 +2439,10 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Lan(_)
                 | Reply::Channels(_)
                 | Reply::Providers(_)
-                | Reply::McpServer(_),
+                | Reply::McpServer(_)
+                | Reply::Pairing(_)
+                | Reply::Discovery(_)
+                | Reply::Created(_),
             ) => {}
             Err(e) if reading => s.message = format!("Couldn’t read the connection: {e}"),
             Err(e) => {
