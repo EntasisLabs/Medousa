@@ -212,6 +212,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Layout, visual::fit_labels);
     app.add_system(Schedule::Layout, visual::path_crumbs);
     app.add_system(Schedule::Layout, chrome::polish);
+    app.add_system(Schedule::Layout, visual::action_icons);
     app.add_system(Schedule::Layout, visual::borders);
     app.add_system(Schedule::Layout, visual::quiet_chrome);
     app

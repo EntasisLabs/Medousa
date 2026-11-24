@@ -7,6 +7,9 @@ pub const COLUMN: f32 = 720.;
 pub const INSET: f32 = 20.;
 pub const CONTROL_RADIUS: f32 = 6.;
 pub const ACTION_SIZE: f32 = 32.;
+/// Action icon glyph size: a step under the rail's 20pt, so toolbar and
+/// sidebar actions read as the same family as navigation.
+pub const ACTION_ICON: f32 = 18.;
 /// Sidebar list rows and tracked group headings, as in medousa-home.
 pub const ROW_HEIGHT: f32 = 32.;
 pub const SECTION_HEIGHT: f32 = 26.;
@@ -785,5 +788,48 @@ mod tests {
         assert_eq!(column_width(1200.), COLUMN);
         assert_eq!(column_width(440.), 400.);
         assert_eq!(column_width(220.), 200.);
+    }
+}
+
+/// Size every icon-only label as an action icon. Controls mount glyphs at
+/// body-text size; one late pass keeps every view's actions consistent.
+pub fn action_icons(world: &mut World) {
+    let icons: Vec<Entity> = world
+        .query::<Label>()
+        .iter()
+        .filter(|(_, label)| {
+            let mut chars = label.text.chars();
+            matches!((chars.next(), chars.next()), (Some(ch), None) if rndr_core::is_icon_scalar(ch))
+        })
+        .map(|(e, _)| *e)
+        .collect();
+    for entity in icons {
+        // A glyph is never elided; it centres in its face without text insets.
+        if let Some(label) = world.get_mut::<Label>(entity) {
+            if label.overflow != TextOverflow::Visible {
+                label.overflow = TextOverflow::Visible;
+            }
+        }
+        let flush = LabelBox {
+            inset_x: 0.,
+            inset_y: 0.,
+            min_height: 0.,
+        };
+        if world.get::<LabelBox>(entity) != Some(&flush) {
+            world.insert(entity, flush);
+        }
+        match world.get_mut::<TextStyle>(entity) {
+            Some(style) if style.size != ACTION_ICON => style.size = ACTION_ICON,
+            Some(_) => {}
+            None => {
+                let mut style = world
+                    .resource::<rndr_ui::UiTheme>()
+                    .cloned()
+                    .unwrap_or_default()
+                    .typography(rndr_ui::Typography::Label);
+                style.size = ACTION_ICON;
+                world.insert(entity, style);
+            }
+        }
     }
 }
