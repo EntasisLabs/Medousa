@@ -418,6 +418,16 @@ pub(crate) fn list(d: &Value, key: &str) -> Vec<String> {
         .collect()
 }
 
+/// The next preset from `value` in direction `dir` (−1 or 1), snapping an
+/// off-grid value to its neighbour; `None` at either end.
+pub(crate) fn preset(steps: &[i64], value: i64, dir: i64) -> Option<i64> {
+    if dir < 0 {
+        steps.iter().rev().find(|&&v| v < value).copied()
+    } else {
+        steps.iter().find(|&&v| v > value).copied()
+    }
+}
+
 /// medousa-home's `parseMultilineList`: commas or new lines.
 pub(crate) fn split_list(raw: &str) -> Vec<String> {
     raw.split([',', '\n'])
@@ -543,5 +553,15 @@ mod tests {
         assert!(env_set(env, "", "x").is_err());
         assert_eq!(env_remove(env, "A"), "# keep\nB=two=2");
         assert_eq!(drafts_for("runtime.env"), ["rt.env.name", "rt.env.value"]);
+    }
+
+    #[test]
+    fn presets_step_and_snap() {
+        let s = [5, 15, 30];
+        assert_eq!(preset(&s, 15, 1), Some(30));
+        assert_eq!(preset(&s, 15, -1), Some(5));
+        assert_eq!(preset(&s, 20, -1), Some(15));
+        assert_eq!(preset(&s, 30, 1), None);
+        assert_eq!(preset(&s, 5, -1), None);
     }
 }

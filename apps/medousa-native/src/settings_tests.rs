@@ -197,7 +197,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,mcp-add,accounts,external,conversation-add,runtime,runtime-lists,sharing,channels,providers}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,providers,agent-more,mcp,mcp-add,accounts,external,conversation-add,runtime,runtime-lists,sharing,channels,providers}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -349,6 +349,35 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "providers");
+        with_state(app.world_mut(), |_, s| {
+            s.open.remove("providers");
+            s.provider_open = None;
+            s.open.insert("coding");
+            s.open.insert("modes");
+            s.open.insert("artifacts");
+            if let Some(d) = s.defaults.as_mut() {
+                d["coding_runtime"] = serde_json::json!({"preferred": "codex", "fallbacks": ["cursor", "medousa"]});
+            }
+            s.mode_policy = Some(Ok(medousa_types::AgentModeTransitionPolicy {
+                proposal_ttl_seconds: 300,
+                auto_accept: medousa_types::AgentModeAutoAccept::Task,
+            }));
+            s.artifacts = Some(Ok(serde_json::from_value(serde_json::json!({
+                "settings": {"enabled": true, "max_age_days": 90, "max_per_session": 200,
+                    "recurring_id": "r", "cron_expr": "0 3 * * *"},
+                "scheduled": true, "enabled": true,
+                "last_run_summary": "Removed 14 artifacts"
+            }))
+            .unwrap()));
+            s.redraw = true;
+        });
+        rndr_paint::frame(&mut app);
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., -560.];
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "agent-more");
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., 0.];
         app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., 0.];
         with_state(app.world_mut(), |_, s| {
             s.section = Section::Mcp;
@@ -2134,4 +2163,141 @@ fn sharing_opens_the_peers_screen() {
         crate::surfaces::active(app.world()),
         crate::surfaces::SurfaceId::Peers
     );
+}
+
+fn agent_extras_open(defaults: serde_json::Value) -> App {
+    let mut app = agent_open();
+    app.world_mut().insert_resource(Viewport::new(1200., 3200.));
+    with_state(app.world_mut(), |_, s| {
+        s.defaults = Some(defaults);
+        s.redraw = true;
+    });
+    app.update();
+    app
+}
+
+fn patch_in_flight(app: &App) -> agent::Patch {
+    state(app.world())
+        .unwrap()
+        .patching
+        .clone()
+        .expect("a change in flight")
+        .1
+}
+
+#[test]
+fn fallback_models_and_coding_runtime_save_one_change_at_a_time() {
+    let mut app = agent_extras_open(serde_json::json!({
+        "provider": "anthropic", "model": "claude-opus-5-5",
+    }));
+    click(&mut app, "Fallback models");
+    assert!(
+        named(app.world(), "Change second fallback").is_none(),
+        "one slot at a time"
+    );
+    click(&mut app, "Change first fallback");
+    click(&mut app, "gpt-6 · openai");
+    assert_eq!(
+        patch_in_flight(&app),
+        agent::Patch::Fallback(0, Some(("openai".into(), "gpt-6".into())))
+    );
+    saved(&mut app);
+    assert!(
+        !state(app.world()).unwrap().open.contains("fallback.0"),
+        "the picker closes"
+    );
+    assert!(named(app.world(), "Change second fallback").is_some());
+
+    click(&mut app, "Coding runtime");
+    click(&mut app, "Add Codex fallback");
+    assert_eq!(
+        patch_in_flight(&app),
+        agent::Patch::Field(
+            "coding_runtime",
+            serde_json::json!({"preferred": "medousa", "fallbacks": ["codex"]})
+        )
+    );
+    saved(&mut app);
+    click(&mut app, "Add Cursor fallback");
+    saved(&mut app);
+    click(&mut app, "Move Cursor earlier");
+    assert_eq!(
+        patch_in_flight(&app),
+        agent::Patch::Field(
+            "coding_runtime",
+            serde_json::json!({"preferred": "medousa", "fallbacks": ["cursor", "codex"]})
+        )
+    );
+}
+
+#[test]
+fn a_stage_route_is_edited_and_saved_with_the_rest_kept() {
+    let route = |role: &str| {
+        serde_json::json!({"role": role, "provider": "anthropic", "model": "a",
+            "policy_profile": "default", "fallback_chain": []})
+    };
+    let matrix: serde_json::Map<_, _> = agent::STAGES
+        .iter()
+        .map(|(k, _)| (k.to_string(), route(k)))
+        .collect();
+    let mut app = agent_extras_open(serde_json::json!({ "stage_routing": matrix }));
+    click(&mut app, "Stage routing");
+    click(&mut app, "Verifier");
+    assert_eq!(field_text(app.world(), "Model"), "a");
+    click(&mut app, "Fallback chain");
+    type_text(&mut app, "openai:gpt-6");
+    click(&mut app, "Save Verifier stage");
+    let agent::Patch::Field(key, value) = patch_in_flight(&app) else {
+        panic!("a field patch");
+    };
+    assert_eq!(key, "stage_routing");
+    assert_eq!(
+        value["verifier"]["fallback_chain"],
+        serde_json::json!(["openai:gpt-6"])
+    );
+    assert_eq!(value["orchestrator"], route("orchestrator"));
+}
+
+#[test]
+fn mode_suggestions_and_artifact_cleanup_save_through_the_engine() {
+    let mut app = agent_extras_open(serde_json::json!({}));
+    let (mode, arts) = {
+        let s = state(app.world()).unwrap();
+        (s.mode_reading.unwrap(), s.artifacts_reading.unwrap())
+    };
+    apply(
+        app.world_mut(),
+        Update {
+            serial: mode,
+            result: Ok(Reply::ModePolicy(
+                medousa_types::AgentModeTransitionPolicy {
+                    proposal_ttl_seconds: 30,
+                    auto_accept: medousa_types::AgentModeAutoAccept::Never,
+                },
+            )),
+        },
+    );
+    apply(
+        app.world_mut(),
+        Update {
+            serial: arts,
+            result: Ok(Reply::Artifacts(Box::new(
+                serde_json::from_value(serde_json::json!({
+                    "settings": {"enabled": true, "max_age_days": 90, "max_per_session": 200,
+                        "recurring_id": "r", "cron_expr": "0 3 * * *"},
+                    "scheduled": true, "enabled": true,
+                }))
+                .unwrap(),
+            ))),
+        },
+    );
+    app.update();
+    click(&mut app, "Mode suggestions");
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "30 s"), "{t:?}");
+    click(&mut app, "Task-scoped only");
+    assert!(state(app.world()).unwrap().mode_busy.is_some());
+    click(&mut app, "Artifacts");
+    click(&mut app, "More keep for");
+    assert!(state(app.world()).unwrap().artifacts_busy.is_some());
 }

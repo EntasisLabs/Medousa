@@ -905,20 +905,488 @@ fn agent_section(w: &mut World, s: &mut State, body: Entity) {
     if more(w, body, s, "providers", "Provider keys", &keys) {
         provider_keys(w, s, body);
     }
-    if more(
-        w,
-        body,
-        s,
-        "agent-more",
-        "More agent settings",
-        "Routing, retention",
-    ) {
+    agent_extras(w, s, body, &defaults, idle);
+}
+
+/// Fallback models, coding runtime, stage routing, mode suggestions and
+/// artifact cleanup, each behind its own disclosure.
+fn agent_extras(
+    w: &mut World,
+    s: &mut State,
+    body: Entity,
+    defaults: &serde_json::Value,
+    idle: bool,
+) {
+    use super::agent as a;
+    // Fallback models.
+    let fallbacks = a::fallbacks(defaults);
+    let meta = match fallbacks.len() {
+        0 => "None".to_string(),
+        n => format!("{n} set"),
+    };
+    if more(w, body, s, "fallbacks", "Fallback models", &meta) {
         quiet(
             w,
             body,
-            "Fallbacks, stage routing, coding runtime, mode suggestions and retention are coming to this app soon. Until then, change them in the original Medousa app.",
+            "Tried in order when the conversation model can’t answer.",
         );
+        for (i, slot) in a::FALLBACK_SLOTS.iter().enumerate() {
+            // A second fallback follows a first.
+            if i > fallbacks.len() {
+                break;
+            }
+            let current = fallbacks.get(i);
+            let title = if i == 0 {
+                "First fallback"
+            } else {
+                "Second fallback"
+            };
+            let side = runtime_row(
+                w,
+                body,
+                title,
+                &current.map_or("None".to_string(), |(p, m)| format!("{m} · {p}")),
+            );
+            let open = s.open.contains(slot);
+            named_button(
+                w,
+                side,
+                s,
+                if open { "Close" } else { "Change" },
+                format!("Change {}", title.to_lowercase()),
+                Action::Toggle(slot),
+                idle,
+            );
+            if !open {
+                continue;
+            }
+            if current.is_some() {
+                let h = button(
+                    w,
+                    body,
+                    s,
+                    "None",
+                    Action::Agent(a::Patch::Fallback(i, None)),
+                    idle,
+                );
+                w.get_mut::<Layout>(h.root).unwrap().width = Size::Fill;
+                w.remove::<visual::FitLabel>(h.root);
+            }
+            for (provider, model) in crate::ui::models(w) {
+                let h = button(
+                    w,
+                    body,
+                    s,
+                    &format!("{model} · {provider}"),
+                    Action::Agent(a::Patch::Fallback(
+                        i,
+                        Some((provider.clone(), model.clone())),
+                    )),
+                    idle,
+                );
+                w.get_mut::<Layout>(h.root).unwrap().width = Size::Fill;
+                w.remove::<visual::FitLabel>(h.root);
+                if current == Some(&(provider, model)) {
+                    mark(w, h.root);
+                }
+            }
+        }
     }
+
+    // Coding runtime.
+    let (preferred, coding_fallbacks) = a::coding(defaults);
+    let all = a::coding_runtimes();
+    let name = |id: &str| {
+        all.iter()
+            .find(|(i, _)| *i == id)
+            .map_or(id.to_string(), |(_, l)| l.to_string())
+    };
+    if more(w, body, s, "coding", "Coding runtime", &name(&preferred)) {
+        quiet(
+            w,
+            body,
+            "Chosen once for future coding assignments. A runtime you ask for in chat takes priority.",
+        );
+        let set = |p: &str, f: &[String]| {
+            Action::Agent(a::Patch::Field("coding_runtime", a::coding_value(p, f)))
+        };
+        let row = panel(
+            w,
+            body,
+            Layout {
+                width: Size::Fill,
+                height: Size::Hug,
+                gap: 6.,
+                ..Layout::row()
+            },
+        );
+        w.insert(row, Wrap { line_gap: 6. });
+        for (id, label_) in &all {
+            let rest: Vec<String> = coding_fallbacks
+                .iter()
+                .filter(|f| f != id)
+                .cloned()
+                .collect();
+            let h = button(w, row, s, label_, set(id, &rest), idle);
+            if *id == preferred {
+                mark(w, h.root);
+            }
+        }
+        label(w, body, "Fallbacks", Typography::Label);
+        quiet(
+            w,
+            body,
+            if coding_fallbacks.is_empty() {
+                "None — Medousa reports the blocker if the preferred runtime is unavailable."
+            } else {
+                "Tried in order before work starts."
+            },
+        );
+        for (i, f) in coding_fallbacks.iter().enumerate() {
+            let (line, col) = split_row(w, body);
+            label(
+                w,
+                col,
+                &format!("{}. {}", i + 1, name(f)),
+                Typography::Label,
+            );
+            let mut up = coding_fallbacks.clone();
+            let mut down = coding_fallbacks.clone();
+            if i > 0 {
+                up.swap(i, i - 1);
+            }
+            if i + 1 < coding_fallbacks.len() {
+                down.swap(i, i + 1);
+            }
+            let without: Vec<String> = coding_fallbacks
+                .iter()
+                .filter(|x| *x != f)
+                .cloned()
+                .collect();
+            named_button(
+                w,
+                line,
+                s,
+                "↑",
+                format!("Move {} earlier", name(f)),
+                set(&preferred, &up),
+                idle && i > 0,
+            );
+            named_button(
+                w,
+                line,
+                s,
+                "↓",
+                format!("Move {} later", name(f)),
+                set(&preferred, &down),
+                idle && i + 1 < coding_fallbacks.len(),
+            );
+            named_button(
+                w,
+                line,
+                s,
+                "Remove",
+                format!("Remove {} fallback", name(f)),
+                set(&preferred, &without),
+                idle,
+            );
+        }
+        let remaining: Vec<_> = all
+            .iter()
+            .filter(|(id, _)| *id != preferred && !coding_fallbacks.iter().any(|f| f == id))
+            .collect();
+        if !remaining.is_empty() {
+            let row = panel(
+                w,
+                body,
+                Layout {
+                    width: Size::Fill,
+                    height: Size::Hug,
+                    gap: 6.,
+                    ..Layout::row()
+                },
+            );
+            w.insert(row, Wrap { line_gap: 6. });
+            for (id, label_) in remaining {
+                let mut more_f = coding_fallbacks.clone();
+                more_f.push(id.to_string());
+                named_button(
+                    w,
+                    row,
+                    s,
+                    &format!("+ {label_}"),
+                    format!("Add {label_} fallback"),
+                    set(&preferred, &more_f),
+                    idle,
+                );
+            }
+        }
+    }
+
+    // Stage routing.
+    let stage_name = a::STAGES
+        .iter()
+        .find(|(k, _)| *k == s.stage)
+        .map_or("Lead", |(_, n)| n);
+    if more(w, body, s, "stages", "Stage routing", stage_name) {
+        quiet(
+            w,
+            body,
+            "A stage is one step in how a turn is built. Pick one to set its model.",
+        );
+        match a::stage(defaults, s.stage) {
+            None => {
+                quiet(
+                    w,
+                    body,
+                    "This workshop hasn’t set up stage routes yet; they appear once it has.",
+                );
+            }
+            Some((provider, model, chain)) => {
+                let row = panel(
+                    w,
+                    body,
+                    Layout {
+                        width: Size::Fill,
+                        height: Size::Hug,
+                        gap: 6.,
+                        ..Layout::row()
+                    },
+                );
+                w.insert(row, Wrap { line_gap: 6. });
+                for (key, n) in a::STAGES {
+                    let h = button(w, row, s, n, Action::Stage(key), true);
+                    if key == s.stage {
+                        mark(w, h.root);
+                    }
+                }
+                s.drafts.entry("stage.provider").or_insert(provider);
+                s.drafts.entry("stage.model").or_insert(model);
+                s.drafts.entry("stage.chain").or_insert(chain.join(", "));
+                field(
+                    w,
+                    body,
+                    s,
+                    "stage.provider",
+                    "Provider",
+                    "",
+                    "openai",
+                    false,
+                );
+                field(w, body, s, "stage.model", "Model", "", "", false);
+                field(
+                    w,
+                    body,
+                    s,
+                    "stage.chain",
+                    "Fallback chain",
+                    "provider:model, separated by commas.",
+                    "provider:model, …",
+                    false,
+                );
+                save_row_stage(w, body, s, &format!("Save {stage_name} stage"), idle);
+            }
+        }
+    }
+
+    // Mode suggestions.
+    let mode_meta = match &s.mode_policy {
+        Some(Ok(p)) => match p.auto_accept {
+            medousa_types::AgentModeAutoAccept::Never => "Ask me",
+            medousa_types::AgentModeAutoAccept::Task => "Task-scoped only",
+            medousa_types::AgentModeAutoAccept::All => "Accept all",
+        }
+        .to_string(),
+        Some(Err(_)) => "Unavailable".into(),
+        None => String::new(),
+    };
+    if more(w, body, s, "modes", "Mode suggestions", &mode_meta) {
+        match s.mode_policy.clone() {
+            Some(Ok(policy)) => {
+                use medousa_types::AgentModeAutoAccept as Auto;
+                let free = s.mode_busy.is_none();
+                quiet(w, body, "How much transition authority Medousa has.");
+                let row = panel(
+                    w,
+                    body,
+                    Layout {
+                        width: Size::Fill,
+                        height: Size::Hug,
+                        gap: 6.,
+                        ..Layout::row()
+                    },
+                );
+                for (auto, name, hint) in [
+                    (Auto::Never, "Never — ask me", "Every switch waits for you"),
+                    (
+                        Auto::Task,
+                        "Task-scoped only",
+                        "Accepts switches inside a task",
+                    ),
+                    (Auto::All, "All suggestions", "Accepts every switch"),
+                ] {
+                    let mut next = policy.clone();
+                    next.auto_accept = auto;
+                    choice(
+                        w,
+                        row,
+                        s,
+                        name,
+                        hint,
+                        Action::ModePolicy(next),
+                        policy.auto_accept == auto,
+                        free,
+                    );
+                }
+                let secs = policy.proposal_ttl_seconds;
+                let step = |dir: i64| {
+                    super::runtime::preset(&MODE_TTLS, secs as i64, dir).map(|v| {
+                        let mut next = policy.clone();
+                        next.proposal_ttl_seconds = v as u64;
+                        Action::ModePolicy(next)
+                    })
+                };
+                stepper(
+                    w,
+                    body,
+                    s,
+                    "Suggestion expiry",
+                    "5 seconds to 24 hours",
+                    &duration(secs),
+                    step(-1),
+                    step(1),
+                    free,
+                );
+            }
+            Some(Err(_)) => {
+                quiet(w, body, "Mode policy is unavailable on this workshop.");
+            }
+            None => {
+                quiet(w, body, "Reading…");
+            }
+        }
+    }
+
+    // Artifacts.
+    let art_meta = match &s.artifacts {
+        Some(Ok(a)) if a.settings.enabled => format!("Kept {} days", a.settings.max_age_days),
+        Some(Ok(_)) => "Kept until removed".into(),
+        Some(Err(_)) => "Unavailable".into(),
+        None => String::new(),
+    };
+    if more(w, body, s, "artifacts", "Artifacts", &art_meta) {
+        match s.artifacts.clone() {
+            Some(Ok(status)) => {
+                let st = status.settings;
+                let free = s.artifacts_busy.is_none();
+                switch_row(
+                    w,
+                    body,
+                    s,
+                    "Automatic cleanup",
+                    "Removes old artifacts on a schedule",
+                    st.enabled,
+                    Action::Artifacts(!st.enabled, st.max_age_days, st.max_per_session),
+                    free,
+                );
+                let days = |dir: i64| {
+                    super::runtime::preset(&ARTIFACT_DAYS, st.max_age_days, dir)
+                        .map(|v| Action::Artifacts(st.enabled, v, st.max_per_session))
+                };
+                stepper(
+                    w,
+                    body,
+                    s,
+                    "Keep for",
+                    "Older artifacts are removed",
+                    &format!("{} days", st.max_age_days),
+                    days(-1),
+                    days(1),
+                    free,
+                );
+                let per = |dir: i64| {
+                    super::runtime::preset(&ARTIFACT_PER_CHAT, st.max_per_session as i64, dir)
+                        .map(|v| Action::Artifacts(st.enabled, st.max_age_days, v as usize))
+                };
+                stepper(
+                    w,
+                    body,
+                    s,
+                    "Per chat",
+                    "Newest are kept",
+                    &st.max_per_session.to_string(),
+                    per(-1),
+                    per(1),
+                    free,
+                );
+                if let Some(summary) = status.last_run_summary {
+                    quiet(w, body, &format!("Last cleanup: {summary}"));
+                }
+            }
+            Some(Err(_)) => {
+                quiet(w, body, "Artifact cleanup is unavailable on this workshop.");
+            }
+            None => {
+                quiet(w, body, "Reading…");
+            }
+        }
+    }
+    if !s.extras_note.is_empty() {
+        let note = s.extras_note.clone();
+        label(w, body, &note, Typography::Label);
+    }
+}
+
+/// Suggestion expiry steps, in seconds.
+const MODE_TTLS: [i64; 9] = [5, 15, 30, 60, 300, 900, 3600, 21600, 86400];
+const ARTIFACT_DAYS: [i64; 8] = [7, 14, 30, 60, 90, 180, 365, 730];
+const ARTIFACT_PER_CHAT: [i64; 7] = [25, 50, 100, 200, 500, 1000, 2000];
+
+fn duration(secs: u64) -> String {
+    match secs {
+        s if s >= 3600 && s % 3600 == 0 => format!("{} h", s / 3600),
+        s if s >= 60 && s % 60 == 0 => format!("{} min", s / 60),
+        s => format!("{s} s"),
+    }
+}
+
+/// A value with − and + buttons, which step to the given actions.
+#[allow(clippy::too_many_arguments)]
+fn stepper(
+    w: &mut World,
+    p: Entity,
+    s: &mut State,
+    title: &str,
+    hint: &str,
+    shown: &str,
+    less: Option<Action>,
+    more_: Option<Action>,
+    enabled: bool,
+) {
+    let side = runtime_row(w, p, title, hint);
+    let none = || Action::Toggle("");
+    let has_less = less.is_some();
+    let has_more = more_.is_some();
+    named_button(
+        w,
+        side,
+        s,
+        "−",
+        format!("Less {}", title.to_lowercase()),
+        less.unwrap_or_else(none),
+        enabled && has_less,
+    );
+    let v = label(w, side, shown, Typography::Label);
+    w.get_mut::<Layout>(v).unwrap().width = Size::Hug;
+    named_button(
+        w,
+        side,
+        s,
+        "+",
+        format!("More {}", title.to_lowercase()),
+        more_.unwrap_or_else(none),
+        enabled && has_more,
+    );
 }
 
 /// Each provider with its key and base URL; one opens at a time.
@@ -2423,6 +2891,20 @@ fn runtime_row(w: &mut World, p: Entity, label_: &str, hint: &str) -> Entity {
         },
     );
     side
+}
+
+/// A Save button for the stage routing form.
+fn save_row_stage(w: &mut World, p: Entity, s: &mut State, spoken: &str, enabled: bool) {
+    let row = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            ..Layout::row()
+        },
+    );
+    named_button(w, row, s, "Save", spoken.into(), Action::SaveStage, enabled);
 }
 
 /// A Save button for a runtime list field, under its text field.

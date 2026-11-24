@@ -40,6 +40,104 @@ pub(crate) enum Patch {
     Model(String, String),
     /// One top-level field, as Runtime Controls sets them.
     Field(&'static str, Value),
+    /// The conversation model's fallback at an index: set, or cleared.
+    Fallback(usize, Option<(String, String)>),
+}
+
+/// The conversation model's fallbacks, in order.
+pub(crate) fn fallbacks(defaults: &Value) -> Vec<(String, String)> {
+    defaults["inference_profiles"]["main"]["fallbacks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|f| {
+            Some((
+                text(&f["provider"])?.to_string(),
+                text(&f["model"])?.to_string(),
+            ))
+        })
+        .collect()
+}
+
+/// medousa-home offers two fallback slots.
+pub(crate) const FALLBACK_SLOTS: [&str; 2] = ["fallback.0", "fallback.1"];
+
+/// medousa-home's `CODING_RUNTIMES`: Medousa Coder, then the external
+/// agents.
+pub(crate) fn coding_runtimes() -> Vec<(&'static str, &'static str)> {
+    std::iter::once(("medousa", "Medousa Coder"))
+        .chain(super::external::AGENTS.iter().map(|a| (a.runtime, a.label)))
+        .collect()
+}
+
+/// medousa-home's `normalizeCodingRuntimePreferences`.
+pub(crate) fn coding(defaults: &Value) -> (String, Vec<String>) {
+    let all = coding_runtimes();
+    let valid = |v: &str| all.iter().any(|(id, _)| *id == v);
+    let raw = &defaults["coding_runtime"];
+    let preferred = text(&raw["preferred"])
+        .filter(|p| valid(p))
+        .unwrap_or("medousa")
+        .to_string();
+    let mut fallbacks: Vec<String> = Vec::new();
+    for f in raw["fallbacks"].as_array().into_iter().flatten() {
+        if let Some(f) = f.as_str()
+            && valid(f)
+            && f != preferred
+            && !fallbacks.iter().any(|x| x == f)
+        {
+            fallbacks.push(f.to_string());
+        }
+    }
+    (preferred, fallbacks)
+}
+
+pub(crate) fn coding_value(preferred: &str, fallbacks: &[String]) -> Value {
+    json!({ "preferred": preferred, "fallbacks": fallbacks })
+}
+
+/// The stages of a turn, with medousa-home's names.
+pub(crate) const STAGES: [(&str, &str); 7] = [
+    ("orchestrator", "Lead"),
+    ("chunker", "Reader"),
+    ("extractor", "Extractor"),
+    ("summarizer", "Summarizer"),
+    ("verifier", "Verifier"),
+    ("packer", "Packer"),
+    ("final_response", "Final voice"),
+];
+
+/// One stage's provider, model and fallback chain.
+pub(crate) fn stage(defaults: &Value, key: &str) -> Option<(String, String, Vec<String>)> {
+    let r = &defaults["stage_routing"][key];
+    r.is_object().then(|| {
+        (
+            text(&r["provider"]).unwrap_or_default().to_string(),
+            text(&r["model"]).unwrap_or_default().to_string(),
+            r["fallback_chain"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect(),
+        )
+    })
+}
+
+/// The routing matrix with one stage changed, keeping the rest of it.
+pub(crate) fn with_stage(
+    defaults: &Value,
+    key: &str,
+    provider: &str,
+    model: &str,
+    chain: &[String],
+) -> Option<Value> {
+    let mut matrix = defaults["stage_routing"].clone();
+    let route = matrix.get_mut(key).filter(|r| r.is_object())?;
+    route["provider"] = json!(provider.trim());
+    route["model"] = json!(model.trim());
+    route["fallback_chain"] = json!(chain);
+    Some(matrix)
 }
 
 /// A stance as offered: id, name, description.
@@ -109,6 +207,36 @@ pub(crate) fn apply(defaults: &mut Value, patch: &Patch) {
         Patch::Stance(id) => defaults["active_voice_id"] = json!(id),
         Patch::Depth(mode) => defaults["response_depth_mode"] = json!(mode),
         Patch::Field(key, value) => defaults[*key] = value.clone(),
+        Patch::Fallback(index, target) => {
+            if !defaults["inference_profiles"].is_object() {
+                defaults["inference_profiles"] = json!({});
+            }
+            if !defaults["inference_profiles"]["main"].is_object() {
+                defaults["inference_profiles"]["main"] = json!({
+                    "provider": defaults["provider"].clone(),
+                    "model": defaults["model"].clone(),
+                });
+            }
+            let main = &mut defaults["inference_profiles"]["main"];
+            if !main["fallbacks"].is_array() {
+                main["fallbacks"] = json!([]);
+            }
+            let list = main["fallbacks"].as_array_mut().unwrap();
+            match target {
+                Some((provider, model)) => {
+                    let entry = json!({ "provider": provider, "model": model });
+                    if *index < list.len() {
+                        list[*index] = entry;
+                    } else {
+                        list.push(entry);
+                    }
+                }
+                None if *index < list.len() => {
+                    list.remove(*index);
+                }
+                None => {}
+            }
+        }
         Patch::Model(provider, model) => {
             let changed = role(defaults, "main").is_none_or(|(p, _)| p != *provider);
             if !defaults["inference_profiles"].is_object() {
@@ -156,6 +284,38 @@ pub(crate) async fn write(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fallbacks_coding_and_stages_change_one_piece_at_a_time() {
+        let mut d = json!({"provider": "anthropic", "model": "a"});
+        apply(
+            &mut d,
+            &Patch::Fallback(0, Some(("openai".into(), "b".into()))),
+        );
+        apply(
+            &mut d,
+            &Patch::Fallback(5, Some(("groq".into(), "c".into()))),
+        );
+        assert_eq!(
+            fallbacks(&d),
+            [("openai".into(), "b".into()), ("groq".into(), "c".into())]
+        );
+        assert_eq!(d["inference_profiles"]["main"]["provider"], "anthropic");
+        apply(&mut d, &Patch::Fallback(0, None));
+        assert_eq!(fallbacks(&d), [("groq".to_string(), "c".to_string())]);
+
+        let raw = json!({"coding_runtime": {"preferred": "codex", "fallbacks": ["codex", "bogus", "cursor", "cursor"]}});
+        assert_eq!(coding(&raw), ("codex".into(), vec!["cursor".to_string()]));
+        assert_eq!(coding(&json!({})).0, "medousa");
+
+        let route = |p: &str| json!({"role": p, "provider": "x", "model": "y", "policy_profile": "default", "fallback_chain": []});
+        let d = json!({"stage_routing": {"orchestrator": route("orchestrator"), "verifier": route("verifier")}});
+        let m = with_stage(&d, "verifier", " openai ", "b", &["groq:c".into()]).unwrap();
+        assert_eq!(m["verifier"]["provider"], "openai");
+        assert_eq!(m["verifier"]["policy_profile"], "default", "kept");
+        assert_eq!(m["orchestrator"], route("orchestrator"));
+        assert!(with_stage(&json!({}), "verifier", "a", "b", &[]).is_none());
+    }
 
     #[test]
     fn changes_touch_only_their_field() {

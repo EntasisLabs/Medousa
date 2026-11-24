@@ -165,6 +165,12 @@ enum Action {
     /// First press asks; a second clears the open provider's key.
     ClearProviderKey,
     KeepProviderKey,
+    /// Picks which stage of a turn the routing form edits; Save writes it.
+    Stage(&'static str),
+    SaveStage,
+    ModePolicy(medousa_types::AgentModeTransitionPolicy),
+    /// Artifact cleanup: on, days kept, kept per chat.
+    Artifacts(bool, i64, usize),
     /// Saves a runtime list field from its draft: field, draft key.
     SaveList(&'static str, &'static str),
     /// Sets the env override typed in the Add form.
@@ -231,6 +237,10 @@ enum Kind {
     Lan(String, bool),
     Channels,
     SaveChannel(Box<channels::Plan>),
+    ModePolicy,
+    SetModePolicy(medousa_types::AgentModeTransitionPolicy),
+    Artifacts,
+    SetArtifacts(serde_json::Value),
     /// Provider keys; whether the custom provider's id can be read here.
     Providers(bool),
     SaveProvider(Box<providers::Plan>, bool),
@@ -264,6 +274,8 @@ enum Reply {
     Lan(serde_json::Value),
     Channels(Box<medousa_desktop_host::channels::Summary>),
     Providers(Box<providers::Read>),
+    ModePolicy(medousa_types::AgentModeTransitionPolicy),
+    Artifacts(Box<medousa_types::ArtifactRetentionStatusResponse>),
     McpServer(Box<Option<(medousa_desktop_host::mcp::Upsert, bool)>>),
     Pairing(Box<external::PairingRead>),
     Discovery(Box<medousa_types::ExternalMuseDiscoveryStatus>),
@@ -420,6 +432,16 @@ pub(crate) struct State {
     provider_open: Option<String>,
     provider_note: String,
     provider_clear: bool,
+    /// The routing stage being edited; mode suggestions and artifact
+    /// cleanup as read, their reads, a change in flight, and its note.
+    stage: &'static str,
+    mode_policy: Option<Result<medousa_types::AgentModeTransitionPolicy, String>>,
+    mode_reading: Option<u64>,
+    mode_busy: Option<u64>,
+    artifacts: Option<Result<medousa_types::ArtifactRetentionStatusResponse, String>>,
+    artifacts_reading: Option<u64>,
+    artifacts_busy: Option<u64>,
+    extras_note: String,
     /// Host env overrides: a variable a Remove waits on, and the last note.
     env_confirm: Option<String>,
     env_note: String,
@@ -502,6 +524,16 @@ impl State {
         if let Some(f) = self.conv_form.as_mut() {
             f.pairing_reading = Some(serial);
             f.next_poll = std::time::Instant::now() + PAIR_POLL;
+        }
+        self.redraw = true;
+    }
+    /// Mode suggestions and artifact cleanup, read with Medousa Agent.
+    fn read_extras(&mut self) {
+        if self.mode_reading.is_none() {
+            self.mode_reading = Some(self.enqueue(Kind::ModePolicy));
+        }
+        if self.artifacts_reading.is_none() {
+            self.artifacts_reading = Some(self.enqueue(Kind::Artifacts));
         }
         self.redraw = true;
     }
@@ -643,6 +675,14 @@ pub fn mount(w: &mut World, parent: Entity) {
         provider_note: String::new(),
         provider_clear: false,
         env_confirm: None,
+        stage: "orchestrator",
+        mode_policy: None,
+        mode_reading: None,
+        mode_busy: None,
+        artifacts: None,
+        artifacts_reading: None,
+        artifacts_busy: None,
+        extras_note: String::new(),
         env_note: String::new(),
         focused: None,
         waiting: None,
@@ -723,6 +763,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 if section == Section::Agent {
                     s.provider_clear = false;
                     s.read_providers();
+                    s.read_extras();
                 }
                 if matches!(section, Section::Agent | Section::Runtime)
                     && s.defaults_reading.is_none()
@@ -775,6 +816,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                         agent::Patch::Model(..) => "model",
                         // A runtime picker is keyed by its field.
                         agent::Patch::Field(key, _) => key,
+                        agent::Patch::Fallback(i, _) => agent::FALLBACK_SLOTS[i.min(1)],
                     });
                     let serial = s.enqueue(Kind::Patch(patch.clone()));
                     s.patching = Some((serial, patch));
@@ -1095,8 +1137,28 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             }
             Action::KeepProviderKey => s.provider_clear = false,
             Action::KeepEnv => s.env_confirm = None,
+            Action::Stage(key) => {
+                s.forget_fields(&["stage.provider", "stage.model", "stage.chain"]);
+                s.stage = key;
+            }
+            Action::ModePolicy(policy) => {
+                if s.mode_busy.is_none() {
+                    s.extras_note.clear();
+                    s.mode_busy = Some(s.enqueue(Kind::SetModePolicy(policy)));
+                }
+            }
+            Action::Artifacts(enabled, days, per) => {
+                if s.artifacts_busy.is_none() {
+                    s.extras_note.clear();
+                    s.artifacts_busy = Some(s.enqueue(Kind::SetArtifacts(serde_json::json!({
+                        "enabled": enabled,
+                        "max_age_days": days,
+                        "max_per_session": per,
+                    }))));
+                }
+            }
             // Turned into field patches by `runtime_edit`.
-            Action::SaveList(..) | Action::EnvAdd | Action::EnvRemove(_) => {}
+            Action::SaveList(..) | Action::EnvAdd | Action::EnvRemove(_) | Action::SaveStage => {}
             Action::OpenInstaller => {
                 if s.busy.is_none() {
                     s.message.clear();
@@ -1174,6 +1236,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 } else if matches!(s.section, Section::Agent | Section::Runtime) {
                     if s.section == Section::Agent {
                         s.read_providers();
+                        s.read_extras();
                     }
                     if s.defaults_reading.is_none() && s.patching.is_none() {
                         s.defaults_reading = Some(s.enqueue(Kind::Defaults));
@@ -1230,6 +1293,25 @@ fn runtime_edit(s: &mut State, a: Action) -> Option<Action> {
                 s.env_confirm = Some(name);
                 None
             }
+        }
+        Action::SaveStage => {
+            let d = |k: &str| s.drafts.get(k).cloned().unwrap_or_default();
+            let chain: Vec<String> = d("stage.chain")
+                .split(',')
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(String::from)
+                .collect();
+            let matrix = s.defaults.as_ref().and_then(|defaults| {
+                agent::with_stage(
+                    defaults,
+                    s.stage,
+                    &d("stage.provider"),
+                    &d("stage.model"),
+                    &chain,
+                )
+            })?;
+            field("stage_routing", matrix)
         }
         other => Some(other),
     }
@@ -1592,6 +1674,39 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
         Kind::Lan(url, on) => medousa_desktop_host::peer_lan::set_enabled(&url, on)
             .await
             .map(Reply::Lan),
+        Kind::ModePolicy => client
+            .runtime()
+            .agent_mode_transition_policy()
+            .await
+            .map(Reply::ModePolicy)
+            .map_err(|e| e.to_string()),
+        Kind::SetModePolicy(policy) => client
+            .runtime()
+            .set_agent_mode_transition_policy(&policy)
+            .await
+            .map(Reply::ModePolicy)
+            .map_err(|e| e.to_string()),
+        Kind::Artifacts => client
+            .http()
+            .get::<medousa_types::ArtifactRetentionStatusResponse>("/v1/maintenance/artifacts")
+            .await
+            .map(|a| Reply::Artifacts(Box::new(a)))
+            .map_err(|e| e.to_string()),
+        Kind::SetArtifacts(body) => {
+            let put: Result<serde_json::Value, _> =
+                client.http().put("/v1/maintenance/artifacts", &body).await;
+            match put {
+                Ok(_) => client
+                    .http()
+                    .get::<medousa_types::ArtifactRetentionStatusResponse>(
+                        "/v1/maintenance/artifacts",
+                    )
+                    .await
+                    .map(|a| Reply::Artifacts(Box::new(a)))
+                    .map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            }
+        }
         Kind::Channels => tokio::task::spawn_blocking(medousa_desktop_host::channels::summary)
             .await
             .map(|s| Reply::Channels(Box::new(s)))
@@ -1960,6 +2075,38 @@ fn capture(w: &World, s: &mut State) {
 
 pub fn apply(w: &mut World, u: Update) {
     with_state(w, |_, s| {
+        let reading_mode = s.mode_reading == Some(u.serial);
+        if reading_mode || s.mode_busy == Some(u.serial) {
+            if reading_mode {
+                s.mode_reading = None;
+            } else {
+                s.mode_busy = None;
+            }
+            match u.result {
+                Ok(Reply::ModePolicy(p)) => s.mode_policy = Some(Ok(p)),
+                Err(e) if reading_mode => s.mode_policy = Some(Err(e)),
+                Err(e) => s.extras_note = format!("Mode suggestions weren’t saved: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        let reading_artifacts = s.artifacts_reading == Some(u.serial);
+        if reading_artifacts || s.artifacts_busy == Some(u.serial) {
+            if reading_artifacts {
+                s.artifacts_reading = None;
+            } else {
+                s.artifacts_busy = None;
+            }
+            match u.result {
+                Ok(Reply::Artifacts(a)) => s.artifacts = Some(Ok(*a)),
+                Err(e) if reading_artifacts => s.artifacts = Some(Err(e)),
+                Err(e) => s.extras_note = format!("Artifact cleanup wasn’t saved: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
         if let Some(f) = s.conv_form.as_mut() {
             if f.pairing_reading == Some(u.serial) {
                 f.pairing_reading = None;
@@ -2444,6 +2591,8 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Lan(_)
                 | Reply::Channels(_)
                 | Reply::Providers(_)
+                | Reply::ModePolicy(_)
+                | Reply::Artifacts(_)
                 | Reply::McpServer(_)
                 | Reply::Pairing(_)
                 | Reply::Discovery(_)
