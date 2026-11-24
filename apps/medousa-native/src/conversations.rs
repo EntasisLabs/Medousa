@@ -987,7 +987,11 @@ mod tests {
         let r = app.world().get::<Rect>(t).unwrap();
         assert!(r.y >= 0. && r.y + r.h <= chrome::HEIGHT);
         for child in children_of(app.world(), t) {
-            if app.world().has::<Label>(child) && !app.world().has::<Hidden>(child) {
+            // The title keeps text insets; the icon and close glyphs sit flush.
+            let title = app.world().get::<Label>(child).is_some_and(|l| {
+                !l.text.chars().all(rndr_core::is_icon_scalar)
+            });
+            if title && !app.world().has::<Hidden>(child) {
                 assert_eq!(
                     *app.world().get::<LabelBox>(child).unwrap(),
                     LabelBox::CONTENT

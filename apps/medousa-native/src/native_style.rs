@@ -802,6 +802,12 @@ pub fn action_icons(world: &mut World) {
             matches!((chars.next(), chars.next()), (Some(ch), None) if rndr_core::is_icon_scalar(ch))
         })
         .map(|(e, _)| *e)
+        // A tab's own glyphs (its icon and close) are styled with the tab.
+        .filter(|e| {
+            !world
+                .get::<Parent>(*e)
+                .is_some_and(|p| world.has::<rndr_core::Tab>(p.entity))
+        })
         .collect();
     for entity in icons {
         // A glyph is never elided; it centres in its face without text insets.

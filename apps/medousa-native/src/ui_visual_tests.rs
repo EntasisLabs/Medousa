@@ -1174,6 +1174,12 @@ fn icon_buttons_are_one_square_shape_with_a_centred_glyph() {
             let (Some(root), true) = (root, shown) else {
                 continue;
             };
+            // A tab's glyphs are sized and placed with the tab itself.
+            if w.get::<Parent>(*e).is_some_and(|p| w.has::<Tab>(p.entity))
+                || w.get::<Parent>(root).is_some_and(|p| w.has::<Tab>(p.entity))
+            {
+                continue;
+            }
             let (r, l) = (*w.get::<Rect>(root).unwrap(), *w.get::<Rect>(*e).unwrap());
             // Full-width rows (disclosures) lead with their glyph by design.
             if r.w > 48. || r.w < 1. {

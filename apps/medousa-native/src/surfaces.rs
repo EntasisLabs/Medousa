@@ -8,8 +8,9 @@ use rndr_ui::{
 };
 
 /// Wide enough that the macOS traffic lights sit inside the rail, so the
-/// navigation column runs to the window's top even with no sidebar open.
-pub const RAIL_WIDTH: f32 = 78.;
+/// navigation column runs to the window's top even with no sidebar open:
+/// 16pt each side of the lights' 54pt span, as medousa-home places them.
+pub const RAIL_WIDTH: f32 = 86.;
 const NAV_TARGET: f32 = 40.;
 const NAV_ICON: f32 = 20.;
 const CHAT: u64 = 0x5355_0001;

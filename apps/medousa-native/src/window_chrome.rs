@@ -9,6 +9,14 @@ use super::*;
 use rndr_ui::tabs::TabStripHandle;
 
 pub const HEIGHT: f32 = 48.;
+/// Titlebar tabs: slim chips, as medousa-home draws them.
+const TAB_HEIGHT: f32 = 28.;
+const TAB_TEXT: f32 = 13.;
+const TAB_ICON: f32 = 14.;
+const TAB_CLOSE: f32 = 12.;
+const TAB_CLOSE_BOX: f32 = 16.;
+/// RNDR's narrowest tab, below which the strip scrolls.
+const TAB_MIN: f32 = 96.;
 struct BandStrip(TabStripHandle);
 impl Component for BandStrip {}
 struct Chrome {
@@ -67,7 +75,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         world,
         Some(band),
         Layout {
-            width: Size::Px(78.),
+            width: Size::Px(crate::surfaces::RAIL_WIDTH),
             height: Size::Fill,
             ..Layout::row()
         },
@@ -482,7 +490,7 @@ pub fn polish(world: &mut World) {
         .unwrap_or_default();
     // Headless captures reserve the expected macOS controls but never draw fakes.
     let native = if cfg!(target_os = "macos") && !frame.draws_controls {
-        frame.leading.max(78.)
+        frame.leading.max(crate::surfaces::RAIL_WIDTH)
     } else {
         frame.leading
     };
@@ -533,7 +541,7 @@ pub fn polish(world: &mut World) {
             .count();
         // Decide against the space WITHOUT overflow chrome, avoiding a visibility
         // feedback loop when a lone tab fits but the three extra buttons do not.
-        let required = count as f32 * 218. + count.saturating_sub(1) as f32 * 4.;
+        let required = count as f32 * TAB_MIN + count.saturating_sub(1) as f32 * 4.;
         let overflow = world.get::<Rect>(bar).is_some_and(|r| required > r.w - 48.);
         for control in [
             strip.scroll_back(world),
@@ -569,31 +577,120 @@ pub fn polish(world: &mut World) {
                     && pointer[1] < r.y + r.h
             });
             let pressed = hovered && world.resource::<Input>().is_some_and(|i| i.pointer.down);
+            // Quiet chips, as medousa-home's titlebar tabs: the open tab is a
+            // soft neutral plane, the others are bare text until hovered.
             let token = if pressed {
                 Token::ControlPressed
             } else if selected {
-                Token::Selected
+                Token::Raised
             } else if hovered {
                 Token::ControlHover
             } else {
                 visual::canvas()
             };
-            world.insert(entity, visual::color(world, token));
+            let fill = visual::color(world, token);
+            world.insert(
+                entity,
+                if selected || hovered || pressed {
+                    fill
+                } else {
+                    Color::rgba(0., 0., 0., 0.)
+                },
+            );
             world.insert(entity, Radius(visual::CONTROL_RADIUS));
+            // Width stays RNDR's: sized to the title within its 96-200pt range.
             let layout = world.get_mut::<Layout>(entity).unwrap();
-            layout.width = Size::Px(218.);
-            layout.height = Size::Px(30.);
-            layout.padding = 6.;
+            layout.height = Size::Px(TAB_HEIGHT);
+            layout.padding = 0.;
+            layout.gap = 6.;
+            world.insert(
+                entity,
+                Padding {
+                    left: 10.,
+                    right: 4.,
+                    top: 0.,
+                    bottom: 0.,
+                },
+            );
+            world.insert(
+                entity,
+                Align {
+                    items: Items::Center,
+                    ..Default::default()
+                },
+            );
+            let theme = world.resource::<UiTheme>().cloned().unwrap_or_default();
+            let ink = visual::color(
+                world,
+                if selected || hovered {
+                    visual::text()
+                } else {
+                    visual::secondary()
+                },
+            );
+            let quiet = visual::color(world, visual::secondary());
             for child in children_of(world, entity) {
-                if world.has::<Label>(child) {
+                if !world.has::<Label>(child) {
+                    continue;
+                }
+                let glyph = world.get::<Label>(child).is_some_and(|l| {
+                    let mut chars = l.text.chars();
+                    matches!((chars.next(), chars.next()), (Some(ch), None) if rndr_core::is_icon_scalar(ch))
+                });
+                let mut style = theme.typography(Typography::Label);
+                if world.has::<Button>(child) {
+                    // Close: small, and only there when the tab is in play.
+                    let shown = selected || hovered || focus == Some(child);
+                    style.size = TAB_CLOSE;
+                    style.line_height = Some(1.);
+                    style.align = TextAlign::Center;
+                    world.insert(child, Opacity(if shown { 1. } else { 0. }));
+                    let label = world.get_mut::<Label>(child).unwrap();
+                    label.color = Some(quiet);
+                    label.overflow = TextOverflow::Visible;
+                    // An even inset centres the glyph in its hover square.
+                    let inset = (TAB_CLOSE_BOX - TAB_CLOSE) / 2.;
+                    world.insert(
+                        child,
+                        LabelBox {
+                            inset_x: inset,
+                            inset_y: inset,
+                            min_height: 0.,
+                        },
+                    );
+                    let layout = world.get_mut::<Layout>(child).unwrap();
+                    layout.width = Size::Px(TAB_CLOSE_BOX);
+                    layout.height = Size::Px(TAB_CLOSE_BOX);
+                    world.insert(child, Radius(4.));
+                } else if glyph {
+                    style.size = TAB_ICON;
+                    style.line_height = Some(1.);
+                    let label = world.get_mut::<Label>(child).unwrap();
+                    label.color = Some(quiet);
+                    label.overflow = TextOverflow::Visible;
+                    world.insert(
+                        child,
+                        LabelBox {
+                            inset_x: 0.,
+                            inset_y: 0.,
+                            min_height: 0.,
+                        },
+                    );
+                    let layout = world.get_mut::<Layout>(child).unwrap();
+                    layout.width = Size::Px(TAB_ICON);
+                    layout.height = Size::Px(TAB_ICON);
+                } else {
+                    style.size = TAB_TEXT;
                     world.insert(child, LabelBox::CONTENT);
-                    let style = world
-                        .resource::<UiTheme>()
-                        .cloned()
-                        .unwrap_or_default()
-                        .typography(Typography::Label);
                     world.get_mut::<Layout>(child).unwrap().height = Size::Hug;
-                    world.insert(child, style);
+                    world.get_mut::<Label>(child).unwrap().color = Some(ink);
+                }
+                world.insert(child, style);
+            }
+            // The selected plane is the cue; no underline beneath it.
+            for child in children_of(world, entity) {
+                if world.has::<Absolute>(child) && !world.has::<Label>(child) {
+                    world.insert(child, Hidden);
                 }
             }
             // RNDR's tab focus border stays authoritative.

@@ -191,7 +191,7 @@ pub fn app() -> App {
         title: "Medousa".into(),
         size: LogicalSize::new(1200., 850.),
         min_size: Some(LogicalSize::new(760., 540.)),
-        titlebar: Some(Titlebar::new(chrome::HEIGHT).traffic_lights(14., 18.)),
+        titlebar: Some(Titlebar::new(chrome::HEIGHT).traffic_lights(16., 18.)),
         ..Default::default()
     });
     app.add_system(Schedule::Startup, setup);
