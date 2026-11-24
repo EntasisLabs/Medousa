@@ -842,7 +842,7 @@ fn agent_section(w: &mut World, s: &mut State, body: Entity) {
             quiet(
                 w,
                 body,
-                "No models are available yet. Connect a provider in the original Medousa app.",
+                "No models are available yet. Add a key under Provider keys below.",
             );
         }
         for (provider, model) in models {
@@ -895,19 +895,211 @@ fn agent_section(w: &mut World, s: &mut State, body: Entity) {
     if s.patching.is_some() {
         quiet(w, body, "Saving…");
     }
+    let keys = match s.providers.as_ref().map(|r| r.keyed()) {
+        Some(0) => "No keys yet".to_string(),
+        Some(1) => "1 provider with a key".into(),
+        Some(n) => format!("{n} providers with keys"),
+        None if s.providers_reading.is_some() => "Reading…".into(),
+        None => String::new(),
+    };
+    if more(w, body, s, "providers", "Provider keys", &keys) {
+        provider_keys(w, s, body);
+    }
     if more(
         w,
         body,
         s,
         "agent-more",
         "More agent settings",
-        "Keys, routing, retention",
+        "Routing, retention",
     ) {
         quiet(
             w,
             body,
-            "Provider keys, fallbacks, stage routing, coding runtime, mode suggestions and retention are coming to this app soon. Until then, change them in the original Medousa app.",
+            "Fallbacks, stage routing, coding runtime, mode suggestions and retention are coming to this app soon. Until then, change them in the original Medousa app.",
         );
+    }
+}
+
+/// Each provider with its key and base URL; one opens at a time.
+fn provider_keys(w: &mut World, s: &mut State, body: Entity) {
+    let Some(read) = s.providers.clone() else {
+        if !s.provider_note.is_empty() {
+            let note = s.provider_note.clone();
+            label(w, body, &note, Typography::Label);
+        } else {
+            quiet(w, body, "Reading provider keys…");
+        }
+        return;
+    };
+    quiet(
+        w,
+        body,
+        "Keys are kept by the workshop’s engine and never shown again.",
+    );
+    let local = s.local();
+    for e in super::providers::entries() {
+        if e.id == super::providers::CUSTOM && !local {
+            continue;
+        }
+        let name = super::providers::label(&e);
+        let open = s.provider_open.as_deref() == Some(e.id.as_str());
+        let side = runtime_row(w, body, &name, &read.summary(&e));
+        named_button(
+            w,
+            side,
+            s,
+            if open { "Close" } else { "Edit" },
+            format!("{} {name}", if open { "Close" } else { "Edit" }),
+            Action::Provider(e.id.clone()),
+            true,
+        );
+        if open {
+            provider_form(w, s, body, &e, &read, &name);
+        }
+    }
+    if !local {
+        quiet(
+            w,
+            body,
+            "A custom provider is set up on the workshop’s own machine.",
+        );
+    }
+}
+
+fn provider_form(
+    w: &mut World,
+    s: &mut State,
+    body: Entity,
+    e: &medousa_desktop_host::provider_catalog::ProviderCatalogEntry,
+    read: &super::providers::Read,
+    name: &str,
+) {
+    use super::providers as p;
+    let form = panel(
+        w,
+        body,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            padding: 12.,
+            ..Layout::column()
+        },
+    );
+    quiet(w, form, &e.blurb);
+    let custom = e.id == p::CUSTOM;
+    if custom {
+        field(
+            w,
+            form,
+            s,
+            "provider.id",
+            "Provider id",
+            "Genai adapter name sent at inference time.",
+            "openai",
+            false,
+        );
+    }
+    if p::allows_base_url(e) {
+        let hint = match e.id.as_str() {
+            "ollama" => "Local Ollama, Ollama Cloud, or any OpenAI-compatible Ollama endpoint.",
+            "medousa-local" => "Medousa Engine OpenAI-compatible endpoint on this device.",
+            _ if custom => "Required — usually ends in /v1.",
+            _ => "Override the default endpoint if needed.",
+        };
+        let placeholder = e.default_base_url.clone().unwrap_or("https://…".into());
+        field(
+            w,
+            form,
+            s,
+            "provider.url",
+            "API base URL",
+            hint,
+            &placeholder,
+            false,
+        );
+    }
+    let has_key = read.has_key(&read.key_kind(e));
+    if p::allows_key(e) {
+        let hint = match &e.key_hint {
+            _ if custom => "Optional for local endpoints — required for most hosted APIs.".into(),
+            Some(h) => format!("Example: {h}"),
+            None => "Stored by this workshop.".into(),
+        };
+        let placeholder = if has_key {
+            "Leave blank to keep the saved key".to_string()
+        } else {
+            e.key_hint.clone().unwrap_or("Paste key".into())
+        };
+        field(
+            w,
+            form,
+            s,
+            "provider.key",
+            "API key",
+            &hint,
+            &placeholder,
+            true,
+        );
+    }
+    let idle = s.provider_busy.is_none();
+    let row = panel(
+        w,
+        form,
+        Layout {
+            width: Size::Hug,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
+    named_button(
+        w,
+        row,
+        s,
+        if s.provider_busy.is_some() {
+            "Saving…"
+        } else {
+            "Save"
+        },
+        format!("Save {name}"),
+        Action::SaveProvider,
+        idle,
+    );
+    if p::allows_key(e) && has_key {
+        if s.provider_clear {
+            named_button(
+                w,
+                row,
+                s,
+                "Cancel",
+                format!("Keep {name} key"),
+                Action::KeepProviderKey,
+                true,
+            );
+        }
+        named_button(
+            w,
+            row,
+            s,
+            if s.provider_clear {
+                "Clear key?"
+            } else {
+                "Clear key"
+            },
+            if s.provider_clear {
+                format!("Confirm clearing {name} key")
+            } else {
+                format!("Clear {name} key")
+            },
+            Action::ClearProviderKey,
+            idle,
+        );
+    }
+    if !s.provider_note.is_empty() {
+        let note = s.provider_note.clone();
+        label(w, form, &note, Typography::Label);
     }
 }
 

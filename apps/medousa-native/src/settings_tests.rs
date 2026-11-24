@@ -197,7 +197,7 @@ fn command_comma_opens_settings_from_anywhere() {
 }
 
 #[test]
-#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime,sharing,channels}-{dark,light}.png"]
+#[ignore = "writes verification/native-settings-{look,connection,packages,agent,mcp,accounts,external,runtime,sharing,channels,providers}-{dark,light}.png"]
 fn settings_visual_acceptance() {
     use std::sync::Arc;
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
@@ -330,6 +330,26 @@ fn settings_visual_acceptance() {
             rndr_paint::frame(&mut app);
         }
         shoot(&mut app, "agent");
+        with_state(app.world_mut(), |_, s| {
+            s.open.remove("model");
+            s.open.remove("stance");
+            s.open.insert("providers");
+            s.providers = Some(providers_read(true));
+            s.provider_open = Some("ollama".into());
+            let e = providers::find("ollama").unwrap();
+            let fields = providers::fill(s.providers.as_ref().unwrap(), &e);
+            s.drafts.extend(fields);
+            s.redraw = true;
+        });
+        rndr_paint::frame(&mut app);
+        let body = state(app.world()).unwrap().body;
+        let scroll = app.world().get::<Parent>(body).unwrap().entity;
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., -420.];
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        shoot(&mut app, "providers");
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [0., 0.];
         with_state(app.world_mut(), |_, s| {
             s.section = Section::Mcp;
             s.mcp_reading = None;
@@ -1543,4 +1563,103 @@ fn a_workshop_elsewhere_sets_its_channels_up_there() {
             .any(|x| x == "This workshop runs on another machine; its channels are set up there."),
         "{t:?}"
     );
+}
+
+fn providers_read(openai_key: bool) -> providers::Read {
+    providers::Read {
+        connections: serde_json::from_value(serde_json::json!([{
+            "connection_id": format!("conn_{}", "b".repeat(32)), "kind": "openai",
+            "secrets": {"api_key": openai_key},
+            "created_at": "2026-11-01T00:00:00Z", "updated_at": "2026-11-01T00:00:00Z"
+        }]))
+        .unwrap(),
+        custom_id: None,
+    }
+}
+
+fn providers_open() -> App {
+    let mut app = agent_open();
+    app.world_mut().insert_resource(Viewport::new(1200., 2600.));
+    let read = state(app.world())
+        .unwrap()
+        .providers_reading
+        .expect("read on open");
+    apply(
+        app.world_mut(),
+        Update {
+            serial: read,
+            result: Ok(Reply::Providers(Box::new(providers_read(true)))),
+        },
+    );
+    take_commands(app.world_mut());
+    app.update();
+    app
+}
+
+#[test]
+fn a_provider_key_is_typed_masked_saved_and_cleared_on_a_second_press() {
+    let mut app = providers_open();
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "1 provider with a key"), "{t:?}");
+    click(&mut app, "Provider keys");
+    let t = texts(app.world());
+    assert!(t.iter().any(|x| x == "Default URL · Key stored"), "{t:?}");
+
+    click(&mut app, "Edit OpenAI API");
+    assert_eq!(
+        field_text(app.world(), "API base URL"),
+        "https://api.openai.com/v1"
+    );
+    click(&mut app, "API key");
+    type_text(&mut app, "sk-new");
+    let key = named(app.world(), "API key").unwrap();
+    assert!(app.world().has::<Secure>(key));
+    click(&mut app, "Save OpenAI API");
+    let (busy, _) = state(app.world()).unwrap().provider_busy.expect("saving");
+    apply(
+        app.world_mut(),
+        Update {
+            serial: busy,
+            result: Ok(Reply::Providers(Box::new(providers_read(true)))),
+        },
+    );
+    app.update();
+    assert_eq!(
+        field_text(app.world(), "API key"),
+        "",
+        "the key leaves the form"
+    );
+    assert!(
+        texts(app.world())
+            .iter()
+            .any(|x| x == "Saved to this workshop.")
+    );
+
+    // Clearing asks first.
+    click(&mut app, "Clear OpenAI API key");
+    assert!(state(app.world()).unwrap().provider_busy.is_none());
+    click(&mut app, "Keep OpenAI API key");
+    assert!(!state(app.world()).unwrap().provider_clear);
+    click(&mut app, "Clear OpenAI API key");
+    click(&mut app, "Confirm clearing OpenAI API key");
+    assert!(state(app.world()).unwrap().provider_busy.is_some());
+}
+
+#[test]
+fn a_bad_base_url_is_named_and_an_unchanged_form_says_so() {
+    let mut app = providers_open();
+    click(&mut app, "Provider keys");
+    click(&mut app, "Edit OpenAI API");
+    click(&mut app, "Save OpenAI API");
+    assert!(texts(app.world()).iter().any(|x| x == "Nothing changed."));
+    click(&mut app, "API base URL");
+    type_text(&mut app, " nope");
+    click(&mut app, "Save OpenAI API");
+    let s = state(app.world()).unwrap();
+    assert!(s.provider_busy.is_none());
+    assert_eq!(s.provider_note, "Enter a valid http(s) API base URL.");
+    // Closing drops the form's text.
+    click(&mut app, "Close OpenAI API");
+    let s = state(app.world()).unwrap();
+    assert!(s.provider_open.is_none() && !s.drafts.contains_key("provider.url"));
 }

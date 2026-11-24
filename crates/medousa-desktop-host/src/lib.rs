@@ -10,6 +10,7 @@ pub mod mcp;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod packages;
 pub mod paths;
+pub mod provider_catalog;
 pub mod workshop_registry;
 pub mod workshop_runtime;
 

@@ -17,6 +17,8 @@ pub(crate) mod agent;
 pub(crate) mod channels;
 #[path = "settings_external.rs"]
 pub(crate) mod external;
+#[path = "settings_providers.rs"]
+pub(crate) mod providers;
 #[path = "settings_runtime.rs"]
 pub(crate) mod runtime;
 #[path = "settings_sharing.rs"]
@@ -141,6 +143,12 @@ enum Action {
     ForgetToken(&'static str),
     SaveChannel(&'static str),
     OpenGuide(&'static str),
+    /// Opens or closes a provider's key form.
+    Provider(String),
+    SaveProvider,
+    /// First press asks; a second clears the open provider's key.
+    ClearProviderKey,
+    KeepProviderKey,
 }
 
 /// The active workshop as the registry describes it.
@@ -191,6 +199,10 @@ enum Kind {
     Lan(String, bool),
     Channels,
     SaveChannel(Box<channels::Plan>),
+    /// Provider keys; whether the custom provider's id can be read here.
+    Providers(bool),
+    SaveProvider(Box<providers::Plan>, bool),
+    ClearProviderKey(String, bool),
 }
 pub struct Update {
     serial: u64,
@@ -219,6 +231,7 @@ enum Reply {
     Qr(Box<sharing::Qr>),
     Lan(serde_json::Value),
     Channels(Box<medousa_desktop_host::channels::Summary>),
+    Providers(Box<providers::Read>),
 }
 
 /// Waiting for an agent's CLI to report it signed in.
@@ -338,6 +351,15 @@ pub(crate) struct State {
     forget: HashSet<&'static str>,
     /// Fields drawn this time, and the one that had focus with its caret.
     fields: Vec<(&'static str, Entity)>,
+    /// Provider keys: what the engine keeps, its read, a change in flight
+    /// with what to say when it lands, the open form, its note, and a
+    /// Clear key waiting to be confirmed.
+    providers: Option<providers::Read>,
+    providers_reading: Option<u64>,
+    provider_busy: Option<(u64, &'static str)>,
+    provider_open: Option<String>,
+    provider_note: String,
+    provider_clear: bool,
     focused: Option<(&'static str, Caret)>,
     waiting: Option<Waiting>,
     agent_note: String,
@@ -394,6 +416,19 @@ impl State {
         if self.channels_reading.is_none() && self.local() {
             self.channels_reading = Some(self.enqueue(Kind::Channels));
             self.redraw = true;
+        }
+    }
+    fn read_providers(&mut self) {
+        if self.providers_reading.is_none() {
+            self.providers_reading = Some(self.enqueue(Kind::Providers(self.local())));
+            self.redraw = true;
+        }
+    }
+    /// Drops a form's text, and its fields so a rebuild doesn't keep it.
+    fn forget_fields(&mut self, keys: &[&'static str]) {
+        self.fields.retain(|(k, _)| !keys.contains(k));
+        for k in keys {
+            self.drafts.remove(k);
         }
     }
     /// Fills an open form from what's saved, once.
@@ -513,6 +548,12 @@ pub fn mount(w: &mut World, parent: Entity) {
         heartbeat: HashMap::new(),
         forget: HashSet::new(),
         fields: Vec::new(),
+        providers: None,
+        providers_reading: None,
+        provider_busy: None,
+        provider_open: None,
+        provider_note: String::new(),
+        provider_clear: false,
         focused: None,
         waiting: None,
         agent_note: String::new(),
@@ -581,6 +622,10 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     if s.workshop.is_none() && s.reading.is_empty() {
                         s.refresh();
                     }
+                }
+                if section == Section::Agent {
+                    s.provider_clear = false;
+                    s.read_providers();
                 }
                 if matches!(section, Section::Agent | Section::Runtime)
                     && s.defaults_reading.is_none()
@@ -806,6 +851,53 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             Action::OpenGuide(url) => {
                 s.enqueue(Kind::OpenUrl(url.into()));
             }
+            Action::Provider(id) => {
+                s.forget_fields(&providers::KEYS);
+                s.provider_note.clear();
+                s.provider_clear = false;
+                if s.provider_open.as_deref() == Some(id.as_str()) {
+                    s.provider_open = None;
+                } else {
+                    if let (Some(read), Some(e)) = (&s.providers, providers::find(&id)) {
+                        let fields = providers::fill(read, &e);
+                        s.drafts.extend(fields);
+                    }
+                    s.provider_open = Some(id);
+                }
+            }
+            Action::SaveProvider => {
+                let open = s.provider_open.as_deref().and_then(providers::find);
+                if let (None, Some(e), Some(read)) = (s.provider_busy, open, &s.providers) {
+                    match providers::plan(&e, read, &s.drafts) {
+                        Ok(plan) if plan == providers::Plan::default() => {
+                            s.provider_note = "Nothing changed.".into();
+                        }
+                        Ok(plan) => {
+                            s.provider_note.clear();
+                            let local = s.local();
+                            let serial = s.enqueue(Kind::SaveProvider(Box::new(plan), local));
+                            s.provider_busy = Some((serial, "Saved to this workshop."));
+                        }
+                        Err(e) => s.provider_note = e,
+                    }
+                }
+            }
+            Action::ClearProviderKey => {
+                let open = s.provider_open.as_deref().and_then(providers::find);
+                if let (None, Some(e), Some(read)) = (s.provider_busy, open, &s.providers) {
+                    if s.provider_clear {
+                        let kind = read.key_kind(&e);
+                        s.provider_clear = false;
+                        s.provider_note.clear();
+                        let local = s.local();
+                        let serial = s.enqueue(Kind::ClearProviderKey(kind, local));
+                        s.provider_busy = Some((serial, "Key removed."));
+                    } else {
+                        s.provider_clear = true;
+                    }
+                }
+            }
+            Action::KeepProviderKey => s.provider_clear = false,
             Action::OpenInstaller => {
                 if s.busy.is_none() {
                     s.message.clear();
@@ -881,6 +973,9 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                         s.read_qr();
                     }
                 } else if matches!(s.section, Section::Agent | Section::Runtime) {
+                    if s.section == Section::Agent {
+                        s.read_providers();
+                    }
                     if s.defaults_reading.is_none() && s.patching.is_none() {
                         s.defaults_reading = Some(s.enqueue(Kind::Defaults));
                     }
@@ -1231,6 +1326,15 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
             .map(|s| Reply::Channels(Box::new(s)))
             .map_err(|e| e.to_string()),
         Kind::SaveChannel(plan) => save_channel(client, *plan).await,
+        Kind::Providers(local) => read_providers(client, local).await,
+        Kind::SaveProvider(plan, local) => match save_provider(client, *plan).await {
+            Ok(()) => read_providers(client, local).await,
+            Err(e) => Err(e),
+        },
+        Kind::ClearProviderKey(kind, local) => match clear_provider_key(client, &kind).await {
+            Ok(()) => read_providers(client, local).await,
+            Err(e) => Err(e),
+        },
         Kind::ConversationRotate(id) => client
             .http()
             .post_empty::<medousa_types::RotateExternalCallbackResponse>(&format!(
@@ -1304,34 +1408,133 @@ pub async fn execute(client: &MedousaClient, command: Command) -> Update {
     }
 }
 
+async fn connections(
+    client: &MedousaClient,
+) -> Result<Vec<medousa_types::IntegrationConnection>, String> {
+    client
+        .http()
+        .get::<medousa_types::IntegrationConnectionListResponse>("/v1/integrations")
+        .await
+        .map(|l| l.connections)
+        .map_err(|e| format!("The engine’s key store couldn’t be read: {e}"))
+}
+
+/// The engine's connection for `kind`, made if there is none, as it goes
+/// in a route path.
+async fn connection_id(client: &MedousaClient, kind: &str) -> Result<String, String> {
+    let id = match connections(client)
+        .await?
+        .into_iter()
+        .find(|c| c.kind == kind)
+    {
+        Some(c) => c.connection_id,
+        None => {
+            client
+                .http()
+                .post::<medousa_types::IntegrationConnection, _>(
+                    "/v1/integrations",
+                    &medousa_types::CreateIntegrationConnectionRequest {
+                        kind: kind.into(),
+                        label: None,
+                        base_url: None,
+                    },
+                )
+                .await
+                .map_err(|e| format!("The engine couldn’t keep it: {e}"))?
+                .connection_id
+        }
+    };
+    Ok(urlencoding::encode(id.as_str()).into_owned())
+}
+
+fn custom_provider_path() -> std::path::PathBuf {
+    medousa_desktop_host::paths::medousa_data_dir().join("custom_provider_id")
+}
+
+async fn read_providers(client: &MedousaClient, local: bool) -> Result<Reply, String> {
+    let connections = connections(client).await?;
+    let custom_id = if local {
+        tokio::task::spawn_blocking(|| {
+            std::fs::read_to_string(custom_provider_path())
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    } else {
+        None
+    };
+    Ok(Reply::Providers(Box::new(providers::Read {
+        connections,
+        custom_id,
+    })))
+}
+
+/// Keeps a provider's custom id here, then its base URL and key with the
+/// engine.
+async fn save_provider(client: &MedousaClient, plan: providers::Plan) -> Result<(), String> {
+    if let Some(id) = plan.custom_id {
+        tokio::task::spawn_blocking(move || {
+            let path = custom_provider_path();
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(path, id)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("The custom provider id couldn’t be saved: {e}"))?;
+    }
+    if let Some((kind, url)) = plan.base_url {
+        let id = connection_id(client, &kind).await?;
+        client
+            .http()
+            .patch::<serde_json::Value, _>(
+                &format!("/v1/integrations/{id}"),
+                &medousa_types::PatchIntegrationConnectionRequest {
+                    label: None,
+                    // Empty returns to the default.
+                    base_url: Some(url.unwrap_or_default()),
+                    kind: None,
+                },
+            )
+            .await
+            .map_err(|e| format!("The base URL couldn’t be saved: {e}"))?;
+    }
+    if let Some((kind, key)) = plan.key {
+        let id = connection_id(client, &kind).await?;
+        client
+            .http()
+            .put::<serde_json::Value, _>(
+                &format!("/v1/integrations/{id}/secrets/api_key"),
+                &medousa_types::UpsertIntegrationSecretRequest { value: key },
+            )
+            .await
+            .map_err(|e| format!("The engine couldn’t keep the key: {e}"))?;
+    }
+    Ok(())
+}
+
+async fn clear_provider_key(client: &MedousaClient, kind: &str) -> Result<(), String> {
+    for c in connections(client).await? {
+        if c.kind == kind && c.secrets.slot(medousa_types::IntegrationSecretSlot::ApiKey) {
+            let id = urlencoding::encode(c.connection_id.as_str()).into_owned();
+            client
+                .http()
+                .delete::<serde_json::Value>(&format!("/v1/integrations/{id}/secrets/api_key"))
+                .await
+                .map_err(|e| format!("The key couldn’t be removed: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
 /// Stores a channel's token changes with the engine, then saves its
 /// settings here and starts or stops its adapter.
 async fn save_channel(client: &MedousaClient, plan: channels::Plan) -> Result<Reply, String> {
     if !plan.tokens.is_empty() {
-        let list = client
-            .http()
-            .get::<medousa_types::IntegrationConnectionListResponse>("/v1/integrations")
-            .await
-            .map_err(|e| format!("The engine’s token store couldn’t be read: {e}"))?;
-        let id = match list.connections.into_iter().find(|c| c.kind == plan.kind) {
-            Some(c) => c.connection_id,
-            None => {
-                client
-                    .http()
-                    .post::<medousa_types::IntegrationConnection, _>(
-                        "/v1/integrations",
-                        &medousa_types::CreateIntegrationConnectionRequest {
-                            kind: plan.kind.into(),
-                            label: None,
-                            base_url: None,
-                        },
-                    )
-                    .await
-                    .map_err(|e| format!("The engine couldn’t keep the token: {e}"))?
-                    .connection_id
-            }
-        };
-        let id = urlencoding::encode(id.as_str()).into_owned();
+        let id = connection_id(client, plan.kind).await?;
         for (slot, value) in &plan.tokens {
             let path = format!("/v1/integrations/{id}/secrets/{slot}");
             let done = match value {
@@ -1381,6 +1584,50 @@ fn capture(w: &World, s: &mut State) {
 
 pub fn apply(w: &mut World, u: Update) {
     with_state(w, |_, s| {
+        if s.providers_reading == Some(u.serial) {
+            s.providers_reading = None;
+            match u.result {
+                Ok(Reply::Providers(read)) => {
+                    // A form opened before the first read is filled now.
+                    let fill = s.providers.is_none();
+                    s.providers = Some(*read);
+                    if fill
+                        && let (Some(read), Some(e)) = (
+                            &s.providers,
+                            s.provider_open.as_deref().and_then(providers::find),
+                        )
+                    {
+                        for (k, v) in providers::fill(read, &e) {
+                            s.drafts.entry(k).or_insert(v);
+                        }
+                    }
+                }
+                Err(e) => s.provider_note = format!("Couldn’t read provider keys: {e}"),
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
+        if let Some((serial, done)) = s.provider_busy
+            && serial == u.serial
+        {
+            s.provider_busy = None;
+            match u.result {
+                Ok(Reply::Providers(read)) => {
+                    s.providers = Some(*read);
+                    // The key leaves the form and this app's memory.
+                    s.forget_fields(&["provider.key"]);
+                    s.provider_note = done.into();
+                }
+                Err(e) => {
+                    s.provider_note = e;
+                    s.read_providers();
+                }
+                _ => {}
+            }
+            s.redraw = true;
+            return;
+        }
         if s.channels_reading == Some(u.serial) {
             s.channels_reading = None;
             match u.result {
@@ -1724,7 +1971,8 @@ pub fn apply(w: &mut World, u: Update) {
                 | Reply::Shared(_)
                 | Reply::Qr(_)
                 | Reply::Lan(_)
-                | Reply::Channels(_),
+                | Reply::Channels(_)
+                | Reply::Providers(_),
             ) => {}
             Err(e) if reading => s.message = format!("Couldn’t read the connection: {e}"),
             Err(e) => {
@@ -1734,6 +1982,10 @@ pub fn apply(w: &mut World, u: Update) {
         // Channels are offered once it's known where the workshop runs.
         if reading && s.reading.is_empty() && s.section == Section::Sharing {
             s.read_channels();
+        }
+        // The custom provider's id is read once it's known to be here.
+        if reading && s.reading.is_empty() && s.section == Section::Agent && s.local() {
+            s.read_providers();
         }
         s.redraw = true;
     });

@@ -151,8 +151,10 @@ async fn patch_integration(
     if let Some(label) = body.label {
         record.label = Some(label);
     }
+    // An empty base URL clears the override, as medousa-home saves it.
     if let Some(base_url) = body.base_url {
-        record.base_url = Some(base_url);
+        let trimmed = base_url.trim();
+        record.base_url = (!trimmed.is_empty()).then(|| trimmed.to_string());
     }
     if let Some(kind) = body.kind {
         let trimmed = kind.trim();
