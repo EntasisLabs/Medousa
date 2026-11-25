@@ -122,6 +122,7 @@ pub(super) enum TransportRoute {
 
 #[derive(Debug)]
 pub(super) struct PendingMessage {
+    pub terminal_event: bool,
     pub target_execution: Option<String>,
     pub id: String,
     pub profile_id: String,
@@ -233,7 +234,8 @@ impl MessageStore {
             }
             return Ok(existing);
         }
-        if message.source_session == message.target_session
+        if channel_admission.is_some()
+            && message.source_session == message.target_session
             && message
                 .target_execution
                 .as_deref()
@@ -424,7 +426,7 @@ impl MessageStore {
     }
     pub fn pending(&self) -> Result<Vec<PendingMessage>> {
         let connection = self.connection()?;
-        let mut statement = connection.prepare("SELECT payload,(json_extract(payload,'$.target_workshop') IS NOT NULL AND NOT coalesce(json_extract(payload,'$.remote_inbound'),0)) FROM agent_messages WHERE status IN ('queued','delivering','uncertain') ORDER BY rowid LIMIT 64")?;
+        let mut statement = connection.prepare("SELECT payload,(json_extract(payload,'$.target_workshop') IS NOT NULL AND NOT coalesce(json_extract(payload,'$.remote_inbound'),0)) FROM agent_messages WHERE status IN ('queued','delivering','uncertain') AND NOT (status='uncertain' AND coalesce(json_extract(payload,'$.remote_inbound'),0)=0 AND coalesce(json_extract(payload,'$.wake_source'),'') IN ('worker_result','peer_terminal')) ORDER BY rowid LIMIT 64")?;
         statement
             .query_map([], |row| {
                 let payload: String = row.get(0)?;
@@ -436,6 +438,7 @@ impl MessageStore {
             .map(|(payload, remote_outbound)| {
                 let message = decode(&payload)?;
                 Ok(PendingMessage {
+                    terminal_event: super::is_terminal_event(&message),
                     target_execution: message.target_execution,
                     id: message.id,
                     profile_id: message.profile_id,
@@ -868,6 +871,87 @@ mod tests {
         other_workshop.target_workshop = Some("unapproved-workshop".into());
         assert!(store.enqueue_agent(other_workshop, "other", false).is_err());
     }
+    #[test]
+    fn terminal_receipts_are_idempotent_across_restart_and_not_drained_inline() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("messages.sqlite3");
+        let event = super::super::terminal_message(
+            "user:alice",
+            "ses_owner",
+            "ses_owner",
+            "receipt_cancelled",
+            "cancelled".into(),
+            medousa_types::wake::WakeSource::WorkerResult,
+        );
+        let store = MessageStore::new(path.clone());
+        let saved = store
+            .enqueue_event(event.clone(), "terminal_worker_result")
+            .unwrap();
+        store.note_waiting(&saved.id).unwrap();
+        assert!(
+            store
+                .inbox_matching("user:alice", "ses_owner", "old-turn", false, |m| m
+                    .wake_source
+                    .is_none())
+                .unwrap()
+                .is_empty()
+        );
+        let restarted = MessageStore::new(path);
+        let same = restarted
+            .enqueue_event(event.clone(), "terminal_worker_result")
+            .unwrap();
+        assert_eq!(same.id, saved.id);
+        assert_eq!(restarted.pending().unwrap().len(), 1);
+        let claimed = restarted.claim(&saved.id).unwrap().unwrap();
+        assert_ne!(claimed.delivery_turn.as_deref(), Some("old-turn"));
+        assert!(restarted.claim(&saved.id).unwrap().is_none());
+        restarted.observe_phase(&saved.id, "done").unwrap();
+        let retried = restarted
+            .enqueue_event(event, "terminal_worker_result")
+            .unwrap();
+        assert_eq!(retried.status, MessageStatus::Delivered);
+        assert!(restarted.pending().unwrap().is_empty());
+        assert!(
+            restarted
+                .enqueue_agent(
+                    message("ses_owner", "ses_other", "receipt-turn"),
+                    "no-new-channel",
+                    false
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn terminal_unknown_admission_is_retained_not_replayed_after_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("messages.sqlite3");
+        let store = MessageStore::new(path.clone());
+        let event = super::super::terminal_message(
+            "user:alice",
+            "ses_worker",
+            "ses_owner",
+            "receipt",
+            "result".into(),
+            medousa_types::wake::WakeSource::PeerTerminal,
+        );
+        let saved = store.enqueue_event(event, "terminal_peer").unwrap();
+        store.claim(&saved.id).unwrap().unwrap();
+        store
+            .outcome(
+                &saved.id,
+                MessageStatus::Uncertain,
+                Some("admission outcome unknown".into()),
+            )
+            .unwrap();
+        let store = MessageStore::new(path);
+        assert!(store.pending().unwrap().is_empty());
+        let retained = store.get(&saved.id).unwrap().unwrap();
+        assert_eq!(retained.status, MessageStatus::Uncertain);
+        assert_eq!(retained.error.as_deref(), Some("admission outcome unknown"));
+        assert!(store.claim(&saved.id).unwrap().is_none());
+    }
+
     #[test]
     fn process_notifications_do_not_authorize_chat_communication() {
         let dir = tempfile::tempdir().unwrap();

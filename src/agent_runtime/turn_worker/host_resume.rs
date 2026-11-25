@@ -97,7 +97,7 @@ async fn return_worker_result(runtime: &RuntimeComposition, record: &TurnWorkRec
             .await
             .context("commit worker result to source session")?;
     }
-    wait.settle(kind, &record.work_id, payload).await?;
+    wait.settle(kind, &record.work_id, payload.clone()).await?;
     if existing.is_none() {
         crate::turn_worker_notify::publish_worker_synthesis_to_parent_turn(
             record,
@@ -112,6 +112,19 @@ async fn return_worker_result(runtime: &RuntimeComposition, record: &TurnWorkRec
     {
         crate::feed_adapters::publish_workshop_terminal(record, "done", Some(result)).await;
     }
+    #[cfg(feature = "full-daemon")]
+    crate::agent_messaging::enqueue_terminal_event(
+        record
+            .identity_user_id
+            .as_deref()
+            .context("missing source identity")?,
+        &record.session_id,
+        &record.session_id,
+        &record.work_id,
+        &payload.to_string(),
+        medousa_types::wake::WakeSource::WorkerResult,
+    )
+    .await?;
     turn_worker_store().mark_result_delivered(&record.work_id)?;
     Ok(())
 }

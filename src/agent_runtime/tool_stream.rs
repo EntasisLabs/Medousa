@@ -185,7 +185,7 @@ pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
-            .or_else(|| Some("Committed final answer".to_string()));
+            .or_else(|| Some("Finish accepted; saving turn".to_string()));
     }
     if matches!(
         tool_output
@@ -635,6 +635,15 @@ mod tests {
             &json!({"action": "turn.finish", "message": "Hello world", "reason": "done"}),
         );
         assert_eq!(summary, "Final answer");
+    }
+
+    #[test]
+    fn finish_acceptance_does_not_claim_durable_commit() {
+        assert_eq!(
+            summarize_tool_output("cognition_turn", &json!({"ok": true, "finish_turn": true}))
+                .as_deref(),
+            Some("Finish accepted; saving turn")
+        );
     }
 
     #[test]

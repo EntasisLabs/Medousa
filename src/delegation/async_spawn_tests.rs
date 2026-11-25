@@ -72,8 +72,9 @@ async fn remote_spawn_acknowledges_local_queue_while_target_discovery_is_blocked
         submissions: AtomicUsize::new(0),
     });
     let authority = seed_request.source_execution.authority_id.clone();
-    let service = install_delegation_runtime(runtime, authority, session_store, host.clone())
-        .expect("install delegation runtime");
+    let service =
+        install_delegation_runtime(runtime.clone(), authority, session_store, host.clone())
+            .expect("install delegation runtime");
     let placement = WorkshopPlacementRequest {
         parent_runtime_id: "runtime-source".into(),
         requested: ExecutionTargetSelection::Exact {
@@ -94,6 +95,20 @@ async fn remote_spawn_acknowledges_local_queue_while_target_discovery_is_blocked
 
     assert_eq!(queued["worker_queued"], true);
     assert_eq!(queued["worker_spawned"], false);
+    let job = runtime
+        .get_job(queued["stasis_job_id"].as_str().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    let pending: PendingDelegationSpawn = serde_json::from_str(&job.payload_ref).unwrap();
+    assert_eq!(
+        pending.callback_profile_id.as_deref(),
+        Some("profile-source")
+    );
+    assert_eq!(
+        pending.return_route().callback_profile_id,
+        Some("profile-source")
+    );
     tokio::time::timeout(Duration::from_secs(2), entered)
         .await
         .expect("background driver entered discovery");
@@ -133,10 +148,13 @@ async fn cancelling_queued_spawn_during_discovery_prevents_late_submit() {
         .await
         .expect("background discovery started");
 
+    let callbacks = Arc::new(super::tests::RecordingCallbackQueue::default());
+    *service.delivery.callback_queue.write().unwrap() = Some(callbacks.clone());
     let cancelled = with_source_turn_context(service.cancel(work_id))
         .await
         .expect("cancel queued spawn");
     assert_eq!(cancelled["status"], "cancelled");
+    assert_eq!(callbacks.delivered.lock().unwrap().len(), 1);
     host.release.notify_one();
     tokio::time::timeout(Duration::from_secs(2), returned)
         .await
@@ -491,6 +509,7 @@ fn pending_job(job_id: &str) -> (NewJob, DelegatedTaskRequest) {
         placement: placement_request(false),
         grant: request.grant.clone(),
         source_execution: request.source_execution.clone(),
+        callback_profile_id: None,
         context: request.context.clone(),
         deadline_at: None,
         lifetime_policy_version: 1,
@@ -636,7 +655,7 @@ async fn with_source_turn_context<F: Future>(future: F) -> F::Output {
 
 #[cfg(feature = "full-daemon")]
 #[tokio::test]
-async fn abc_session_results_reach_the_original_running_and_yielded_owner() {
+async fn remote_results_queue_fresh_callbacks_without_duplicate_inline_delivery() {
     use super::session_results::NativeSessionWait;
     use crate::session_store::{SessionStore, TranscriptAppend};
     use medousa_runtime::ports::SessionEventsPort;
@@ -679,6 +698,8 @@ async fn abc_session_results_reach_the_original_running_and_yielded_owner() {
         peer,
     )
     .unwrap();
+    let callbacks = Arc::new(super::tests::RecordingCallbackQueue::default());
+    *service.delivery.callback_queue.write().unwrap() = Some(callbacks.clone());
     with_source_turn_context(async {
         let a = crate::execution_context::active_turn_execution_context().unwrap();
         let handle = a.handle();
@@ -692,20 +713,27 @@ async fn abc_session_results_reach_the_original_running_and_yielded_owner() {
             .await
             .unwrap();
         assert_eq!(c["worker_queued"], true);
-        let first = tokio::time::timeout(Duration::from_secs(12), async {
+        tokio::time::timeout(Duration::from_secs(12), async {
             loop {
-                let got = a.receive(false).await.unwrap();
-                if !got.is_empty() {
-                    break got;
+                if !callbacks.delivered.lock().unwrap().is_empty() {
+                    break;
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         })
         .await
         .unwrap();
-        assert_eq!(first.len(), 1);
-        assert_eq!(first[0]["request_id"], c["work_id"]);
-        assert_eq!(first[0]["result"], "done");
+        {
+            let queued = callbacks.delivered.lock().unwrap();
+            assert_eq!(queued.len(), 1);
+            assert_eq!(queued[0].0, "profile-source");
+            assert_eq!(queued[0].1, "ses_source");
+            assert_eq!(queued[0].3, "done");
+        }
+        // The profile-owned remote worker must not also enter the old loop's
+        // inline result stream. Explicit wait adapters still work for callers
+        // that deliberately track one (B below).
+        assert!(a.receive(false).await.unwrap().is_empty());
         let result = serde_json::json!({"text":"B finished"});
         let next = a.receive(true);
         tokio::pin!(next);

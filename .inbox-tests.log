@@ -1,0 +1,18 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+    Blocking waiting for file lock on build directory
+   Compiling medousa v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/fix-turn-delegation-and-handoff)
+error: unable to copy /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/fix-turn-delegation-and-handoff/.build-target/debug/incremental/medousa-2omj7n31hheyi/s-hoh4cb0838-14apa6a-76pt2s8d1vkpmjxqmgxwqv146/5ol5m3ffwnoqz5z6084eotz2h.o to /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/fix-turn-delegation-and-handoff/.build-target/debug/build/medousa/de07c5edcd39baaa/out/medousa-de07c5edcd39baaa.5ol5m3ffwnoqz5z6084eotz2h.0y62egd.rcgu.o: No space left on device (os error 28)
+
+error: could not compile `medousa` (lib test) due to 1 previous error
+
+INBOX_TEST_EXIT=101

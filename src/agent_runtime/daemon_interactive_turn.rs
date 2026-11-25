@@ -149,6 +149,8 @@ pub struct InteractiveTurnStreamSink {
     text: std::sync::Mutex<ChronologicalTextState>,
     pending_slice_scratch: std::sync::Mutex<Option<TurnScratchpad>>,
     reactions: std::sync::Mutex<Vec<MessageReaction>>,
+    // Cancellation settles after the runtime returns its final tool receipts.
+    defer_cancellation_settlement: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Debug)]
@@ -405,6 +407,14 @@ impl InteractiveTurnStreamSink {
             return false;
         }
 
+        if self
+            .defer_cancellation_settlement
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            // Suppress new activity without closing the stream while an
+            // in-flight tool may still return a receipt during unwind.
+            return true;
+        }
         let failure = crate::turn_failure::TurnFailure::cancelled();
         self.commit_active_segment(false).await;
         self.publish_failure(
@@ -1226,9 +1236,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         output_receipt: Option<ArtifactReceiptMeta>,
         tool_round: usize,
     ) {
-        if self.emit_cancelled_if_needed().await {
-            return;
-        }
+        // Receipts describe work that already ran. Keep them even when Stop
+        // was requested; cancellation settlement follows runtime unwind.
         let safe_input = crate::settings_guard::redact_json_value(&tool_input);
         let safe_output = crate::settings_guard::redact_json_value(&tool_output);
         let input_receipt = input_receipt.or_else(|| {
@@ -1424,6 +1433,7 @@ pub async fn run_daemon_interactive_turn(
             text: std::sync::Mutex::new(ChronologicalTextState::default()),
             pending_slice_scratch: std::sync::Mutex::new(None),
             reactions: std::sync::Mutex::new(Vec::new()),
+            defer_cancellation_settlement: std::sync::atomic::AtomicBool::new(false),
         });
         let sink: SharedAgentStreamSink = interactive_sink.clone();
 
@@ -1474,6 +1484,11 @@ pub async fn run_agent_turn(
     context_telemetry: Option<Arc<InteractiveTurnStreamSink>>,
     project_state: Option<crate::daemon::state::AppState>,
 ) {
+    let cancellation_sink = context_telemetry.clone();
+    if let Some(sink) = &cancellation_sink {
+        sink.defer_cancellation_settlement
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
     let turn_correlation_id = continuation_scope
         .as_ref()
         .map(|scope| scope.turn_correlation_id.clone());
@@ -1502,22 +1517,28 @@ pub async fn run_agent_turn(
     tokio::pin!(scoped_turn);
     tokio::select! {
         () = cancellation.cancelled() => {
-            tracking_sink
-                .agent_error(0, "turn cancelled".to_string())
-                .await;
             // Let Coder unwind its bound shell before its Forge lease drops.
             // Dropping the future here can strand a PTY that still has access
             // to a principal-owned attached checkout.
             scoped_turn.await;
+            tracking_sink.agent_error(0, "turn cancelled".to_string()).await;
         }
         () = medousa_runtime::wait_for_turn_deadline(deadline) => {
             cancellation.cancel();
+            scoped_turn.await;
             tracking_sink
                 .agent_error(0, "turn execution deadline exceeded".to_string())
                 .await;
-            scoped_turn.await;
         }
         () = &mut scoped_turn => {}
+    }
+
+    if let Some(sink) = cancellation_sink {
+        sink.defer_cancellation_settlement
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        if sink.emit_cancelled_if_needed().await {
+            *outcome.write().await = Some(TurnOutcome::Error);
+        }
     }
 
     if let Some(correlation_id) = turn_correlation_id {
@@ -3237,6 +3258,7 @@ mod chronological_sink_tests {
             text: std::sync::Mutex::new(ChronologicalTextState::default()),
             pending_slice_scratch: std::sync::Mutex::new(None),
             reactions: std::sync::Mutex::new(Vec::new()),
+            defer_cancellation_settlement: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -3271,6 +3293,114 @@ mod chronological_sink_tests {
             super::super::turn_event_log::project_turn_to_history(&event),
             Some(turn)
         );
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn empty_cancelled_turn_settles_only_after_runtime_unwinds() {
+        let output = Arc::new(RecordingOutput::default());
+        let mut sink = sink(Arc::clone(&output));
+        let mut cancelled = BoundedDedupSet::new(4);
+        cancelled.insert(sink.turn_id.clone());
+        sink.session_hooks.cancelled_turns = Some(Arc::new(RwLock::new(cancelled)));
+        sink.defer_cancellation_settlement
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        sink.agent_error(1, "turn cancelled".into()).await;
+        assert!(output.events.lock().unwrap().is_empty());
+        sink.defer_cancellation_settlement
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        assert!(sink.emit_cancelled_if_needed().await);
+        let events = output.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], TurnPipelineEnvelope::V3(envelope)
+            if matches!(envelope.event, TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Cancelled, .. })));
+        drop(events);
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn cancellation_keeps_late_tool_receipts_before_fatal_save_failure() {
+        let output = Arc::new(RecordingOutput::default());
+        let mut sink = sink(Arc::clone(&output));
+        // Force persistence to fail before any real store is touched.
+        sink.session_id = String::new();
+        let cancelled = Arc::new(RwLock::new(BoundedDedupSet::new(4)));
+        sink.session_hooks.cancelled_turns = Some(Arc::clone(&cancelled));
+        sink.defer_cancellation_settlement
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        sink.content_chunk(1, "The tool is running.".into()).await;
+        sink.tool_run_started(
+            "late-run".into(),
+            "cognition_coder_read_batch".into(),
+            "Read source".into(),
+            Vec::new(),
+            1,
+        )
+        .await;
+        cancelled.write().await.insert(sink.turn_id.clone());
+        sink.agent_error(1, "turn cancelled".into()).await;
+        sink.tool_run_finished(
+            "late-run".into(),
+            "cognition_coder_read_batch".into(),
+            "succeeded".into(),
+            "Read source".into(),
+            Some("Source read".into()),
+            serde_json::json!({}),
+            serde_json::json!({"ok": true}),
+            None,
+            None,
+            1,
+        )
+        .await;
+        assert!(
+            !output
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|event| matches!(event,
+            TurnPipelineEnvelope::V3(envelope)
+                if matches!(envelope.event, TurnStreamEventV3::TurnCompleted { .. })))
+        );
+        let parts = sink.parts.lock().unwrap().preview_parts();
+        assert!(parts.iter().any(|part| matches!(part,
+            TurnPart::ToolRun { status, output_summary: Some(summary), .. }
+                if status == "succeeded" && summary == "Source read")));
+        sink.defer_cancellation_settlement
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        assert!(sink.emit_cancelled_if_needed().await);
+        let events = output.events.lock().unwrap();
+        let terminal = events
+            .iter()
+            .filter_map(|event| match event {
+                TurnPipelineEnvelope::V3(envelope) => match &envelope.event {
+                    TurnStreamEventV3::TurnCompleted {
+                        outcome,
+                        aggregate_text,
+                        debug_message,
+                        ..
+                    } => Some((outcome, aggregate_text, debug_message)),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(terminal.len(), 1);
+        assert_eq!(*terminal[0].0, TurnCompletionOutcomeV3::Fatal);
+        assert_eq!(terminal[0].1, "The tool is running.");
+        assert!(
+            terminal[0]
+                .2
+                .as_deref()
+                .unwrap()
+                .contains("persistence failed")
+        );
+        assert!(events.iter().any(|event| matches!(event,
+            TurnPipelineEnvelope::V3(envelope)
+                if matches!(&envelope.event, TurnStreamEventV3::ToolFinished { tool_run_id, .. }
+                    if tool_run_id == "late-run"))));
+        drop(events);
         sink.pipeline.cancel();
     }
 

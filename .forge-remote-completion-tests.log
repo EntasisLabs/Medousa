@@ -1,0 +1,7 @@
+
+running 2 tests
+test peer_completion_delivery::tests::source_validation_rejects_changed_authority_profile_request_receipt_digest_or_binding ... ok
+test peer_completion_delivery::tests::canonical_append_is_idempotent_after_reopen_and_rejects_conflicting_replay ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 886 filtered out; finished in 0.01s
+

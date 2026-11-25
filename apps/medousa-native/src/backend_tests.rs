@@ -659,30 +659,124 @@ async fn continuous_activity_is_bounded_and_remains_uncertain() {
     server.join().unwrap();
 }
 #[tokio::test]
-async fn terminal_ticket_cleanup_retries_are_bounded_and_handoff_is_honest() {
+async fn terminal_reconciliation_is_by_execution_not_ticket_cleanup() {
+    // The terminal ticket may remain visible after durable history is ready.
     let (client, server) = fixture(vec![
         active_wire(true),
         history_wire(true),
         active_wire(true),
-        active_wire(false),
-        history_wire(true),
-        active_wire(false),
     ]);
+    assert!(
+        matches!(settled_history(&client, "s", "t", "unique assistant prose").await,
+        Update::SettledHistory(_, _, _, turn, None) if turn == "t")
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn late_durable_history_is_retried_without_discarding_live_text() {
+    let mut wires = vec![active_wire(false), history_wire(false), active_wire(false)];
+    wires.extend([active_wire(false), history_wire(true), active_wire(false)]);
+    let (client, server) = fixture(wires);
     assert!(matches!(
-        settled_history(&client, "s").await,
-        Update::SettledHistory(_, _, _)
+        settled_history(&client, "s", "t", "unique assistant prose").await,
+        Update::SettledHistory(..)
     ));
     server.join().unwrap();
     let mut wires = vec![];
     for _ in 0..3 {
-        wires.extend([active_wire(true), history_wire(true), active_wire(true)]);
+        wires.extend([active_wire(false), history_wire(false), active_wire(false)]);
     }
     let (client, server) = fixture(wires);
     assert!(
-        matches!(settled_history(&client, "s").await, Update::Failure(message) if message.contains("possibly a handoff"))
+        matches!(settled_history(&client, "s", "t", "unique assistant prose").await,
+        Update::Failure(message) if message.contains("not confirmed"))
     );
     server.join().unwrap();
 }
+
+#[tokio::test]
+async fn newer_active_turn_is_followed_after_exact_terminal_history() {
+    let mut newer = active_body(true);
+    newer["turn"]["turn_id"] = json!("next");
+    newer["turn"]["stream_url"] = json!("/v1/interactive/turn/next/stream");
+    let completed = json!({"type":"turn_completed", "outcome":"completed", "aggregate_text":"unique assistant prose"});
+    let next_completed =
+        json!({"type":"turn_completed", "outcome":"completed", "aggregate_text":""});
+    let (client, server) = fixture(vec![
+        Wire {
+            method: "GET",
+            path: "/v1/interactive/turn/t/stream".into(),
+            status: 200,
+            content_type: "text/event-stream",
+            check: None,
+            body: sse(1, completed),
+        },
+        json_wire("GET", "/v1/sessions/s/active-turn", newer.clone()),
+        history_wire(true),
+        json_wire("GET", "/v1/sessions/s/active-turn", newer),
+        mode_wire("general"),
+        Wire {
+            method: "GET",
+            path: "/v1/interactive/turn/next/stream".into(),
+            status: 200,
+            content_type: "text/event-stream",
+            check: None,
+            body: sse(1, next_completed).replace("\"turn_id\":\"t\"", "\"turn_id\":\"next\""),
+        },
+        active_wire(false),
+        history_wire(true),
+        active_wire(false),
+        mode_wire("general"),
+    ]);
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
+    follow(
+        client,
+        "/v1/interactive/turn/t/stream".into(),
+        tx,
+        8,
+        "s".into(),
+    )
+    .await;
+    app.update();
+    let replies = observed(&app);
+    assert_eq!(replies.len(), 6);
+    assert!(
+        !replies
+            .iter()
+            .any(|r| matches!(r.update, Update::Failure(_)))
+    );
+    assert!(matches!(&replies[1].update,
+        Update::SettledHistory(_, _, _, turn, Some(active)) if turn == "t" && active.turn_id == "next"));
+    assert!(matches!(&replies[3].update, Update::Stream(e) if e.turn_id == "next"));
+    assert!(matches!(&replies[4].update,
+        Update::SettledHistory(_, _, _, turn, None) if turn == "next"));
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn unrelated_or_partial_assistant_history_is_not_durable_confirmation() {
+    let mut partial = history_body(true);
+    partial["turns"][1]["content"] = json!("unique assistant");
+    let mut unrelated = history_body(true);
+    unrelated["turns"][1]["caused_by"]["execution_id"] = json!("old");
+    let mut wires = vec![];
+    for body in [partial, unrelated, history_body(true)] {
+        wires.extend([
+            active_wire(false),
+            json_wire("GET", "/v1/sessions/s/history", body),
+            active_wire(false),
+        ]);
+    }
+    let (client, server) = fixture(wires);
+    assert!(matches!(
+        settled_history(&client, "s", "t", "unique assistant prose").await,
+        Update::SettledHistory(..)
+    ));
+    server.join().unwrap();
+}
+
 #[tokio::test]
 async fn catalog_uses_real_snake_case_record_and_is_read_only() {
     let (client, server) = fixture(vec![
@@ -905,7 +999,7 @@ async fn terminal_stream_reconciles_canonical_history_and_mode() {
     assert_eq!(replies.len(), 4);
     assert!(replies.iter().all(|reply| reply.generation == 8));
     assert!(
-        matches!(&replies[2].update, Update::SettledHistory(id, _, messages)
+        matches!(&replies[2].update, Update::SettledHistory(id, _, messages, _, _)
         if id == "s" && pairs(messages).len() == 2)
     );
     assert!(matches!(&replies[3].update, Update::Mode(mode) if mode == "general"));
@@ -1405,7 +1499,7 @@ async fn opening_other_and_same_session_preserves_follow_and_allows_parallel_sen
     .await;
     assert!(
         replies.iter().any(|r| r.generation == 1
-            && matches!(&r.update, Update::SettledHistory(id, _, _) if id == "s"))
+            && matches!(&r.update, Update::SettledHistory(id, ..) if id == "s"))
     );
     assert!(
         replies.iter().any(
@@ -1684,4 +1778,81 @@ fn advertised_lan_stream_is_rebased_without_following_its_host() {
     ] {
         assert!(stream_path(path, "http://127.0.0.1:7419").is_err());
     }
+}
+
+#[tokio::test]
+async fn idle_refresh_discovers_callback_after_original_stream_is_gone() {
+    let (client, server) = fixture(vec![
+        list_wire(),
+        json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
+        registry_wire(),
+        // No Open or old follow is alive: a much later callback owns this ticket.
+        active_wire(true),
+        history_wire(false),
+        active_wire(true),
+        Wire {
+            method: "GET",
+            path: "/v1/interactive/turn/t/stream".into(),
+            status: 200,
+            content_type: "text/event-stream",
+            check: None,
+            body: sse(
+                1,
+                json!({"type":"turn_completed", "outcome":"completed", "aggregate_text":""}),
+            ),
+        },
+        active_wire(false),
+        history_wire(true),
+        active_wire(false),
+        mode_wire("general"),
+    ]);
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(64));
+    let (commands, rx) = mpsc::unbounded_channel();
+    commands
+        .send(Request {
+            generation: 7,
+            command: Command::Refresh("s".into(), 42),
+        })
+        .unwrap();
+    let task = tokio::spawn(serve(client, rx, tx));
+    let mut replies = vec![];
+    collect_until(&mut app, &mut replies, |rs| {
+        rs.iter()
+            .any(|r| matches!(r.update, Update::IdleHistory { .. }))
+    })
+    .await;
+    let active = replies
+        .iter()
+        .find_map(|r| match &r.update {
+            Update::IdleHistory {
+                snapshot: Some((_, _, Some(turn))),
+                ..
+            } => Some(turn.clone()),
+            _ => None,
+        })
+        .unwrap();
+    commands
+        .send(Request {
+            generation: 7,
+            command: Command::Attach("s".into(), active),
+        })
+        .unwrap();
+    collect_until(&mut app, &mut replies, |rs| {
+        rs.iter()
+            .any(|r| matches!(r.update, Update::SettledHistory(..)))
+    })
+    .await;
+    assert!(replies.iter().any(|r| r.generation == 7
+        && matches!(&r.update,
+        Update::IdleHistory { session, revision: 42, snapshot: Some((_, _, Some(turn))) }
+            if session == "s" && turn.turn_id == "t")));
+    assert!(
+        replies
+            .iter()
+            .any(|r| matches!(&r.update, Update::Stream(e) if e.turn_id == "t"))
+    );
+    drop(commands);
+    task.await.unwrap();
+    server.join().unwrap();
 }

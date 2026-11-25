@@ -148,7 +148,35 @@ but does not block `turn.finish`, `turn.checkpoint`, `turn.request_input`, or
 `turn.update_user`. These controls remain available to report a blocker and
 hand the result back without repeatedly retrying rejected workspace tools.
 
-The send tool returns the request ID and execution session after admission. A terminal receipt settles a Stasis wait. The original loop reads available results at its next model boundary. If it reaches a finish boundary while a request is pending, it yields there and continues when a result is ready. Model, context, reasoning settings and tool authority belong to that same loop. The assignment ledger and the attributed result in the originating transcript support recovery. A separate reviewer runs only when the user or a registered workflow calls for one.
+The send tool returns the request ID and execution session after admission.
+A successful `turn.finish` or `turn.checkpoint` settles that exact turn even
+when a worker is outstanding: it never waits for a callback or reopens the
+completed response. A tool's accepted finish is not itself a durable-history
+receipt. Streamed segment completion likewise does not mean persistence.
+
+Terminal worker receipts are first committed to the originating transcript and
+correlated with their durable assignment wait. Where owner follow-up is enabled,
+the runtime queues an idempotent terminal event in its durable inbox before
+acknowledging delivery. A fresh Assistant report turn runs in the same chat once
+any current human/owner turn has settled. Agents do not poll, acknowledge, or
+re-send results to make the return route work. The callback uses the existing
+chat history and configured runtime; it does not inherit the worker's Coder
+execution grant or manufacture new permission. `wake_on_terminal=false` suppresses
+the native handoff's automatic response, not its durable result projection.
+
+Queued receipts survive restart. If a callback was already claimed but its
+execution outcome is unknown after restart, its inbox record is retained as
+`uncertain` with a diagnosis instead of automatically replaying model effects.
+The original worker receipt remains in chat history; inspect history before an
+explicit retry. A registered wait whose durable record is missing reports
+`delivery_failed` once instead of silently polling forever. Legitimate running
+workers do not receive an arbitrary short timeout.
+
+Clients reconcile terminal delivery by execution ID, not chat-wide idleness.
+They preserve live prose until the exact execution's canonical ledger confirms
+it, and may attach to a newer callback/human turn without clearing that turn.
+The assignment ledger and attributed result support recovery. A separate reviewer
+runs only when the user or a registered workflow calls for one.
 
 A handoff requiring review remains `awaiting_sender_review` until the originating
 sender calls `cognition_peer_review` with the exact `channel`, `assignment_id`,

@@ -81,6 +81,10 @@ pub struct Model {
     drafts: HashMap<String, DocumentId>,
     external_drafts: HashMap<String, (DocumentId, rndr_core::editing::Revision)>,
     approval_refresh: std::time::Instant,
+    idle_refresh: std::time::Instant,
+    idle_refresh_pending: bool,
+    idle_refresh_delay: std::time::Duration,
+    transcript_revision: u64,
     selectors_key: String,
     sidebar_key: String,
     details_open: bool,
@@ -117,6 +121,10 @@ impl Model {
             drafts: HashMap::new(),
             external_drafts: HashMap::new(),
             approval_refresh: std::time::Instant::now(),
+            idle_refresh: std::time::Instant::now(),
+            idle_refresh_pending: false,
+            idle_refresh_delay: std::time::Duration::from_secs(2),
+            transcript_revision: 0,
             selectors_key: String::new(),
             sidebar_key: String::new(),
             details_open: false,
@@ -1246,12 +1254,35 @@ fn switch_document(world: &mut World, session: &str) -> Result<(), String> {
     world.resource_mut::<Ui>().unwrap().composer = composer;
     Ok(())
 }
+// The SDK has turn streams but no session-ledger notification stream. Poll only
+// a selected, settled conversation, with one bounded read outstanding. A revision
+// fence prevents an older read from overwriting subsequent admission/live text.
+fn refresh_idle_chat(world: &mut World) {
+    let m = world.resource_mut::<Model>().unwrap();
+    if m.loading
+        || m.chat.busy()
+        || m.chat.uncertain
+        || (m.idle_refresh_pending && m.idle_refresh.elapsed() < std::time::Duration::from_secs(15))
+        || m.idle_refresh.elapsed() < m.idle_refresh_delay
+    {
+        return;
+    }
+    let Some(session) = m.chat.session().map(str::to_owned) else {
+        return;
+    };
+    m.idle_refresh = std::time::Instant::now();
+    m.idle_refresh_pending = true;
+    let revision = m.transcript_revision;
+    dispatch(world, Command::Refresh(session, revision));
+}
+
 fn update(world: &mut World) {
     crate::workshops::tick(world);
     auxiliary::tick(world);
     for reply in events::<Reply>(world).to_vec() {
         apply_reply(world, reply);
     }
+    refresh_idle_chat(world);
     crate::surfaces::remember_focus(world);
     let chat_active = crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat;
     if chat_active {
@@ -1680,7 +1711,63 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
     {
         return;
     }
+    if matches!(
+        &reply.update,
+        Update::History(..)
+            | Update::SettledHistory(..)
+            | Update::Admitted(..)
+            | Update::Stream(..)
+            | Update::Failure(..)
+    ) {
+        let m = world.resource_mut::<Model>().unwrap();
+        m.transcript_revision = m.transcript_revision.wrapping_add(1);
+    }
     match reply.update {
+        Update::IdleTick => {}
+        Update::IdleHistory {
+            session,
+            revision,
+            snapshot,
+        } => {
+            let m = world.resource_mut::<Model>().unwrap();
+            m.idle_refresh_pending = false;
+            m.idle_refresh_delay = if snapshot.is_some() {
+                std::time::Duration::from_secs(2)
+            } else {
+                (m.idle_refresh_delay * 2).min(std::time::Duration::from_secs(30))
+            };
+            if revision != m.transcript_revision
+                || m.loading
+                || m.chat.busy()
+                || m.chat.uncertain
+                || m.chat.session() != Some(session.as_str())
+            {
+                return;
+            }
+            if let Some((authority, turns, active)) = snapshot {
+                let attach = active.clone();
+                let attach_session = session.clone();
+                let active = active.map(|t| TurnFact {
+                    turn_id: t.turn_id,
+                    mode: "interactive".into(),
+                    phase: "streaming".into(),
+                    message_id: None,
+                    workspace_card_id: None,
+                    reusable_stream: true,
+                    budget_request_id: None,
+                    requested_rounds: None,
+                });
+                if let Err(error) = m.chat.hydrate(session, authority, turns, active) {
+                    m.chat.fail(error);
+                }
+                m.transcript_revision = m.transcript_revision.wrapping_add(1);
+                if !m.chat.uncertain
+                    && let Some(turn) = attach
+                {
+                    dispatch(world, Command::Attach(attach_session, turn));
+                }
+            }
+        }
         Update::PeerStream {
             session,
             key,
@@ -1776,9 +1863,26 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
             restore_history_model(m);
             m.loading = false;
         }
-        Update::SettledHistory(session, authority, turns) => {
+        Update::SettledHistory(session, authority, turns, settled_turn, active) => {
             let m = world.resource_mut::<Model>().unwrap();
-            if let Err(e) = m.chat.hydrate(session, authority, turns, None) {
+            // A delayed reconciliation must not settle a newer attached turn.
+            let current = m.chat.snapshot().and_then(|s| s.active_turn_id.as_deref());
+            if current.is_some_and(|id| {
+                id != settled_turn && active.as_ref().is_none_or(|next| next.turn_id != id)
+            }) {
+                return;
+            }
+            let active = active.map(|t| TurnFact {
+                turn_id: t.turn_id,
+                mode: "interactive".into(),
+                phase: "streaming".into(),
+                message_id: None,
+                workspace_card_id: None,
+                reusable_stream: true,
+                budget_request_id: None,
+                requested_rounds: None,
+            });
+            if let Err(e) = m.chat.hydrate(session, authority, turns, active) {
                 m.chat.fail(e);
             }
             m.loading = false;
@@ -1821,10 +1925,15 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
             }
             let terminal = envelope.event.is_terminal();
             let m = world.resource_mut::<Model>().unwrap();
+            let settles_current = m
+                .chat
+                .snapshot()
+                .and_then(|s| s.active_turn_id.as_deref())
+                .is_none_or(|id| id == envelope.turn_id);
             if let Err(e) = m.chat.apply(envelope) {
                 m.chat.fail(e);
             }
-            if terminal {
+            if terminal && settles_current {
                 m.chat.uncertain = true;
                 m.chat.status = "Reconciling history…".into();
             }
@@ -2315,6 +2424,174 @@ mod tests {
         app.update();
         app.update();
         (app, rx)
+    }
+    #[test]
+    fn idle_refresh_is_read_only_single_flight_and_skips_uncertain_text() {
+        let (mut app, mut rx) = idle_fixture();
+        let m = app.world_mut().resource_mut::<Model>().unwrap();
+        m.idle_refresh = std::time::Instant::now() - std::time::Duration::from_secs(3);
+        refresh_idle_chat(app.world_mut());
+        refresh_idle_chat(app.world_mut());
+        assert!(matches!(
+            rx.try_recv().unwrap().command,
+            Command::Refresh(_, 0)
+        ));
+        assert!(rx.try_recv().is_err());
+        let m = app.world_mut().resource_mut::<Model>().unwrap();
+        m.idle_refresh_pending = false;
+        m.idle_refresh = std::time::Instant::now() - std::time::Duration::from_secs(3);
+        m.chat.fail("retained fatal prose".into());
+        refresh_idle_chat(app.world_mut());
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn idle_history_cannot_overwrite_newer_transcript_or_admission() {
+        for loading in [false, true] {
+            let (mut app, _rx) = idle_fixture();
+            let m = app.world_mut().resource_mut::<Model>().unwrap();
+            let generation = m.generation;
+            m.transcript_revision = if loading { 0 } else { 1 };
+            m.loading = loading;
+            apply_current_reply(app.world_mut(), Reply { generation, update: Update::IdleHistory {
+                session: "s".into(), revision: 0,
+                snapshot: Some(("a".into(), vec![], Some(serde_json::from_value(serde_json::json!({
+                    "turn_id":"obsolete", "session_id":"s", "stream_url":"/v1/interactive/turn/obsolete/stream",
+                    "phase":"running", "composer_handoff":false, "started_at":"2026-11-07T00:00:01Z"
+                })).unwrap()))),
+            }});
+            assert!(!app.world().resource::<Model>().unwrap().chat.busy());
+        }
+    }
+
+    #[test]
+    fn idle_history_projects_durable_late_worker_receipt_without_active_turn() {
+        let (mut app, _rx) = idle_fixture();
+        let generation = app.world().resource::<Model>().unwrap().generation;
+        let receipt = serde_json::json!({
+            "entry_id":"receipt-entry", "entry_seq":1, "role":"assistant",
+            "content":"Late worker receipt", "timestamp":"2026-11-07T00:00:01Z",
+            "caused_by":{"authority_id":"a", "session_id":"s", "execution_id":"worker_synthesis"},
+            "content_digest":"sha256:receipt", "tool_names":[]
+        });
+        apply_current_reply(
+            app.world_mut(),
+            Reply {
+                generation,
+                update: Update::IdleHistory {
+                    session: "s".into(),
+                    revision: 0,
+                    snapshot: Some(("a".into(), vec![receipt], None)),
+                },
+            },
+        );
+        let chat = &app.world().resource::<Model>().unwrap().chat;
+        assert!(!chat.busy());
+        assert!(!chat.uncertain);
+        assert!(
+            chat.snapshot()
+                .unwrap()
+                .items
+                .iter()
+                .any(|i| i.content == "Late worker receipt")
+        );
+    }
+
+    #[test]
+    fn idle_history_attaches_callback_without_reopening_conversation() {
+        let (mut app, _rx) = idle_fixture();
+        let generation = app.world().resource::<Model>().unwrap().generation;
+        apply_current_reply(app.world_mut(), Reply { generation, update: Update::IdleHistory {
+            session: "s".into(), revision: 0,
+            snapshot: Some(("a".into(), vec![], Some(serde_json::from_value(serde_json::json!({
+                "turn_id":"callback", "session_id":"s", "stream_url":"/v1/interactive/turn/callback/stream",
+                "phase":"running", "composer_handoff":false, "started_at":"2026-11-07T00:00:01Z"
+            })).unwrap()))),
+        }});
+        let m = app.world().resource::<Model>().unwrap();
+        assert_eq!(
+            m.chat.snapshot().unwrap().active_turn_id.as_deref(),
+            Some("callback")
+        );
+        assert!(!m.chat.uncertain);
+    }
+
+    #[test]
+    fn late_terminal_history_does_not_settle_newer_attached_turn() {
+        let (mut app, _rx) = idle_fixture();
+        let m = app.world_mut().resource_mut::<Model>().unwrap();
+        m.chat
+            .admitted("newer".into(), "new prompt".into())
+            .unwrap();
+        let generation = m.generation;
+        apply_current_reply(
+            app.world_mut(),
+            Reply {
+                generation,
+                update: Update::SettledHistory("s".into(), "a".into(), vec![], "old".into(), None),
+            },
+        );
+        let chat = &app.world().resource::<Model>().unwrap().chat;
+        assert_eq!(
+            chat.snapshot().unwrap().active_turn_id.as_deref(),
+            Some("newer")
+        );
+        assert!(!chat.uncertain);
+        assert!(
+            chat.snapshot()
+                .unwrap()
+                .items
+                .iter()
+                .any(|i| i.content == "new prompt")
+        );
+    }
+    #[test]
+    fn terminal_history_attaches_newer_callback_and_retains_live_prose() {
+        let (mut app, _rx) = idle_fixture();
+        let m = app.world_mut().resource_mut::<Model>().unwrap();
+        m.chat.admitted("old".into(), "prompt".into()).unwrap();
+        m.chat
+            .apply(
+                serde_json::from_value(serde_json::json!({
+                    "schema_version":3, "turn_id":"old", "seq":1,
+                    "emitted_at_utc":"2026-11-07T00:00:00Z",
+                    "event":{"type":"content_append", "segment_id":"a", "text":"live prose"}
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        let generation = m.generation;
+        let next = serde_json::from_value(serde_json::json!({
+            "turn_id":"next", "session_id":"s", "stream_url":"/v1/interactive/turn/next/stream",
+            "phase":"running", "composer_handoff":false, "started_at":"2026-11-07T00:00:01Z"
+        }))
+        .unwrap();
+        apply_current_reply(
+            app.world_mut(),
+            Reply {
+                generation,
+                update: Update::SettledHistory(
+                    "s".into(),
+                    "a".into(),
+                    vec![],
+                    "old".into(),
+                    Some(next),
+                ),
+            },
+        );
+        let chat = &app.world().resource::<Model>().unwrap().chat;
+        assert_eq!(
+            chat.snapshot().unwrap().active_turn_id.as_deref(),
+            Some("next")
+        );
+        assert!(!chat.uncertain);
+        assert!(
+            chat.snapshot()
+                .unwrap()
+                .items
+                .iter()
+                .any(|i| i.content.contains("live prose"))
+        );
     }
     #[test]
     fn empty_presence_only_appears_for_loaded_empty_chat() {

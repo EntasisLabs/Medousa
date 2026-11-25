@@ -57,6 +57,12 @@ impl SessionEventsPort for TurnExecutionContext {
             let mut events = Vec::new();
             for (id, (request, store)) in &requests {
                 let Some(record) = store.get(id).await? else {
+                    // Missing durable state is not a still-running worker.
+                    // Surface the broken correlation once instead of polling forever.
+                    received.push(id.clone());
+                    events.push(json!({"request_id": request, "turn_id": id,
+                        "status": "delivery_failed",
+                        "error": "Registered worker wait is missing; inspect the assignment receipt before retrying."}));
                     continue;
                 };
                 if record.session_id != self.session_id().as_str() {
@@ -212,5 +218,56 @@ impl NativeSessionWait {
             return Err(port_failure("Stasis rejected terminal receipt"));
         }
         Err(port_failure("conflicting terminal receipt"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use stasis::application::runtime::in_memory_runtime::InMemoryRuntime;
+
+    #[tokio::test]
+    async fn missing_wait_reports_once_without_hanging_at_yield() {
+        let runtime = RuntimeComposition::InMemory(InMemoryRuntime::new());
+        let wait = NativeSessionWait::open(&runtime, "test", "ses_source", "request", "worker")
+            .await
+            .unwrap();
+        let scope = crate::turn_continuation::TurnContinuationScope {
+            turn_correlation_id: "source-turn".into(),
+            session_id: "ses_source".into(),
+            identity_user_id: Some("profile-source".into()),
+            original_prompt: "test".into(),
+            delivery_target: None,
+            provider: "test".into(),
+            model: "test".into(),
+            response_depth_mode: "normal".into(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+            browser_driver_id: None,
+            selected_worlds: vec![],
+            channel_surface: None,
+        };
+        let turn = TurnExecutionContext::from_scope(
+            "source-turn",
+            crate::request_principal::RequestPrincipal::continuation("profile-source"),
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Instant::now() + Duration::from_secs(10),
+            scope,
+        )
+        .unwrap();
+        turn.session_waits.track(
+            "missing-wait-id".into(),
+            "missing-request".into(),
+            wait.store,
+        );
+        let events = tokio::time::timeout(Duration::from_secs(1), turn.receive(true))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["status"], "delivery_failed");
+        assert_eq!(events[0]["request_id"], "missing-request");
+        assert!(turn.receive(true).await.unwrap().is_empty());
     }
 }

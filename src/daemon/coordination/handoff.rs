@@ -196,10 +196,8 @@ impl LocalPeerDispatcher {
                 })
                 .await??;
             if dispatch_now {
-                let wait = self.handoff_wait(&record.request).await?;
+                self.handoff_wait(&record.request).await?;
                 self.dispatch(&principal, &record.request).await?;
-                turn.session_waits
-                    .track(wait.id, record.request.assignment_id.clone(), wait.store);
                 self.wake.notify_one();
             }
         }

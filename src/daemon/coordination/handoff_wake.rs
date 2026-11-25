@@ -127,6 +127,19 @@ impl LocalPeerDispatcher {
             bail!("expected terminal assignment receipt")
         };
         let entry = self.commit_session_result(&record.request, receipt).await?;
+        // Queue before acknowledging durable intake. Recovery retries use the
+        // same receipt identity, even if transcript projection already exists.
+        if record.policy.wake_on_terminal {
+            crate::agent_messaging::enqueue_terminal_event(
+                &record.request.owner_principal_id,
+                record.request.execution_session.session_id.as_str(),
+                record.request.owner_session.session_id.as_str(),
+                &receipt.receipt_id,
+                &entry.turn.content,
+                medousa_types::wake::WakeSource::PeerTerminal,
+            )
+            .await?;
+        }
         self.stored(move |store| {
             store.acknowledge_handoff_event(
                 &OwnerEventIntakeAcknowledgment {

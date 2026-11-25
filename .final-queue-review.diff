@@ -1,0 +1,382 @@
+diff --git a/src/agent_messaging.rs b/src/agent_messaging.rs
+index cefad3b83..c8438d3f8 100644
+--- a/src/agent_messaging.rs
++++ b/src/agent_messaging.rs
+@@ -740,6 +740,154 @@ async fn session_inbox(
+     .await
+ }
+ 
++/// Queue a verified terminal receipt for a fresh turn in its originating chat.
++/// Callers own receipt verification and durable transcript projection. This
++/// inbox owns idempotent wake admission, serializing it with human turns.
++pub(crate) async fn enqueue_terminal_event(
++    profile_id: &str,
++    source_session: &str,
++    target_session: &str,
++    receipt_id: &str,
++    body: &str,
++    kind: medousa_types::wake::WakeSource,
++) -> Result<()> {
++    anyhow::ensure!(
++        matches!(
++            kind,
++            medousa_types::wake::WakeSource::WorkerResult
++                | medousa_types::wake::WakeSource::PeerTerminal
++        ),
++        "terminal receipt requires a worker or peer wake"
++    );
++    anyhow::ensure!(
++        !receipt_id.is_empty() && receipt_id.len() <= 512,
++        "terminal receipt identity requires 1–512 bytes"
++    );
++    let host = HOST
++        .get()
++        .ok_or_else(|| anyhow::anyhow!("agent message host unavailable"))?;
++    // The full result is already in canonical history. Bound the wake payload
++    // without making large successful results undeliverable.
++    let mut end = body.len().min(6000);
++    while !body.is_char_boundary(end) {
++        end -= 1;
++    }
++    let body = terminal_event_body(receipt_id, body, end);
++    let message = terminal_message(
++        profile_id,
++        source_session,
++        target_session,
++        receipt_id,
++        body,
++        kind,
++    );
++    let key = format!("terminal_{}", kind.as_str());
++    let message = host
++        .stored(move |store| store.enqueue_event(message, &key))
++        .await?;
++    if message.status == MessageStatus::Queued {
++        crate::wake_runtime::register_gap(
++            &message.target_session,
++            medousa_types::wake::OpenGap {
++                id: message.id.clone(),
++                kind: medousa_types::wake::OpenGapKind::UndeliveredMessage,
++                summary: format!("terminal receipt from {}", message.source_session),
++            },
++        );
++    }
++    host.wake.notify_one();
++    Ok(())
++}
++
++fn terminal_event_body(receipt_id: &str, body: &str, mut end: usize) -> String {
++    loop {
++        let encoded = json!({"receipt_id": receipt_id,
++            "result_preview": &body[..end], "truncated": end < body.len(),
++            "full_result": "originating chat history"})
++        .to_string();
++        if encoded.len() <= 7500 || end == 0 {
++            return encoded;
++        }
++        end /= 2;
++        while !body.is_char_boundary(end) {
++            end -= 1;
++        }
++    }
++}
++
++fn terminal_message(
++    profile_id: &str,
++    source_session: &str,
++    target_session: &str,
++    receipt_id: &str,
++    body: String,
++    kind: medousa_types::wake::WakeSource,
++) -> Message {
++    Message {
++        id: String::new(),
++        profile_id: profile_id.into(),
++        source_session: source_session.into(),
++        source_turn: receipt_id.into(),
++        source_name: "worker receipt".into(),
++        target_session: target_session.into(),
++        target_name: "originating chat".into(),
++        body,
++        root_id: String::new(),
++        in_reply_to: None,
++        created_at: chrono::Utc::now(),
++        status: MessageStatus::Queued,
++        delivery_turn: None,
++        error: None,
++        source_workshop: None,
++        target_workshop: None,
++        hop: 0,
++        remote_inbound: false,
++        receipt_acknowledged: false,
++        transport_route: None,
++        attempts: 0,
++        next_attempt_at: None,
++        observed_phase: None,
++        target_execution: None,
++        wake_source: Some(kind.as_str().into()),
++    }
++}
++
++fn is_terminal_event(message: &Message) -> bool {
++    !message.remote_inbound
++        && matches!(
++            message.wake_source.as_deref(),
++            Some("worker_result" | "peer_terminal")
++        )
++}
++
++/// Terminal receipts are native return routes, not arbitrary agent messages.
++/// A verified receipt may report into a delegated Coder's originating chat,
++/// but it does not acquire that Coder's execution grant or worker identity.
++fn validate_recipient(message: &Message) -> Result<()> {
++    if is_terminal_event(message) {
++        let binding = crate::bot_profiles::BotProfileStore::daemon_default()
++            .resolve_session(&message.profile_id, &message.target_session)
++            .map_err(anyhow::Error::msg)?;
++        anyhow::ensure!(
++            binding
++                .bot
++                .as_ref()
++                .is_none_or(|bot| !bot.archived && bot.external_agent.is_none()),
++            "originating Bot is archived or has an external executor"
++        );
++        anyhow::ensure!(
++            crate::session_history::session_visible_to_profile(
++                &message.target_session,
++                &message.profile_id
++            ),
++            "originating chat is no longer available to this owner"
++        );
++        Ok(())
++    } else {
++        resolve_target(&message.profile_id, &message.target_session).map(|_| ())
++    }
++}
++
+ pub async fn enqueue_process_event(
+     profile_id: &str,
+     source_session: &str,
+@@ -863,7 +1011,7 @@ pub(crate) async fn verify_admission(
+         if !mesh::may_receive(&host_lookup, &check_message) {
+             bail!("remote sender policy no longer permits delivery");
+         }
+-        resolve_target(&owner, &session)?;
++        validate_recipient(&check_message)?;
+         if !crate::session_history::session_visible_to_profile(&session, &owner) {
+             bail!("recipient is unavailable to this profile");
+         }
+@@ -990,6 +1138,13 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
+                 }
+                 host.stored(move |store| store.outcome(&id, outcome.0, outcome.1))
+                     .await?;
++            } else if pending.terminal_event {
++                // A claimed callback may have executed before the daemon lost
++                // its in-memory ticket. Never rerun model effects on an unknown
++                // outcome. Keep the durable receipt and explicit diagnosis.
++                host.stored(move |store| store.outcome(&id, MessageStatus::Uncertain,
++                    Some("terminal callback admission outcome is unknown after restart; the worker receipt remains in chat history. Inspect the transcript before explicitly retrying.".into())))
++                    .await?;
+             } else {
+                 host.stored(move |store| store.requeue_for_retry(&id))
+                     .await?;
+@@ -1051,7 +1206,9 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
+                     .get(&check_id)?
+                     .is_some_and(|message| mesh::may_receive(&host_lookup, &message));
+                 Ok(allowed
+-                    && resolve_target(&owner, &target).is_ok()
++                    && store
++                        .get(&check_id)?
++                        .is_some_and(|message| validate_recipient(&message).is_ok())
+                     && crate::session_history::session_visible_to_profile(&target, &owner))
+             })
+             .await?;
+@@ -1155,6 +1312,21 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    #[test]
++    fn terminal_preview_budget_accounts_for_unicode_and_json_escaping() {
++        for body in ["🤖".repeat(4000), "\0".repeat(6000), "done".into()] {
++            let mut end = body.len().min(6000);
++            while !body.is_char_boundary(end) {
++                end -= 1;
++            }
++            let encoded = terminal_event_body("receipt", &body, end);
++            assert!(encoded.len() <= 7500);
++            let value: Value = serde_json::from_str(&encoded).unwrap();
++            assert_eq!(value["receipt_id"], "receipt");
++            assert!(body.starts_with(value["result_preview"].as_str().unwrap()));
++        }
++    }
++
+     #[test]
+     fn delegated_coder_chat_requires_the_assignment_source() {
+         let error = resolve_target("owner", "ses_peer_owned_child").unwrap_err();
+diff --git a/src/agent_messaging/store.rs b/src/agent_messaging/store.rs
+index 9e3c3e6aa..b60a5982e 100644
+--- a/src/agent_messaging/store.rs
++++ b/src/agent_messaging/store.rs
+@@ -122,6 +122,7 @@ pub(super) enum TransportRoute {
+ 
+ #[derive(Debug)]
+ pub(super) struct PendingMessage {
++    pub terminal_event: bool,
+     pub target_execution: Option<String>,
+     pub id: String,
+     pub profile_id: String,
+@@ -233,7 +234,8 @@ impl MessageStore {
+             }
+             return Ok(existing);
+         }
+-        if message.source_session == message.target_session
++        if channel_admission.is_some()
++            && message.source_session == message.target_session
+             && message
+                 .target_execution
+                 .as_deref()
+@@ -424,7 +426,7 @@ impl MessageStore {
+     }
+     pub fn pending(&self) -> Result<Vec<PendingMessage>> {
+         let connection = self.connection()?;
+-        let mut statement = connection.prepare("SELECT payload,(json_extract(payload,'$.target_workshop') IS NOT NULL AND NOT coalesce(json_extract(payload,'$.remote_inbound'),0)) FROM agent_messages WHERE status IN ('queued','delivering','uncertain') ORDER BY rowid LIMIT 64")?;
++        let mut statement = connection.prepare("SELECT payload,(json_extract(payload,'$.target_workshop') IS NOT NULL AND NOT coalesce(json_extract(payload,'$.remote_inbound'),0)) FROM agent_messages WHERE status IN ('queued','delivering','uncertain') AND NOT (status='uncertain' AND coalesce(json_extract(payload,'$.remote_inbound'),0)=0 AND coalesce(json_extract(payload,'$.wake_source'),'') IN ('worker_result','peer_terminal')) ORDER BY rowid LIMIT 64")?;
+         statement
+             .query_map([], |row| {
+                 let payload: String = row.get(0)?;
+@@ -436,6 +438,7 @@ impl MessageStore {
+             .map(|(payload, remote_outbound)| {
+                 let message = decode(&payload)?;
+                 Ok(PendingMessage {
++                    terminal_event: super::is_terminal_event(&message),
+                     target_execution: message.target_execution,
+                     id: message.id,
+                     profile_id: message.profile_id,
+@@ -868,6 +871,87 @@ mod tests {
+         other_workshop.target_workshop = Some("unapproved-workshop".into());
+         assert!(store.enqueue_agent(other_workshop, "other", false).is_err());
+     }
++    #[test]
++    fn terminal_receipts_are_idempotent_across_restart_and_not_drained_inline() {
++        let dir = tempfile::tempdir().unwrap();
++        let path = dir.path().join("messages.sqlite3");
++        let event = super::super::terminal_message(
++            "user:alice",
++            "ses_owner",
++            "ses_owner",
++            "receipt_cancelled",
++            "cancelled".into(),
++            medousa_types::wake::WakeSource::WorkerResult,
++        );
++        let store = MessageStore::new(path.clone());
++        let saved = store
++            .enqueue_event(event.clone(), "terminal_worker_result")
++            .unwrap();
++        store.note_waiting(&saved.id).unwrap();
++        assert!(
++            store
++                .inbox_matching("user:alice", "ses_owner", "old-turn", false, |m| m
++                    .wake_source
++                    .is_none())
++                .unwrap()
++                .is_empty()
++        );
++        let restarted = MessageStore::new(path);
++        let same = restarted
++            .enqueue_event(event.clone(), "terminal_worker_result")
++            .unwrap();
++        assert_eq!(same.id, saved.id);
++        assert_eq!(restarted.pending().unwrap().len(), 1);
++        let claimed = restarted.claim(&saved.id).unwrap().unwrap();
++        assert_ne!(claimed.delivery_turn.as_deref(), Some("old-turn"));
++        assert!(restarted.claim(&saved.id).unwrap().is_none());
++        restarted.observe_phase(&saved.id, "done").unwrap();
++        let retried = restarted
++            .enqueue_event(event, "terminal_worker_result")
++            .unwrap();
++        assert_eq!(retried.status, MessageStatus::Delivered);
++        assert!(restarted.pending().unwrap().is_empty());
++        assert!(
++            restarted
++                .enqueue_agent(
++                    message("ses_owner", "ses_other", "receipt-turn"),
++                    "no-new-channel",
++                    false
++                )
++                .is_err()
++        );
++    }
++
++    #[test]
++    fn terminal_unknown_admission_is_retained_not_replayed_after_restart() {
++        let dir = tempfile::tempdir().unwrap();
++        let path = dir.path().join("messages.sqlite3");
++        let store = MessageStore::new(path.clone());
++        let event = super::super::terminal_message(
++            "user:alice",
++            "ses_worker",
++            "ses_owner",
++            "receipt",
++            "result".into(),
++            medousa_types::wake::WakeSource::PeerTerminal,
++        );
++        let saved = store.enqueue_event(event, "terminal_peer").unwrap();
++        store.claim(&saved.id).unwrap().unwrap();
++        store
++            .outcome(
++                &saved.id,
++                MessageStatus::Uncertain,
++                Some("admission outcome unknown".into()),
++            )
++            .unwrap();
++        let store = MessageStore::new(path);
++        assert!(store.pending().unwrap().is_empty());
++        let retained = store.get(&saved.id).unwrap().unwrap();
++        assert_eq!(retained.status, MessageStatus::Uncertain);
++        assert_eq!(retained.error.as_deref(), Some("admission outcome unknown"));
++        assert!(store.claim(&saved.id).unwrap().is_none());
++    }
++
+     #[test]
+     fn process_notifications_do_not_authorize_chat_communication() {
+         let dir = tempfile::tempdir().unwrap();
+diff --git a/src/bin/medousa_daemon.rs b/src/bin/medousa_daemon.rs
+index 352a46e96..4ee158bb8 100644
+--- a/src/bin/medousa_daemon.rs
++++ b/src/bin/medousa_daemon.rs
+@@ -1173,6 +1173,18 @@ async fn start_daemon() -> Result<()> {
+     {
+         tracing::warn!(%error, "SSH connections unavailable; chat remains active");
+     }
++    // Compose the durable callback inbox before recovery can return worker
++    // receipts. Otherwise startup races can defer a valid receipt for minutes.
++    let _agent_messages =
++        match medousa::agent_messaging::start(state.clone(), shutdown_rx.clone(), mesh_api_state)
++            .await
++        {
++            Ok(host) => Some(host),
++            Err(error) => {
++                tracing::warn!(%error, "agent messaging unavailable; chat remains active");
++                None
++            }
++        };
+     let _coordination_host = match medousa::daemon::coordination::start_local_coordination_host(
+         state.clone(),
+         local_runtime_node_id.clone(),
+@@ -1196,16 +1208,6 @@ async fn start_daemon() -> Result<()> {
+             None
+         }
+     };
+-    let _agent_messages =
+-        match medousa::agent_messaging::start(state.clone(), shutdown_rx.clone(), mesh_api_state)
+-            .await
+-        {
+-            Ok(host) => Some(host),
+-            Err(error) => {
+-                tracing::warn!(%error, "agent messaging unavailable; chat remains active");
+-                None
+-            }
+-        };
+     let _creative_jobs = medousa::creative_jobs::start(state.clone(), shutdown_rx.clone());
+     medousa::process_supervisor::bind_daemon(state.clone());
+     let scheduler_ctx = SchedulerHeartbeatContext {

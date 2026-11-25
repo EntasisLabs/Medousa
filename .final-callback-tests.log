@@ -1,0 +1,78 @@
+
+=== finish_acceptance_does_not_claim_durable_commit ===
+
+running 1 test
+test agent_runtime::tool_stream::tests::finish_acceptance_does_not_claim_durable_commit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2258 filtered out; finished in 0.00s
+
+
+=== agent_messaging:: ===
+
+running 32 tests
+test agent_messaging::mesh::tests::participant_names_are_ambiguous_but_exact_ids_win ... ok
+test agent_messaging::mesh::tests::storage_failure_is_retryable_but_policy_denial_is_terminal ... ok
+test agent_messaging::mesh::tests::peer_discovery_and_wakes_require_current_agent_targeting_policy ... ok
+test agent_messaging::store::tests::escaped_unicode_and_control_data_survives_round_trip ... ok
+test agent_messaging::store::tests::addressed_worker_and_parent_each_consume_their_own_mail ... ok
+test agent_messaging::store::tests::busy_recipient_can_receive_without_a_second_wake ... ok
+test agent_messaging::store::tests::coder_clarification_is_read_only_by_the_addressed_assignment_after_reopen ... ok
+test agent_messaging::store::tests::existing_local_records_keep_their_inbox_and_retry_identity ... ok
+test agent_messaging::store::tests::process_notifications_do_not_authorize_chat_communication ... ok
+test agent_messaging::store::tests::a_missing_recipient_turn_is_queued_again_instead_of_uncertain ... ok
+test agent_messaging::store::tests::legacy_admitted_routes_are_migrated_once ... ok
+test agent_messaging::mesh::tests::remote_routes_bind_owner_workshops_chats_and_immutable_content ... ok
+test agent_messaging::store::tests::restart_retains_admission_and_never_requeues_it ... ok
+test agent_messaging::store::tests::replies_use_immutable_return_route_and_inherit_budget ... ok
+test agent_messaging::store::tests::retries_are_idempotent_and_cannot_change_payload ... ok
+test agent_messaging::tests::a_peer_wake_cannot_claim_to_be_a_user_turn ... ok
+test agent_messaging::tests::delegated_coder_chat_requires_the_assignment_source ... ok
+test agent_messaging::tests::delivery_is_bound_to_the_exact_recipient_turn_and_payload ... ok
+test agent_messaging::tests::message_admission_never_manufactures_operator_or_human_authority ... ok
+test agent_messaging::tests::messaging_uses_normal_work_and_silent_completion_without_receipt_chatter ... ok
+test agent_messaging::tests::only_native_user_turns_can_admit_new_chat_pairs ... ok
+test agent_messaging::tests::runtime_events_keep_their_original_wake_behavior ... ok
+test agent_messaging::tests::terminal_preview_budget_accounts_for_unicode_and_json_escaping ... ok
+test agent_messaging::store::tests::retained_permissions_are_bidirectional_and_do_not_expand_to_other_chats ... ok
+test agent_messaging::store::tests::simultaneous_retries_create_one_message ... ok
+test agent_messaging::mesh::tests::directional_mailbox_survives_lost_response_restart_and_acknowledgment ... ok
+test agent_messaging::store::tests::one_turn_can_send_more_than_eight_messages ... ok
+test agent_messaging::store::tests::terminal_unknown_admission_is_retained_not_replayed_after_restart ... ok
+test agent_messaging::store::tests::terminal_receipts_are_idempotent_across_restart_and_not_drained_inline ... ok
+test agent_messaging::mesh::tests::distributed_exchanges_continue_beyond_sixteen_messages ... ok
+test agent_messaging::mesh::tests::mailbox_acknowledges_all_imported_replies_without_starving_older_ones ... ok
+test agent_messaging::store::tests::long_exchanges_keep_their_channel_and_return_route_across_restart ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 2227 filtered out; finished in 0.18s
+
+
+=== delegation:: ===
+
+running 15 tests
+test delegation::continuity::tests::oversized_sttp_uses_summary_without_displacing_the_assignment ... ok
+test delegation::continuity::tests::scoped_compressed_memory_is_advisory_and_bounded ... ok
+test delegation::continuity::tests::lookup_uses_the_frozen_owner_and_bot_scope_and_outages_do_not_block ... ok
+test delegation::tests::delegation_wait_reuses_the_runtime_durable_store ... ok
+test delegation::session_results::tests::missing_wait_reports_once_without_hanging_at_yield ... ok
+test delegation::async_spawn_tests::unauthorized_agent_candidate_is_never_submitted ... ok
+test delegation::tests::explicit_delegation_survives_cleared_default_and_transport_interruption ... ok
+test delegation::tests::operator_request_id_replays_one_durable_job_after_response_loss ... ok
+test delegation::async_spawn_tests::process_once_checkpoint_pins_target_across_fresh_handler_resume ... ok
+test delegation::async_spawn_tests::remote_spawn_acknowledges_local_queue_while_target_discovery_is_blocked ... ok
+test delegation::tests::delegated_result_can_arrive_before_sender_finishes_and_commits_once ... ok
+test delegation::async_spawn_tests::remote_results_queue_fresh_callbacks_without_duplicate_inline_delivery ... ok
+test delegation::async_spawn_tests::cancelling_queued_spawn_during_discovery_prevents_late_submit ... ok
+test delegation::async_spawn_tests::expired_legacy_spawn_deadline_does_not_block_useful_work ... ok
+test delegation::async_spawn_tests::stalled_transport_attempt_is_bounded_by_explicit_task_deadline ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 2244 filtered out; finished in 1.51s
+
+
+=== peer_completion_delivery:: ===
+
+running 2 tests
+test peer_completion_delivery::tests::source_validation_rejects_changed_authority_profile_request_receipt_digest_or_binding ... ok
+test peer_completion_delivery::tests::canonical_append_is_idempotent_after_reopen_and_rejects_conflicting_replay ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2257 filtered out; finished in 0.01s
+

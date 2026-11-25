@@ -1683,15 +1683,8 @@ impl MedousaToolLoopPipeline {
                 if !mixed_terminal_batch
                     && let Some(message) = finish_turn_from_invocations(round_invocations)
                 {
-                    if receive_session_events(
-                        completion_gate.as_deref(),
-                        &mut turn_ctx.tool_lane.messages,
-                        true,
-                    )
-                    .await?
-                    {
-                        continue;
-                    }
+                    // Terminal controls settle this exact turn. Worker receipts
+                    // are queued independently, never awaited after acceptance.
                     // The response's chronological prose is authoritative.
                     // A successful explicit finish is terminal even without
                     // new prose. Earlier text is already committed by the host;
@@ -1766,15 +1759,8 @@ impl MedousaToolLoopPipeline {
                 if !mixed_terminal_batch
                     && let Some(message) = checkpoint_turn_from_invocations(round_invocations)
                 {
-                    if receive_session_events(
-                        completion_gate.as_deref(),
-                        &mut turn_ctx.tool_lane.messages,
-                        true,
-                    )
-                    .await?
-                    {
-                        continue;
-                    }
+                    // Terminal controls settle this exact turn. Worker receipts
+                    // are queued independently, never awaited after acceptance.
                     if let Some(gate) = completion_gate.as_ref() {
                         let tools = collect_tool_names(&invocations);
                         persist_gate_ledger(

@@ -31,6 +31,8 @@ pub enum Command {
     Delete(String),
     Fork(String),
     Open(String),
+    Refresh(String, u64),
+    Attach(String, ActiveSessionTurn),
     Collaboration {
         session: String,
         known: Vec<(String, String)>,
@@ -57,13 +59,26 @@ pub struct Request {
 }
 #[derive(Clone)]
 pub enum Update {
+    /// Wake event-driven hosts so selected idle chats can request a bounded read.
+    IdleTick,
     History(
         String,
         String,
         Vec<serde_json::Value>,
         Option<ActiveSessionTurn>,
     ),
-    SettledHistory(String, String, Vec<serde_json::Value>),
+    IdleHistory {
+        session: String,
+        revision: u64,
+        snapshot: Option<(String, Vec<serde_json::Value>, Option<ActiveSessionTurn>)>,
+    },
+    SettledHistory(
+        String,
+        String,
+        Vec<serde_json::Value>,
+        String,
+        Option<ActiveSessionTurn>,
+    ),
     Collaboration {
         session: String,
         result: Result<Vec<medousa_types::WorkCardDetail>, String>,
@@ -153,6 +168,16 @@ impl Sink {
                     qualify(session);
                 }
             }
+            Update::IdleHistory {
+                session, snapshot, ..
+            } => {
+                if snapshot.as_ref().is_some_and(|(authority, ..)| {
+                    !self.authority.is_empty() && *authority != self.authority
+                }) {
+                    *snapshot = None;
+                }
+                qualify(session);
+            }
             Update::Collaboration { session, .. }
             | Update::PeerCollaboration { session, .. }
             | Update::PeerStream { session, .. }
@@ -189,7 +214,12 @@ fn emit(tx: &Sink, generation: u64, update: Update) -> bool {
 impl Command {
     pub(crate) fn session_owner(&self) -> Option<String> {
         let session = match self {
-            Self::Open(s) | Self::Delete(s) | Self::Fork(s) | Self::SetMode(s, _) => s,
+            Self::Open(s)
+            | Self::Refresh(s, _)
+            | Self::Attach(s, _)
+            | Self::Delete(s)
+            | Self::Fork(s)
+            | Self::SetMode(s, _) => s,
             Self::Rename { session, .. }
             | Self::Collaboration { session, .. }
             | Self::PeerCollaboration { session, .. }
@@ -201,7 +231,12 @@ impl Command {
     }
     fn into_wire(mut self, authority: &str) -> Result<Self, String> {
         let session = match &mut self {
-            Self::Open(s) | Self::Delete(s) | Self::Fork(s) | Self::SetMode(s, _) => Some(s),
+            Self::Open(s)
+            | Self::Refresh(s, _)
+            | Self::Attach(s, _)
+            | Self::Delete(s)
+            | Self::Fork(s)
+            | Self::SetMode(s, _) => Some(s),
             Self::Rename { session, .. }
             | Self::Collaboration { session, .. }
             | Self::PeerCollaboration { session, .. }
@@ -499,16 +534,34 @@ async fn set_mode(client: &MedousaClient, session: &str, mode: AgentModeId) -> U
     }
 }
 
-async fn settled_history(client: &MedousaClient, session: &str) -> Update {
-    // Settlement may precede active-ticket cleanup (handoffs can remain active).
-    // Retry reads only, never admission, and do not claim the ticket has cleared.
+async fn settled_history(
+    client: &MedousaClient,
+    session: &str,
+    turn: &str,
+    aggregate_text: &str,
+) -> Update {
+    // A terminal event settles this execution, not the whole conversation. A
+    // callback may already own a newer ticket. Never wait for chat-wide idleness.
     for attempt in 0..3 {
         match history(client, session).await {
-            Ok(Update::History(id, authority, messages, None)) => return Update::SettledHistory(id, authority, messages),
-            Ok(Update::History(_, _, _, Some(_))) if attempt < 2 => {
+            Ok(Update::History(id, authority, messages, active)) => {
+                // Terminal delivery is not itself proof that the ledger contains
+                // the live assistant prose. Keep it until its exact execution is
+                // durable (empty/no-prose turns need no assistant ledger entry).
+                let durable = aggregate_text.is_empty() || messages.iter().any(|entry| {
+                    entry["role"] == "assistant"
+                        && entry["content"].as_str() == Some(aggregate_text)
+                        && entry["caused_by"]["execution_id"].as_str() == Some(turn)
+                });
+                if durable {
+                    return Update::SettledHistory(id, authority, messages, turn.into(),
+                        active.filter(|active| active.turn_id != turn));
+                }
+                if attempt == 2 {
+                    return Update::Failure("Turn completed, but its durable history is not confirmed. Live in-memory text retained; reload before sending.".into());
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(25 << attempt)).await;
             }
-            Ok(Update::History(_, _, _, Some(_))) => return Update::Failure("Stream settled but daemon still reports an active turn after bounded reads (possibly a handoff). Reload to reconcile/reattach; no automatic submission.".into()),
             Ok(other) => return other,
             Err(_) => return Update::Failure("Turn settled, but history reconciliation failed. Live in-memory text retained; reload before sending.".into()),
         }
@@ -524,69 +577,94 @@ async fn follow(
     session: String,
 ) {
     let tx = tx.into();
-    let path = match stream_path(&path, client.base_url()) {
-        Ok(path) => path.to_string(),
-        Err(()) => {
-            emit(
-                &tx,
-                generation,
-                Update::Failure("Refused non-local stream path".into()),
-            );
-            return;
-        }
-    };
-    let api = client.interactive();
-    let mut stream = api.stream_reconnecting_v3(path);
-    while let Some(event) = stream.next().await {
-        match event {
-            Ok(e) => {
-                let terminal = e.event.is_terminal();
-                let fatal = matches!(
-                    &e.event,
-                    medousa_types::TurnStreamEventV3::TurnCompleted {
-                        outcome: medousa_types::TurnCompletionOutcomeV3::Fatal,
-                        ..
-                    }
-                );
-                if !emit(&tx, generation, Update::Stream(e)) {
-                    return;
-                }
-                if terminal {
-                    // User persistence can occur after the initial history read.
-                    // Settlement is published after durable assistant persistence;
-                    // replace replay with canonical history, including that user.
-                    let update = if fatal {
-                        // Persistence failure is itself fatal: replacing live text
-                        // with incomplete history here would silently erase it.
-                        Update::Failure("Fatal turn: durable history may be incomplete. Live in-memory text retained; inspect/copy it before explicitly reloading.".into())
-                    } else {
-                        settled_history(&client, &session).await
-                    };
-                    let reconciled = matches!(update, Update::SettledHistory(_, _, _));
-                    if !emit(&tx, generation, update) {
-                        return;
-                    }
-                    if reconciled {
-                        emit(&tx, generation, mode(&client, &session).await);
-                    }
-                    return;
-                }
-            }
-            Err(_) => {
+    let mut path = path;
+    loop {
+        let stream_path = match stream_path(&path, client.base_url()) {
+            Ok(path) => path.to_string(),
+            Err(()) => {
                 emit(
                     &tx,
                     generation,
-                    Update::Failure("Stream disconnected after bounded SDK reconnect".into()),
+                    Update::Failure("Refused non-local stream path".into()),
                 );
                 return;
             }
+        };
+        let api = client.interactive();
+        let mut stream = api.stream_reconnecting_v3(stream_path);
+        let mut next_turn = false;
+        while let Some(event) = stream.next().await {
+            match event {
+                Ok(e) => {
+                    let terminal = e.event.is_terminal();
+                    let turn_id = e.turn_id.clone();
+                    let aggregate_text = match &e.event {
+                        medousa_types::TurnStreamEventV3::TurnCompleted {
+                            aggregate_text, ..
+                        } => aggregate_text.clone(),
+                        _ => String::new(),
+                    };
+                    let fatal = matches!(
+                        &e.event,
+                        medousa_types::TurnStreamEventV3::TurnCompleted {
+                            outcome: medousa_types::TurnCompletionOutcomeV3::Fatal,
+                            ..
+                        }
+                    );
+                    if !emit(&tx, generation, Update::Stream(e)) {
+                        return;
+                    }
+                    if terminal {
+                        // User persistence can occur after the initial history read.
+                        // Settlement is published after durable assistant persistence;
+                        // replace replay with canonical history, including that user.
+                        let update = if fatal {
+                            // Persistence failure is itself fatal: replacing live text
+                            // with incomplete history here would silently erase it.
+                            Update::Failure("Fatal turn: durable history may be incomplete. Live in-memory text retained; inspect/copy it before explicitly reloading.".into())
+                        } else {
+                            settled_history(&client, &session, &turn_id, &aggregate_text).await
+                        };
+                        let reconciled = matches!(update, Update::SettledHistory(..));
+                        let next = match &update {
+                            Update::SettledHistory(_, _, _, _, Some(active)) => {
+                                Some(active.stream_url.clone())
+                            }
+                            _ => None,
+                        };
+                        if !emit(&tx, generation, update) {
+                            return;
+                        }
+                        if reconciled {
+                            emit(&tx, generation, mode(&client, &session).await);
+                        }
+                        if let Some(next) = next {
+                            path = next;
+                            next_turn = true;
+                            break;
+                        }
+                        return;
+                    }
+                }
+                Err(_) => {
+                    emit(
+                        &tx,
+                        generation,
+                        Update::Failure("Stream disconnected after bounded SDK reconnect".into()),
+                    );
+                    return;
+                }
+            }
+        }
+        if !next_turn {
+            emit(
+                &tx,
+                generation,
+                Update::Failure("Stream ended without settlement".into()),
+            );
+            return;
         }
     }
-    emit(
-        &tx,
-        generation,
-        Update::Failure("Stream ended without settlement".into()),
-    );
 }
 
 pub fn run(
@@ -703,6 +781,20 @@ pub(crate) async fn serve(
     }
     // Generation is an opaque UI-owned session route, not a global navigation
     // counter. Background sessions retain their admission/follow and reply route.
+    // A UI system tick alone is insufficient when the renderer sleeps without
+    // input. The feed wakes it; polling decisions still belong to the selected
+    // UI model, not background/open conversations. This timer owns no mutations.
+    let idle_wake = {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                if !emit(&tx, tx.catalog_route, Update::IdleTick) {
+                    break;
+                }
+            }
+        })
+    };
     let peer_subscriptions = Arc::new(crate::ui::collaboration::peers::Subscriptions::default());
     let mut stream_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     let mut mode_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
@@ -744,6 +836,53 @@ pub(crate) async fn serve(
                         .into(),
                 ),
             );
+            continue;
+        }
+        if let Command::Attach(session, turn) = command {
+            // The UI acknowledges an idle snapshot only while its transcript
+            // revision is still current. Stale reads must not start follows.
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                stream_tasks.entry(session.clone())
+            {
+                entry.insert(tokio::spawn(follow(
+                    client.clone(),
+                    turn.stream_url,
+                    tx.clone(),
+                    generation,
+                    session,
+                )));
+            }
+            continue;
+        }
+        if let Command::Refresh(session, revision) = command {
+            // Read-only idle reconciliation. Never race our own admission/follow,
+            // replay a mutation, or create a second stream subscription.
+            let snapshot = if stream_tasks.contains_key(&session) {
+                None
+            } else {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    history(&client, &session),
+                )
+                .await
+                {
+                    Ok(Ok(Update::History(_, authority, turns, active))) => {
+                        Some((authority, turns, active))
+                    }
+                    _ => None, // A transient poll failure must not erase live text.
+                }
+            };
+            if !emit(
+                &tx,
+                generation,
+                Update::IdleHistory {
+                    session: session.clone(),
+                    revision,
+                    snapshot,
+                },
+            ) {
+                break;
+            }
             continue;
         }
         if let Command::ThreadReply {
@@ -867,6 +1006,9 @@ pub(crate) async fn serve(
             | Command::ThreadReply { .. } => {
                 unreachable!("handled independently above")
             }
+            Command::Refresh(..) | Command::Attach(..) => {
+                unreachable!("handled independently above")
+            }
             Command::Open(id) => history(&client, &id).await,
             Command::SetMode(id, selected) => Ok(set_mode(&client, &id, selected).await),
             Command::Cancel(id) => client
@@ -957,6 +1099,8 @@ pub(crate) async fn serve(
             }
         }
     }
+    idle_wake.abort();
+    let _ = idle_wake.await;
     // Shutdown cancels every owned stream/admission, never the daemon's turns.
     // As with startup catalogs, drain independent read-only mode metadata.
     for task in stream_tasks.values() {

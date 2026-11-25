@@ -1,8 +1,8 @@
 //! Validate and apply a signed remote peer completion to its originating chat.
 //!
 //! A completion is already a committed assistant answer on the workshop. This
-//! module records that answer as provenance in the source session; it never
-//! starts another owner turn.
+//! module records that answer as provenance in the source session and queues a
+//! durable fresh-turn callback for its verified source owner.
 
 use std::sync::{Arc, OnceLock};
 
@@ -78,6 +78,20 @@ pub async fn apply_remote_peer_completion(
         serde_json::json!({"text": result.receipt.result, "outcome": result.receipt.outcome}),
     )
     .await?;
+    // Also enqueue on exact replay: a prior process may have committed the
+    // answer (or settled the wait) before crashing ahead of callback admission.
+    #[cfg(feature = "full-daemon")]
+    if origin.request.continue_owner {
+        crate::agent_messaging::enqueue_terminal_event(
+            &origin.owner_profile_id,
+            origin.request.owner_session_id.as_str(),
+            origin.request.owner_session_id.as_str(),
+            &result.receipt.receipt_id,
+            &result.committed_decision.content,
+            medousa_types::wake::WakeSource::PeerTerminal,
+        )
+        .await?;
+    }
     Ok(appended)
 }
 

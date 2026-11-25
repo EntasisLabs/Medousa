@@ -293,6 +293,9 @@ struct DelegationJobPayload {
     request: DelegatedTaskRequest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     operator_profile_id: Option<String>,
+    // Captured from the admitted source principal, never inferred from worker output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    callback_profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     operator_request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -318,6 +321,8 @@ struct PendingDelegationSpawn {
     placement: WorkshopPlacementRequest,
     grant: AgentEnvelope,
     source_execution: medousa_types::session::ExecutionRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    callback_profile_id: Option<String>,
     context: crate::delegated_task::DelegatedContextGrant,
     #[serde(default)]
     deadline_at: Option<DateTime<Utc>>,
@@ -392,6 +397,7 @@ impl PendingDelegationSpawn {
             target: checkpoint.target,
             request,
             operator_profile_id: None,
+            callback_profile_id: self.callback_profile_id.clone(),
             operator_request_id: None,
             operator_request_fingerprint: None,
             intent: self.spawn.intent.clone(),
@@ -520,12 +526,27 @@ pub trait DelegationCompletionSink: Send + Sync {
 struct DelegationResultDelivery {
     session_store: Arc<dyn SessionStore>,
     live_sink: RwLock<Option<Arc<dyn DelegationCompletionSink>>>,
+    #[cfg(test)]
+    callback_queue: RwLock<Option<Arc<dyn DelegationCallbackQueue>>>,
+}
+
+#[cfg(test)]
+#[async_trait::async_trait]
+trait DelegationCallbackQueue: Send + Sync {
+    async fn enqueue(
+        &self,
+        profile_id: &str,
+        source: &medousa_types::session::ExecutionRef,
+        entry_id: &TranscriptEntryId,
+        text: &str,
+    ) -> StasisResult<()>;
 }
 
 struct DelegationReturnRoute<'a> {
     work_id: &'a str,
     grant: &'a AgentEnvelope,
     source: &'a medousa_types::session::ExecutionRef,
+    callback_profile_id: Option<&'a str>,
 }
 
 impl DelegationJobPayload {
@@ -534,6 +555,7 @@ impl DelegationJobPayload {
             work_id: &self.work_id,
             grant: &self.request.grant,
             source: &self.request.source_execution,
+            callback_profile_id: self.callback_profile_id.as_deref(),
         }
     }
 }
@@ -544,6 +566,7 @@ impl PendingDelegationSpawn {
             work_id: &self.work_id,
             grant: &self.grant,
             source: &self.source_execution,
+            callback_profile_id: self.callback_profile_id.as_deref(),
         }
     }
 }
@@ -576,7 +599,26 @@ impl DelegationResultDelivery {
         Self {
             session_store,
             live_sink: RwLock::new(None),
+            #[cfg(test)]
+            callback_queue: RwLock::new(None),
         }
+    }
+
+    async fn enqueue_callback(
+        &self,
+        profile_id: Option<&str>,
+        source: &medousa_types::session::ExecutionRef,
+        entry_id: &TranscriptEntryId,
+        text: &str,
+    ) -> StasisResult<()> {
+        #[cfg(test)]
+        {
+            let queue = self.callback_queue.read().expect("callback queue").clone();
+            if let (Some(queue), Some(profile_id)) = (queue, profile_id) {
+                return queue.enqueue(profile_id, source, entry_id, text).await;
+            }
+        }
+        enqueue_delegation_callback(profile_id, source, entry_id, text).await
     }
 
     fn set_live_sink(&self, sink: Arc<dyn DelegationCompletionSink>) {
@@ -606,6 +648,7 @@ impl DelegationResultDelivery {
             work_id,
             grant,
             source,
+            callback_profile_id,
         } = route;
         let entries = self
             .session_store
@@ -618,7 +661,10 @@ impl DelegationResultDelivery {
             ],
         ))
         .map_err(|error| StasisError::PortFailure(error.to_string()))?;
-        if entries.iter().any(|entry| entry.entry_id == entry_id) {
+        if let Some(entry) = entries.iter().find(|entry| entry.entry_id == entry_id) {
+            // Repair a crash between the transcript commit and durable callback enqueue.
+            self.enqueue_callback(callback_profile_id, source, &entry_id, &entry.turn.content)
+                .await?;
             close_in_flight_work(source.session_id.as_str(), work_id);
             return Ok(true);
         }
@@ -636,7 +682,7 @@ impl DelegationResultDelivery {
                 &[TranscriptAppend {
                     turn,
                     caused_by: Some(caused_by),
-                    existing_entry_id: Some(entry_id),
+                    existing_entry_id: Some(entry_id.clone()),
                     source: None,
                     expected_digest: None,
                 }],
@@ -644,6 +690,8 @@ impl DelegationResultDelivery {
             .await
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;
 
+        self.enqueue_callback(callback_profile_id, source, &entry_id, &text)
+            .await?;
         let sink = self.live_sink.read().expect("delegation live sink").clone();
         if let Some(sink) = sink {
             let event = DelegationCompletionEvent {
@@ -660,6 +708,30 @@ impl DelegationResultDelivery {
         close_in_flight_work(source.session_id.as_str(), work_id);
         Ok(true)
     }
+}
+
+async fn enqueue_delegation_callback(
+    profile_id: Option<&str>,
+    source: &medousa_types::session::ExecutionRef,
+    entry_id: &TranscriptEntryId,
+    text: &str,
+) -> StasisResult<()> {
+    #[cfg(feature = "full-daemon")]
+    if let Some(profile_id) = profile_id {
+        crate::agent_messaging::enqueue_terminal_event(
+            profile_id,
+            source.session_id.as_str(),
+            source.session_id.as_str(),
+            entry_id.as_str(),
+            text,
+            medousa_types::wake::WakeSource::WorkerResult,
+        )
+        .await
+        .map_err(port_failure)?;
+    }
+    #[cfg(not(feature = "full-daemon"))]
+    let _ = (profile_id, source, entry_id, text);
+    Ok(())
 }
 
 fn register_in_flight_work(session_id: &str, work_id: &str, task: &str) {
@@ -1633,6 +1705,7 @@ impl DelegationService {
                 context,
             },
             operator_profile_id: Some(profile_id.to_string()),
+            callback_profile_id: None,
             operator_request_id: Some(request_id.to_string()),
             operator_request_fingerprint: Some(request_fingerprint.to_string()),
             intent: "coder".to_string(),
@@ -1821,6 +1894,7 @@ impl DelegationService {
                 placement: placement.clone(),
                 grant,
                 source_execution,
+                callback_profile_id: execution.principal().profile_id().map(str::to_owned),
                 context,
                 deadline_at: None,
                 lifetime_policy_version: 1,
@@ -1846,9 +1920,11 @@ impl DelegationService {
                 .await?;
             register_in_flight_work(execution.session_id().as_str(), &work_id, &spawn.task);
         }
-        execution
-            .session_waits
-            .track(turn_id.clone(), work_id.clone(), self.waits.clone());
+        if !cfg!(feature = "full-daemon") || execution.principal().profile_id().is_none() {
+            execution
+                .session_waits
+                .track(turn_id.clone(), work_id.clone(), self.waits.clone());
+        }
         self.start_driver(job_id.clone(), turn_id);
         Ok(json!({
             "ok":true, "worker_queued":true, "worker_spawned":false,
@@ -1967,9 +2043,15 @@ impl DelegationService {
             )
             .await
             .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
+            // The full daemon returns completion through a fresh owner callback.
+            // Portable embedded builds retain their existing ready-result adapter
+            // until they have a durable fresh-turn callback host of their own.
+            #[cfg(not(feature = "full-daemon"))]
             execution
                 .session_waits
                 .track(wait.id, binding.assignment_id.clone(), wait.store);
+            #[cfg(feature = "full-daemon")]
+            let _ = wait;
         }
         Ok(response)
     }
@@ -2132,6 +2214,7 @@ impl DelegationService {
                     context,
                 },
                 operator_profile_id: None,
+                callback_profile_id: execution.principal().profile_id().map(str::to_owned),
                 operator_request_id: None,
                 operator_request_fingerprint: None,
                 intent: worker.intent.clone(),
@@ -2161,9 +2244,11 @@ impl DelegationService {
                 })
                 .await?;
         }
-        execution
-            .session_waits
-            .track(turn_id.clone(), work_id.clone(), self.waits.clone());
+        if !cfg!(feature = "full-daemon") || execution.principal().profile_id().is_none() {
+            execution
+                .session_waits
+                .track(turn_id.clone(), work_id.clone(), self.waits.clone());
+        }
         self.start_driver(job_id.clone(), turn_id.clone());
         Ok(DelegationTicket {
             work_id,
@@ -3057,7 +3142,7 @@ mod tests {
         let result = observation.result.as_ref().expect("terminal result");
         let store = Arc::new(MemorySessionStore::default());
         let delivery = DelegationResultDelivery::new(store.clone());
-        let payload = DelegationJobPayload {
+        let mut payload = DelegationJobPayload {
             work_id: "work-delegation-delivery".to_string(),
             target: DelegationTarget {
                 route_ref: "workshop-1".to_string(),
@@ -3066,6 +3151,7 @@ mod tests {
             },
             request: request.clone(),
             operator_profile_id: None,
+            callback_profile_id: None,
             operator_request_id: None,
             operator_request_fingerprint: None,
             intent: "research".to_string(),
@@ -3075,6 +3161,19 @@ mod tests {
             poll_interval_seconds: 1,
         };
 
+        let legacy = serde_json::to_value(&payload).unwrap();
+        assert!(legacy.get("callbackProfileId").is_none());
+        let legacy: DelegationJobPayload = serde_json::from_value(legacy).unwrap();
+        assert!(legacy.callback_profile_id.is_none());
+        payload.callback_profile_id = Some("user:source".into());
+        let restored: DelegationJobPayload =
+            serde_json::from_value(serde_json::to_value(&payload).unwrap()).unwrap();
+        assert_eq!(
+            restored.return_route().callback_profile_id,
+            Some("user:source")
+        );
+        payload.callback_profile_id = None;
+
         assert!(delivery.deliver_terminal(&payload, result).await.unwrap());
         assert!(delivery.deliver_terminal(&payload, result).await.unwrap());
 
@@ -3082,6 +3181,61 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].turn.content, "done");
         assert_eq!(entries[0].caused_by, Some(result.execution.clone()));
+
+        // Simulate a pre-callback commit from an earlier process. Retrying must
+        // enqueue from the committed entry even though no new append is needed.
+        let queue = Arc::new(RecordingCallbackQueue::default());
+        *delivery.callback_queue.write().unwrap() = Some(queue.clone());
+        payload.callback_profile_id = Some("user:source".into());
+        queue.fail.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(delivery.deliver_terminal(&payload, result).await.is_err());
+        assert_eq!(
+            store
+                .load_transcript_entries(&request.source_execution.session_id)
+                .len(),
+            1
+        );
+        queue.fail.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert!(delivery.deliver_terminal(&payload, result).await.unwrap());
+        let queued = queue.delivered.lock().unwrap();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(
+            queued[0],
+            (
+                "user:source".to_string(),
+                request.source_execution.session_id.to_string(),
+                entries[0].entry_id.to_string(),
+                entries[0].turn.content.clone(),
+            )
+        );
+    }
+
+    #[derive(Default)]
+    pub(super) struct RecordingCallbackQueue {
+        fail: std::sync::atomic::AtomicBool,
+        pub(super) delivered: Mutex<Vec<(String, String, String, String)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DelegationCallbackQueue for RecordingCallbackQueue {
+        async fn enqueue(
+            &self,
+            profile_id: &str,
+            source: &medousa_types::session::ExecutionRef,
+            entry_id: &TranscriptEntryId,
+            text: &str,
+        ) -> StasisResult<()> {
+            if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(port_failure("callback store temporarily unavailable"));
+            }
+            self.delivered.lock().unwrap().push((
+                profile_id.into(),
+                source.session_id.to_string(),
+                entry_id.to_string(),
+                text.into(),
+            ));
+            Ok(())
+        }
     }
 
     struct RecoveringTransport {
@@ -3416,6 +3570,7 @@ mod tests {
             poll_interval_seconds: 1,
             request,
             operator_profile_id: None,
+            callback_profile_id: None,
             operator_request_id: None,
             operator_request_fingerprint: None,
         };

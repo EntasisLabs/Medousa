@@ -1,0 +1,7 @@
+error: failed to load manifest for dependency `rndr_canvas`
+
+Caused by:
+  failed to read `/Users/theelevators/Library/Application Support/medousa/forge/worktrees/rndr/crates/rndr_canvas/Cargo.toml`
+
+Caused by:
+  No such file or directory (os error 2)

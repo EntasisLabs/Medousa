@@ -740,6 +740,154 @@ async fn session_inbox(
     .await
 }
 
+/// Queue a verified terminal receipt for a fresh turn in its originating chat.
+/// Callers own receipt verification and durable transcript projection. This
+/// inbox owns idempotent wake admission, serializing it with human turns.
+pub(crate) async fn enqueue_terminal_event(
+    profile_id: &str,
+    source_session: &str,
+    target_session: &str,
+    receipt_id: &str,
+    body: &str,
+    kind: medousa_types::wake::WakeSource,
+) -> Result<()> {
+    anyhow::ensure!(
+        matches!(
+            kind,
+            medousa_types::wake::WakeSource::WorkerResult
+                | medousa_types::wake::WakeSource::PeerTerminal
+        ),
+        "terminal receipt requires a worker or peer wake"
+    );
+    anyhow::ensure!(
+        !receipt_id.is_empty() && receipt_id.len() <= 512,
+        "terminal receipt identity requires 1–512 bytes"
+    );
+    let host = HOST
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("agent message host unavailable"))?;
+    // The full result is already in canonical history. Bound the wake payload
+    // without making large successful results undeliverable.
+    let mut end = body.len().min(6000);
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    let body = terminal_event_body(receipt_id, body, end);
+    let message = terminal_message(
+        profile_id,
+        source_session,
+        target_session,
+        receipt_id,
+        body,
+        kind,
+    );
+    let key = format!("terminal_{}", kind.as_str());
+    let message = host
+        .stored(move |store| store.enqueue_event(message, &key))
+        .await?;
+    if message.status == MessageStatus::Queued {
+        crate::wake_runtime::register_gap(
+            &message.target_session,
+            medousa_types::wake::OpenGap {
+                id: message.id.clone(),
+                kind: medousa_types::wake::OpenGapKind::UndeliveredMessage,
+                summary: format!("terminal receipt from {}", message.source_session),
+            },
+        );
+    }
+    host.wake.notify_one();
+    Ok(())
+}
+
+fn terminal_event_body(receipt_id: &str, body: &str, mut end: usize) -> String {
+    loop {
+        let encoded = json!({"receipt_id": receipt_id,
+            "result_preview": &body[..end], "truncated": end < body.len(),
+            "full_result": "originating chat history"})
+        .to_string();
+        if encoded.len() <= 7500 || end == 0 {
+            return encoded;
+        }
+        end /= 2;
+        while !body.is_char_boundary(end) {
+            end -= 1;
+        }
+    }
+}
+
+fn terminal_message(
+    profile_id: &str,
+    source_session: &str,
+    target_session: &str,
+    receipt_id: &str,
+    body: String,
+    kind: medousa_types::wake::WakeSource,
+) -> Message {
+    Message {
+        id: String::new(),
+        profile_id: profile_id.into(),
+        source_session: source_session.into(),
+        source_turn: receipt_id.into(),
+        source_name: "worker receipt".into(),
+        target_session: target_session.into(),
+        target_name: "originating chat".into(),
+        body,
+        root_id: String::new(),
+        in_reply_to: None,
+        created_at: chrono::Utc::now(),
+        status: MessageStatus::Queued,
+        delivery_turn: None,
+        error: None,
+        source_workshop: None,
+        target_workshop: None,
+        hop: 0,
+        remote_inbound: false,
+        receipt_acknowledged: false,
+        transport_route: None,
+        attempts: 0,
+        next_attempt_at: None,
+        observed_phase: None,
+        target_execution: None,
+        wake_source: Some(kind.as_str().into()),
+    }
+}
+
+fn is_terminal_event(message: &Message) -> bool {
+    !message.remote_inbound
+        && matches!(
+            message.wake_source.as_deref(),
+            Some("worker_result" | "peer_terminal")
+        )
+}
+
+/// Terminal receipts are native return routes, not arbitrary agent messages.
+/// A verified receipt may report into a delegated Coder's originating chat,
+/// but it does not acquire that Coder's execution grant or worker identity.
+fn validate_recipient(message: &Message) -> Result<()> {
+    if is_terminal_event(message) {
+        let binding = crate::bot_profiles::BotProfileStore::daemon_default()
+            .resolve_session(&message.profile_id, &message.target_session)
+            .map_err(anyhow::Error::msg)?;
+        anyhow::ensure!(
+            binding
+                .bot
+                .as_ref()
+                .is_none_or(|bot| !bot.archived && bot.external_agent.is_none()),
+            "originating Bot is archived or has an external executor"
+        );
+        anyhow::ensure!(
+            crate::session_history::session_visible_to_profile(
+                &message.target_session,
+                &message.profile_id
+            ),
+            "originating chat is no longer available to this owner"
+        );
+        Ok(())
+    } else {
+        resolve_target(&message.profile_id, &message.target_session).map(|_| ())
+    }
+}
+
 pub async fn enqueue_process_event(
     profile_id: &str,
     source_session: &str,
@@ -863,7 +1011,7 @@ pub(crate) async fn verify_admission(
         if !mesh::may_receive(&host_lookup, &check_message) {
             bail!("remote sender policy no longer permits delivery");
         }
-        resolve_target(&owner, &session)?;
+        validate_recipient(&check_message)?;
         if !crate::session_history::session_visible_to_profile(&session, &owner) {
             bail!("recipient is unavailable to this profile");
         }
@@ -990,6 +1138,13 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
                 }
                 host.stored(move |store| store.outcome(&id, outcome.0, outcome.1))
                     .await?;
+            } else if pending.terminal_event {
+                // A claimed callback may have executed before the daemon lost
+                // its in-memory ticket. Never rerun model effects on an unknown
+                // outcome. Keep the durable receipt and explicit diagnosis.
+                host.stored(move |store| store.outcome(&id, MessageStatus::Uncertain,
+                    Some("terminal callback admission outcome is unknown after restart; the worker receipt remains in chat history. Inspect the transcript before explicitly retrying.".into())))
+                    .await?;
             } else {
                 host.stored(move |store| store.requeue_for_retry(&id))
                     .await?;
@@ -1051,7 +1206,9 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
                     .get(&check_id)?
                     .is_some_and(|message| mesh::may_receive(&host_lookup, &message));
                 Ok(allowed
-                    && resolve_target(&owner, &target).is_ok()
+                    && store
+                        .get(&check_id)?
+                        .is_some_and(|message| validate_recipient(&message).is_ok())
                     && crate::session_history::session_visible_to_profile(&target, &owner))
             })
             .await?;
@@ -1155,6 +1312,21 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn terminal_preview_budget_accounts_for_unicode_and_json_escaping() {
+        for body in ["🤖".repeat(4000), "\0".repeat(6000), "done".into()] {
+            let mut end = body.len().min(6000);
+            while !body.is_char_boundary(end) {
+                end -= 1;
+            }
+            let encoded = terminal_event_body("receipt", &body, end);
+            assert!(encoded.len() <= 7500);
+            let value: Value = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(value["receipt_id"], "receipt");
+            assert!(body.starts_with(value["result_preview"].as_str().unwrap()));
+        }
+    }
+
     #[test]
     fn delegated_coder_chat_requires_the_assignment_source() {
         let error = resolve_target("owner", "ses_peer_owned_child").unwrap_err();

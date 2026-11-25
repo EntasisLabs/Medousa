@@ -1,0 +1,193 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+    Blocking waiting for file lock on build directory
+   Compiling medousa-runtime v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/fix-turn-delegation-and-handoff/crates/medousa-runtime)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 15s
+     Running unittests src/lib.rs (.build-target/debug/build/medousa-runtime/591877052620ce25/out/medousa_runtime-591877052620ce25)
+
+running 173 tests
+test checkpoint::tests::budget_exhaustion_can_resume_but_receives_a_fresh_budget ... ok
+test context::tests::legacy_pool_is_ordered_saturating_and_deterministic ... ok
+test completion_fsm::event_driven_tests::active_work_uses_the_round_fuse ... ok
+test completion_fsm::event_driven_tests::active_work_ignores_round_fuse_when_limit_is_disabled ... ok
+test completion_fsm::event_driven_tests::active_work_prose_and_empty_rounds_continue ... ok
+test context::tests::coordinator_auxiliary_allocations_match_legacy_formulas ... ok
+test completion_fsm::event_driven_tests::direct_prose_ends_for_every_profile_and_wording ... ok
+test checkpoint::tests::logical_invocations_round_trip_without_host_storage_policy ... ok
+test checkpoint::tests::checkpoint_boundary_wire_names_remain_stable ... ok
+test credentialed_ai::tests::credentialed_client_implements_the_stasis_runtime_port ... ok
+test credentialed_ai::tests::credentials_are_trimmed_bounded_and_debug_redacted ... ok
+test credentialed_ai::tests::base_url_rejects_credential_and_log_injection_surfaces ... ok
+test credentialed_ai::tests::configuration_accepts_portable_provider_routes_and_safe_http_urls ... ok
+test context::tests::unknown_capacity_and_media_are_not_claimed_as_measured_or_fitting ... ok
+test credentialed_ai::tests::stream_accumulation_is_bounded_without_rendering_content_in_errors ... ok
+test context_hud::tests::semantic_deltas_are_coalesced_and_hud_can_defer_without_protected_overflow ... ok
+test context_hud::tests::replacement_preserves_prefix_accounts_snapshot_and_never_completes_work ... ok
+test execution_boundary::tests::cancellation_interrupts_a_scoped_leaf ... ok
+test execution_boundary::tests::deadline_interrupts_and_cancels_the_root ... ok
+test execution_boundary::tests::execution_without_deadline_still_stops_on_user_cancellation ... ok
+test execution_boundary::tests::explicit_deadline_still_bounds_multiple_successful_leaves ... ok
+test execution_boundary::tests::explicit_reentry_preserves_opaque_host_context ... ok
+test execution_boundary::tests::interactive_execution_can_outlive_previous_turn_caps ... ok
+test execution_boundary::tests::unscoped_leaf_fails_closed_without_polling ... ok
+test execution_policy::tests::inner_read_batches_cannot_multiply_outer_parallelism ... ok
+test execution_policy::tests::read_only_batches_are_portable_but_mutations_remain_sequential ... ok
+test execution_policy::tests::workshop_spawn_is_parallel_safe_but_cancel_is_not ... ok
+test credentialed_ai::tests::missing_credentials_fail_before_network_and_name_only_the_provider ... ok
+test credentialed_ai::tests::client_debug_does_not_render_the_credential_provider_or_endpoint ... ok
+test credentialed_ai::tests::reconfiguration_is_shared_by_clones_and_applies_to_future_calls ... ok
+test credentialed_ai::tests::streaming_options_capture_text_reasoning_usage_and_tools ... ok
+test credentialed_ai::tests::transport_errors_do_not_render_provider_bodies_or_endpoints ... ok
+test credentialed_ai::tests::keyless_ollama_route_does_not_consult_the_credential_store ... ok
+test golden_turn::golden_checkpoint_handoff_terminates_as_checkpoint ... ok
+test golden_turn::golden_active_work_prose_continues_until_finish ... ok
+test golden_turn::golden_finish_message_is_fallback_not_a_prose_merge ... ok
+test golden_turn::golden_finish_prefers_same_response_prose_over_message_fallback ... ok
+test golden_turn::golden_first_request_attributes_runtime_layers_and_unknown_media ... ok
+test golden_turn::golden_identical_failed_batches_stop_with_recoverable_failure ... ok
+test golden_turn::golden_max_rounds_fuse_terminates ... ok
+test credentialed_ai::tests::gpt6_responses_options_drop_sampling_controls ... ok
+test credentialed_ai::tests::default_gpt5_uses_responses_but_custom_endpoints_use_chat_completions ... ok
+test golden_turn::golden_plain_reply_commits_directly ... ok
+test credentialed_ai::tests::provider_catalog_routes_use_their_native_or_compatible_adapters ... ok
+test golden_turn::golden_request_input_is_a_distinct_typed_terminal ... ok
+test golden_turn::golden_active_work_prose_never_merges_into_terminal_fallback ... ok
+test golden_turn::golden_round_context_is_injected_before_the_next_inference ... ok
+test golden_turn::golden_non_tool_announcement_without_action_ends_directly ... ok
+test golden_turn::golden_round_pointer_replaces_previous_without_replaying_context ... ok
+test golden_turn::golden_model_visible_tools_refresh_after_a_tool_round ... ok
+test golden_turn::golden_screenshot_pixels_are_transient_between_model_rounds ... ok
+test golden_turn::golden_streamed_content_reaches_sink ... ok
+test golden_turn::golden_changed_failed_batches_allow_recovery ... ok
+test golden_turn::golden_tool_round_then_finish_commits_terminal_body ... ok
+test golden_turn::golden_pending_work_does_not_trip_repeated_failure_guard ... ok
+test golden_turn::golden_terminal_mixed_with_ordinary_action_is_ignored ... ok
+test golden_turn::golden_large_tool_output_is_bounded_for_model_but_preserved_in_receipt ... ok
+test golden_turn::golden_usage_records_every_request_once_for_streaming_and_nonstreaming ... ok
+test golden_turn::usage_counts_shared_intent_once_and_batch_children_as_requests ... ok
+test golden_turn::golden_silent_finish_is_terminal_without_another_model_request ... ok
+test golden_turn::golden_silent_finish_after_delivered_prose_does_not_repeat_the_answer ... ok
+test golden_turn::terminal_controls_close_without_draining_or_waiting_for_workers ... ok
+test golden_turn::window_tests::restored_checkpoint_recompiles_for_smaller_target_and_replaces_stale_stickies ... ok
+test inference_usage::tests::detects_append_rewrite_and_catalog_changes_without_payloads ... ok
+test inference_usage::tests::failed_and_cancelled_requests_have_one_record_and_unknown_usage ... ok
+test golden_turn::golden_streaming_tool_loop_can_finish_after_180_virtual_seconds ... ok
+test inference_usage::tests::request_cost_keeps_media_protocol_and_legacy_unknown_without_inventing_usage ... ok
+test inference_window::tests::compaction_keeps_pairs_and_scoped_authoritative_nonreplayable_evidence ... ok
+test golden_turn::window_tests::hard_pressure_reselects_old_chat_and_finishes_without_replaying_tools ... ok
+test inference_window::tests::deferred_history_route_preserves_chat_scope_and_never_relabels_work_scope ... ok
+test inference_window::tests::deterministic_exchange_selection_preserves_roles_chronology_and_protected_state ... ok
+test golden_turn::window_tests::context_exhaustion_saves_checkpoint_without_claiming_completion ... ok
+test inference_window::tests::fallback_shrinkage_and_larger_resume_recompile_authoritative_history ... ok
+test inference_window::tests::failed_and_nonreplayable_results_without_storage_overflow_instead_of_disappearing ... ok
+test inference_window::tests::separate_shared_unknown_and_zero_limits_are_distinct ... ok
+test inference_window::tests::soft_working_window_is_separate_from_hard_provider_limits ... ok
+test inference_window::tests::protected_overflow_is_structured_and_does_not_truncate_policy_user_or_sticky ... ok
+test inference_window::tests::stable_baseline_is_not_reselected_when_tool_lane_grows ... ok
+test inference_window::tests::unknown_media_is_an_explicit_estimate_not_zero_or_base64_text ... ok
+test inference_window::tests::utf8_and_tools_are_counted_without_chars_div_four_undercount ... ok
+test loop_state::tests::awareness_round_trips_checkpoint_state ... ok
+test loop_state::tests::discipline_is_bounded_and_resets_on_new_tools ... ok
+test loop_state::tests::hud_contains_only_dynamic_round_state ... ok
+test loop_state::tests::hud_only_advertises_enforced_round_limits ... ok
+test loop_state::tests::pending_and_running_work_never_count_as_repeated_failures ... ok
+test loop_state::tests::productive_long_sequence_does_not_reach_failure_boundary ... ok
+test loop_state::tests::repeated_failure_guard_requires_adjacent_identical_failed_batches ... ok
+test loop_state::tests::repeated_progress_is_suppressed_but_new_findings_are_delivered ... ok
+test loop_state::tests::repeated_successful_calls_count_input_only_past_the_warning ... ok
+test perception::tests::anomalous_mode_context_is_bounded_with_next_step_guidance ... ok
+test inference_window::tests::growing_tool_rounds_recheck_every_request_and_never_drop_protocol_pairs ... ok
+test perception::tests::cold_history_compacts_without_breaking_pairs_or_recent_results ... ok
+test golden_turn::window_tests::hybrid_window_keeps_selected_baseline_with_streaming_and_reports ... ok
+test perception::tests::batch_allocation_cannot_exceed_round_tool_pool ... ok
+test perception::tests::oversized_observation_preserves_orientation_and_points_forward ... ok
+test perception::tests::repeated_command_failures_preserve_execution_state_and_diagnostics ... ok
+test perception::tests::repeated_failures_become_a_causal_cluster ... ok
+test perception::tests::history_preserves_errors_and_nonreplayable_results_without_storage ... ok
+test perception::tests::rollover_archives_exact_batches_and_preserves_recent_results_errors_and_guidance ... ok
+test perception::tests::nonreplayable_history_requires_successful_evidence_storage ... ok
+test perception::tests::small_observation_is_unchanged ... ok
+test perception::tests::would_spool_metrics_count_only_non_replayable_bounded_payloads ... ok
+test ports::tests::composition_accepts_coder_evidence_storage ... ok
+test ports::tests::composition_accepts_foreground_presentation_and_approval_ports ... ok
+test ports::tests::composition_accepts_host_handoff_publication ... ok
+test ports::tests::composition_accepts_model_response_fences ... ok
+test ports::tests::composition_accepts_tool_observation_hydration ... ok
+test ports::tests::composition_accepts_worker_control_port ... ok
+test ports::tests::empty_composition_has_no_daemon_only_ports ... ok
+test request_context::tests::changed_prepared_projection_never_inherits_stale_provenance ... ok
+test request_context::tests::lane_boundaries_prevent_marker_quotations_from_claiming_runtime_ownership ... ok
+test request_context::tests::prepared_identity_rejects_equal_cost_content_role_order_and_media_changes ... ok
+test system_one::tests::decision_accepts_only_complete_probability_distributions ... ok
+test system_one::tests::decision_normalizes_observability_fields ... ok
+test system_one::tests::decision_rejects_invalid_confidence ... ok
+test system_one::tests::defaults_to_shadow_and_requires_explicit_active_mode ... ok
+test system_one::tests::policy_fails_closed_for_unvalidated_decisions ... ok
+test system_one::tests::policy_is_conservative_below_thresholds ... ok
+test system_one::tests::policy_maps_confident_typed_intents ... ok
+test target_chronological_contract::chronological_v3_target_fixtures_are_executable_and_self_consistent ... ok
+test target_chronological_contract::raw_v3_facts_support_consumer_defined_projections ... ok
+test target_chronological_contract::target_contract_rejects_terminal_and_ordinary_actions_in_one_round ... ok
+test target_chronological_contract::target_fixture_covers_the_locked_semantic_boundaries ... ok
+test tool_loop::tests::assistant_tool_round_keeps_empty_reasoning_field ... ok
+test tool_loop::tests::assistant_tool_round_replays_reasoning_content ... ok
+test tool_loop::tests::budget_exhaustion_status_is_truthful_and_actionable ... ok
+test tool_loop::tests::checkpoint_turn_from_invocations_is_detected_for_loop_exit ... ok
+test tool_loop::tests::detects_serde_json_completion_errors ... ok
+test tool_loop::tests::direct_prose_ends_even_at_the_round_limit ... ok
+test tool_loop::tests::ensure_tool_turn_reasoning_fills_missing_field ... ok
+test tool_loop::tests::finish_turn_from_invocations_is_detected_for_loop_exit ... ok
+test tool_loop::tests::foreground_prose_after_tools_keeps_active_work_running ... ok
+test tool_loop::tests::hydrates_verified_pixels_into_ephemeral_model_input ... ok
+test tool_loop::tests::malformed_tool_json_guidance_coaches_self_correct ... ok
+test tool_loop::tests::media_hydration_rejects_nonimage_payloads ... ok
+test tool_loop::tests::prior_pixel_message_is_pruned_before_the_next_tool_round ... ok
+test tool_loop::tests::recoverable_tool_error_has_hint ... ok
+test tool_loop::tests::recovery_guidance_addresses_the_failure_without_spawning_work ... ok
+test tool_loop::tests::reopened_jpeg_media_reaches_the_model_as_pixels ... ok
+test tool_loop::tests::terminal_fsm_text_is_never_semantically_rewritten ... ok
+test tool_loop::tests::tool_invoke_failure_becomes_recoverable_receipt ... ok
+test turn_context::tests::host_context_keeps_principal_and_tool_lanes_separate ... ok
+test turn_context::tests::replaceable_pointer_stays_at_tail_across_rounds_and_restore ... ok
+test turn_context::tests::scratch_seed_prefers_in_turn_progress ... ok
+test turn_context::tests::scratch_snapshot_is_deduplicated_and_carries_receipt_hints ... ok
+test turn_context::tests::sticky_refresh_replaces_restored_notes_and_clears_removed_notes ... ok
+test turn_control::tests::finish_and_checkpoint_are_structural_receipts ... ok
+test turn_control::tests::legacy_worker_spawn_remains_started ... ok
+test turn_control::tests::malformed_latest_round_request_does_not_revive_an_older_request ... ok
+test turn_control::tests::queued_workshop_spawn_is_handoff_compatible_without_claiming_started ... ok
+test turn_control::tests::request_input_is_a_distinct_typed_terminal ... ok
+test turn_control::tests::round_requests_are_bounded_at_the_protocol_edge ... ok
+test turn_presentation::tests::missing_preset_uses_custom_and_bounds_the_appendix ... ok
+test turn_presentation::tests::voice_metadata_is_a_prompt_hint_not_an_admission_capability ... ok
+test perception::tests::rollover_keeps_parallel_call_batches_complete ... ok
+test windowed_client::tests::hidden_cached_state_and_output_overrides_fail_closed ... ok
+test windowed_client::tests::output_reserve_is_enforced_only_where_adapter_supports_it ... ok
+test windowed_client::tests::post_compile_appends_and_extra_payload_are_checked_at_final_boundary ... ok
+test windowed_client::tests::smaller_fallback_cannot_dispatch_oversized_original_request ... ok
+test windowed_client::tests::unknown_capacity_and_tool_schema_cost_are_not_assumed_to_fit ... ok
+test work_environment::tests::fake_adapter_exercises_idempotent_lifecycle ... ok
+test work_environment::tests::fake_adapter_rejects_stale_fence ... ok
+test work_environment::tests::fake_adapter_reports_absent_without_materializing ... ok
+test work_environment::tests::spec_requires_immutable_inputs_and_oci_placement ... ok
+test perception::tests::rollover_preserves_history_when_storage_or_durable_receipt_is_unavailable ... ok
+test inference_window::tests::codex_counts_distinct_replay_signatures_once_per_message ... ok
+test golden_turn::window_tests::measured_input_is_scoped_and_charges_each_new_message_in_full ... ok
+test golden_turn::window_tests::hybrid_rollover_continues_productive_tools_with_durable_archives_and_stable_prefix ... ok
+test inference_window::tests::codex_proxy_does_not_treat_code_bytes_as_tokens_and_soft_target_is_not_fatal ... ok
+test golden_turn::window_tests::signed_codex_round_uses_reported_input_through_final_dispatch ... ok
+test inference_window::tests::tokenizer_proxy_bounds_repetitive_input_and_handles_multibyte_chunk_boundaries ... ok
+test golden_turn::golden_long_productive_sequence_is_not_stopped_by_failure_guard ... ok
+test windowed_client::tests::codex_dispatch_uses_the_same_token_proxy_and_hard_limit_as_compilation ... ok
+
+test result: ok. 173 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.61s
+

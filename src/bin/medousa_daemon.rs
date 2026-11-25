@@ -1173,6 +1173,18 @@ async fn start_daemon() -> Result<()> {
     {
         tracing::warn!(%error, "SSH connections unavailable; chat remains active");
     }
+    // Compose the durable callback inbox before recovery can return worker
+    // receipts. Otherwise startup races can defer a valid receipt for minutes.
+    let _agent_messages =
+        match medousa::agent_messaging::start(state.clone(), shutdown_rx.clone(), mesh_api_state)
+            .await
+        {
+            Ok(host) => Some(host),
+            Err(error) => {
+                tracing::warn!(%error, "agent messaging unavailable; chat remains active");
+                None
+            }
+        };
     let _coordination_host = match medousa::daemon::coordination::start_local_coordination_host(
         state.clone(),
         local_runtime_node_id.clone(),
@@ -1196,16 +1208,6 @@ async fn start_daemon() -> Result<()> {
             None
         }
     };
-    let _agent_messages =
-        match medousa::agent_messaging::start(state.clone(), shutdown_rx.clone(), mesh_api_state)
-            .await
-        {
-            Ok(host) => Some(host),
-            Err(error) => {
-                tracing::warn!(%error, "agent messaging unavailable; chat remains active");
-                None
-            }
-        };
     let _creative_jobs = medousa::creative_jobs::start(state.clone(), shutdown_rx.clone());
     medousa::process_supervisor::bind_daemon(state.clone());
     let scheduler_ctx = SchedulerHeartbeatContext {

@@ -1137,16 +1137,20 @@ impl TurnWorkerScheduler {
         })?;
         let wait =
             super::host_resume::worker_wait(runtime.as_ref(), &bus.session_id, &work_id).await?;
+        // Embedded callers without a daemon callback inbox still receive ready
+        // results at model boundaries; terminal controls never wait for them.
+        if (!cfg!(feature = "full-daemon") || bus.identity_user_id.is_none())
+            && let Some(turn) = crate::execution_context::active_turn_execution_context()
+        {
+            turn.session_waits
+                .track(wait.id, work_id.clone(), wait.store);
+        }
         crate::agent_runtime::turn_worker_job::enqueue_turn_worker_job(
             runtime.as_ref(),
             &work_id,
             bus.stream_turn_id,
         )
         .await?;
-        if let Some(turn) = crate::execution_context::active_turn_execution_context() {
-            turn.session_waits
-                .track(wait.id, work_id.clone(), wait.store);
-        }
 
         Ok(SpawnTurnWorkerOutput {
             ok: true,
@@ -1371,16 +1375,20 @@ impl TurnWorkerScheduler {
         })?;
         let wait =
             super::host_resume::worker_wait(runtime.as_ref(), &bus.session_id, &work_id).await?;
+        // Embedded callers without a daemon callback inbox still receive ready
+        // results at model boundaries; terminal controls never wait for them.
+        if (!cfg!(feature = "full-daemon") || bus.identity_user_id.is_none())
+            && let Some(turn) = crate::execution_context::active_turn_execution_context()
+        {
+            turn.session_waits
+                .track(wait.id, work_id.clone(), wait.store);
+        }
         crate::agent_runtime::turn_worker_job::enqueue_turn_worker_job(
             runtime.as_ref(),
             &work_id,
             bus.stream_turn_id,
         )
         .await?;
-        if let Some(turn) = crate::execution_context::active_turn_execution_context() {
-            turn.session_waits
-                .track(wait.id, work_id.clone(), wait.store);
-        }
 
         Ok(EnterBoundWorkshopOutput::Entered {
             ok: true,
