@@ -332,7 +332,8 @@ with `workshop.status`; cancellation uses `workshop.cancel` with the worker ID,
 not scheduler job cancellation or capability discovery.
 
 After a native Coder peer finishes or is cancelled, the runtime flushes its
-memory queue, interrupts its shell sessions, and releases its checkout authority
+memory queue, releases its turn-owned PTYs with confirmed destruction (the host
+retains and retries unconfirmed cleanup), and releases its checkout authority
 before publishing the terminal result and resuming the host. The host acquires
 its own authority; peer edits remain in the attached checkout.
 

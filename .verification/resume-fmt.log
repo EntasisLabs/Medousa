@@ -1,0 +1,1659 @@
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/bin/export_schema.rs:66:
+     export_type!(schemas, VaultBufferSnapshot, "VaultBufferSnapshot");
+     export_type!(schemas, VaultBufferCommand, "VaultBufferCommand");
+     export_type!(schemas, VaultBufferUpdate, "VaultBufferUpdate");
+-    export_type!(schemas, UndertakingBindingRevision, "UndertakingBindingRevision");
++    export_type!(
++        schemas,
++        UndertakingBindingRevision,
++        "UndertakingBindingRevision"
++    );
+     export_type!(schemas, UndertakingContextFact, "UndertakingContextFact");
+     export_type!(schemas, UndertakingGroupBinding, "UndertakingGroupBinding");
+-    export_type!(schemas, UndertakingBindingSnapshot, "UndertakingBindingSnapshot");
+-    export_type!(schemas, UndertakingBindingCommand, "UndertakingBindingCommand");
+-    export_type!(schemas, UndertakingBindingUpdate, "UndertakingBindingUpdate");
++    export_type!(
++        schemas,
++        UndertakingBindingSnapshot,
++        "UndertakingBindingSnapshot"
++    );
++    export_type!(
++        schemas,
++        UndertakingBindingCommand,
++        "UndertakingBindingCommand"
++    );
++    export_type!(
++        schemas,
++        UndertakingBindingUpdate,
++        "UndertakingBindingUpdate"
++    );
+ 
+     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+         .join("../..")
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:15:
+         || lower.contains("workshop_spawn")
+         || lower.contains("workshop.spawn")
+         || {
+-            let peer = lower.find("peer").map(|idx| &lower[idx + 4..]).unwrap_or("");
++            let peer = lower
++                .find("peer")
++                .map(|idx| &lower[idx + 4..])
++                .unwrap_or("");
+             let rest = peer
+                 .strip_prefix('_')
+                 .or_else(|| peer.strip_prefix('.'))
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:35:
+     let mut relationships = Vec::new();
+ 
+     for item in items {
+-        let Some(turn_id) = item.turn_id.as_ref().map(|id| id.trim()).filter(|id| !id.is_empty())
++        let Some(turn_id) = item
++            .turn_id
++            .as_ref()
++            .map(|id| id.trim())
++            .filter(|id| !id.is_empty())
+         else {
+             continue;
+         };
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:45:
+         }
+         if let Some(segments) = &item.segments {
+             for segment in segments {
+-                if let ChatSegment::ToolGroup { runs: group_runs, .. } = segment {
++                if let ChatSegment::ToolGroup {
++                    runs: group_runs, ..
++                } = segment
++                {
+                     runs.extend(group_runs.iter());
+                 }
+             }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:93:
+     work_id: Option<&str>,
+ ) -> Option<&'a str> {
+     if let Some(id) = parent_item_id
+-        && let Some(item) = items.iter().find(|item| {
+-            item.id == id && !matches!(item.lane, Some(ChatLane::Worker))
+-        })
++        && let Some(item) = items
++            .iter()
++            .find(|item| item.id == id && !matches!(item.lane, Some(ChatLane::Worker)))
+     {
+         return Some(item.id.as_str());
+     }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:102:
+     if let Some(turn_id) = parent_turn_id
+         && let Some(item) = items.iter().find(|item| {
+-            item.turn_id.as_deref() == Some(turn_id)
+-                && !matches!(item.lane, Some(ChatLane::Worker))
++            item.turn_id.as_deref() == Some(turn_id) && !matches!(item.lane, Some(ChatLane::Worker))
+         })
+     {
+         return Some(item.id.as_str());
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:111:
+         && parent_turn_id.is_none()
+         && let Some(work_id) = work_id
+         && let Some(item) = items.iter().find(|item| {
+-            item.work_id.as_deref() == Some(work_id)
+-                && !matches!(item.lane, Some(ChatLane::Worker))
++            item.work_id.as_deref() == Some(work_id) && !matches!(item.lane, Some(ChatLane::Worker))
+         })
+     {
+         return Some(item.id.as_str());
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:168:
+     // A turn's active message may have advanced to its worker result. Never
+     // reinterpret that arrival as the spawn location.
+     if let Some(parent) = worker.parent_item_id.as_deref()
+-        && let Some((index, _)) = items.iter().enumerate().find(|(_, item)| {
+-            item.id == parent && !matches!(item.lane, Some(ChatLane::Worker))
+-        })
++        && let Some((index, _)) = items
++            .iter()
++            .enumerate()
++            .find(|(_, item)| item.id == parent && !matches!(item.lane, Some(ChatLane::Worker)))
+     {
+         return index as isize;
+     }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:177:
+     if let Some(turn_id) = worker.parent_turn_id.as_deref()
+         && let Some((index, _)) = items.iter().enumerate().find(|(_, item)| {
+-            item.turn_id.as_deref() == Some(turn_id)
+-                && !matches!(item.lane, Some(ChatLane::Worker))
++            item.turn_id.as_deref() == Some(turn_id) && !matches!(item.lane, Some(ChatLane::Worker))
+         })
+     {
+         return index as isize;
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:200:
+         proposal.binding_session_id.as_deref(),
+         proposal.execution_runtime_id.as_deref(),
+     ) {
+-        (Some(authority), Some(session), runtime) => serde_json::to_string(&(
+-            authority,
+-            runtime.unwrap_or(""),
+-            session,
+-        ))
+-        .unwrap_or_else(|_| format!("proposal:{}", proposal.proposal_id)),
++        (Some(authority), Some(session), runtime) => {
++            serde_json::to_string(&(authority, runtime.unwrap_or(""), session))
++                .unwrap_or_else(|_| format!("proposal:{}", proposal.proposal_id))
++        }
+         _ => format!("proposal:{}", proposal.proposal_id),
+     }
+ }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:539:
+                     origin_proposal_id,
+                     ..
+                 } => {
+-                    let origin = origins.get(proposal_id).cloned().unwrap_or_else(|| {
+-                        ProposalFact {
+-                            proposal_id: origin_proposal_id.clone(),
+-                            assignment_id: None,
+-                            created_at: None,
+-                            execution_runtime_id: None,
+-                            binding_authority_id: None,
+-                            binding_session_id: None,
+-                            sources: Vec::new(),
+-                        }
+-                    });
++                    let origin =
++                        origins
++                            .get(proposal_id)
++                            .cloned()
++                            .unwrap_or_else(|| ProposalFact {
++                                proposal_id: origin_proposal_id.clone(),
++                                assignment_id: None,
++                                created_at: None,
++                                execution_runtime_id: None,
++                                binding_authority_id: None,
++                                binding_session_id: None,
++                                sources: Vec::new(),
++                            });
+                     let live = proposals
+                         .iter()
+                         .find(|row| row.proposal_id == *proposal_id)
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:578:
+         // supplied insertion order, never ID sort.
+         let indexed: Vec<(usize, PendingEntry)> = builder.entries.into_iter().enumerate().collect();
+         let mut indexed = indexed;
+-        indexed.sort_by(|(ai, a), (bi, b)| {
+-            match (a.position, b.position) {
+-                (Some(first), Some(second)) => first
+-                    .0
+-                    .cmp(&second.0)
+-                    .then(first.1.cmp(&second.1))
+-                    .then(first.2.cmp(&second.2)),
+-                (Some(_), None) => std::cmp::Ordering::Less,
+-                (None, Some(_)) => std::cmp::Ordering::Greater,
+-                (None, None) => match (&a.kind, &b.kind) {
+-                    (
+-                        PendingKind::Proposal {
+-                            created_at_ms: left,
+-                            ..
+-                        },
+-                        PendingKind::Proposal {
+-                            created_at_ms: right,
+-                            ..
+-                        },
+-                    ) => left.cmp(right).then(ai.cmp(bi)),
+-                    _ => ai.cmp(bi),
+-                },
+-            }
++        indexed.sort_by(|(ai, a), (bi, b)| match (a.position, b.position) {
++            (Some(first), Some(second)) => first
++                .0
++                .cmp(&second.0)
++                .then(first.1.cmp(&second.1))
++                .then(first.2.cmp(&second.2)),
++            (Some(_), None) => std::cmp::Ordering::Less,
++            (None, Some(_)) => std::cmp::Ordering::Greater,
++            (None, None) => match (&a.kind, &b.kind) {
++                (
++                    PendingKind::Proposal {
++                        created_at_ms: left,
++                        ..
++                    },
++                    PendingKind::Proposal {
++                        created_at_ms: right,
++                        ..
++                    },
++                ) => left.cmp(right).then(ai.cmp(bi)),
++                _ => ai.cmp(bi),
++            },
+         });
+ 
+         let entries = indexed
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/agents.rs:633:
+ }
+ 
+ /// Relationships including proposal anchors derived from placement groups.
+-pub fn proposal_relationships_from_groups(
+-    groups: &[AgentPlacementGroup],
+-) -> Vec<ChatRelationship> {
++pub fn proposal_relationships_from_groups(groups: &[AgentPlacementGroup]) -> Vec<ChatRelationship> {
+     let mut relationships = Vec::new();
+     for group in groups {
+         for entry in &group.entries {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/contract.rs:14:
+ use schemars::JsonSchema;
+ 
+ /// Monotonic revision for a focused chat session projection.
+-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
++#[derive(
++    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
++)]
+ #[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+ #[serde(transparent)]
+ pub struct ChatRevision(pub u64);
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/display.rs:48:
+     if !item.content.trim().is_empty() {
+         return false;
+     }
+-    if item
+-        .tool_runs
+-        .as_ref()
+-        .is_some_and(|runs| !runs.is_empty())
+-    {
++    if item.tool_runs.as_ref().is_some_and(|runs| !runs.is_empty()) {
+         return false;
+     }
+     if item.tools.as_ref().is_some_and(|tools| !tools.is_empty()) {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/display.rs:140:
+         .collect()
+ }
+ 
+-pub fn present_chat_item_ids(items: &[ChatItem], worker_returns: &[WorkerReturnFact]) -> Vec<String> {
++pub fn present_chat_item_ids(
++    items: &[ChatItem],
++    worker_returns: &[WorkerReturnFact],
++) -> Vec<String> {
+     present_chat_items(items, worker_returns)
+         .into_iter()
+         .map(|item| item.id.clone())
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/history.rs:70:
+             }
+             let target_index = work_id
+                 .as_ref()
+-                .and_then(|id| {
+-                    result
+-                        .iter()
+-                        .position(|item| matches_live_target(item, id))
+-                })
++                .and_then(|id| result.iter().position(|item| matches_live_target(item, id)))
+                 .or_else(|| result.iter().position(|item| item.id == message.id));
+             let Some(target_index) = target_index else {
+                 continue;
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/history.rs:159:
+         None
+     };
+ 
+-    let content = if turn.turn.role == "assistant" && is_runtime_startup_text(Some(&turn.turn.content))
+-    {
+-        String::new()
+-    } else {
+-        turn.turn.content.clone()
+-    };
++    let content =
++        if turn.turn.role == "assistant" && is_runtime_startup_text(Some(&turn.turn.content)) {
++            String::new()
++        } else {
++            turn.turn.content.clone()
++        };
+ 
+     let failed = turn.turn.answer_state.as_deref() == Some("failed");
+     let error_line = if failed {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/history.rs:280:
+         .turns
+         .iter()
+         .enumerate()
+-        .map(|(index, turn)| {
+-            project_entry(turn, index, session_id, authority_id, lane, ask_job_id)
+-        })
++        .map(|(index, turn)| project_entry(turn, index, session_id, authority_id, lane, ask_job_id))
+         .collect();
+     attach_live_transcripts(projected)
+ }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/lib.rs:22:
+ pub mod vault_buffer;
+ pub mod wire_history;
+ 
++pub use agents::project_agent_placement;
+ pub use contract::{
+     AgentPlacementEntry, AgentPlacementGroup, AskThreadBatch, BeginTurnRequest, ChatCommand,
+     ChatItem, ChatItemRole, ChatLane, ChatRelationship, ChatRevision, ChatSnapshot, ChatUpdate,
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/lib.rs:28:
+     ProposalFact, TranscriptCoordinate, TurnFact, WorkerLinkFact, WorkerPlacementFact,
+     WorkerReturnFact,
+ };
+-pub use agents::project_agent_placement;
+ pub use display::{is_empty_handoff_shell, present_chat_item_ids, present_chat_items};
+-pub use history::{project_history, ProjectHistoryOptions};
++pub use history::{ProjectHistoryOptions, project_history};
+ pub use merge::{dedupe_messages_by_id, merge_transcript};
+-pub use session::{guard_focused_session, ChatCore, ChatCoreError};
++pub use session::{ChatCore, ChatCoreError, guard_focused_session};
+ pub use shell::{
+     ShellCommand, ShellCore, ShellCoreError, ShellRevision, ShellSnapshot, ShellTab, ShellUpdate,
+ };
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/merge.rs:83:
+         created_at: message.created_at.or(existing.created_at),
+         turn_index: message.turn_index.or(existing.turn_index),
+         turn_id: existing.turn_id.or(message.turn_id),
+-        failed: if streaming { existing.failed } else { message.failed.or(existing.failed) },
++        failed: if streaming {
++            existing.failed
++        } else {
++            message.failed.or(existing.failed)
++        },
+         error_line: if streaming {
+             existing.error_line
+         } else {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/merge.rs:152:
+     }
+ 
+     for indexes in scopes.values() {
+-        let mut ordered: Vec<Vec<ChatItem>> = indexes.iter().map(|&index| bundles[index].clone()).collect();
++        let mut ordered: Vec<Vec<ChatItem>> = indexes
++            .iter()
++            .map(|&index| bundles[index].clone())
++            .collect();
+         ordered.sort_by_key(|bundle| {
+             bundle
+                 .first()
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/merge.rs:187:
+                     || same_entry(item, &message)
+                     || (message.role == crate::contract::ChatItemRole::Assistant
+                         && message.turn_id.as_ref().is_some_and(|turn| {
+-                            item.turn_id.as_ref().is_some_and(|existing| existing == turn)
+-                        }))
+-                    )
++                            item.turn_id
++                                .as_ref()
++                                .is_some_and(|existing| existing == turn)
++                        })))
+         });
+         if let Some(index) = identity_index {
+             claimed.insert(merged[index].id.clone());
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/merge.rs:255:
+                 item.role == crate::contract::ChatItemRole::Assistant
+                     && item.is_streaming()
+                     && item.transcript.is_none()
+-                    && matches!(
+-                        item.lane,
+-                        None | Some(crate::contract::ChatLane::Chat)
+-                    )
++                    && matches!(item.lane, None | Some(crate::contract::ChatLane::Chat))
+             });
+             if let Some(index) = live_index
+                 && index > 0
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/parts.rs:98:
+         .collect();
+     if text_parts.is_empty()
+         || text_parts.iter().any(|part| match part {
+-            TurnPart::Text { segment_id, .. } => {
+-                segment_id.as_ref().map(|id| id.trim().is_empty()).unwrap_or(true)
+-            }
++            TurnPart::Text { segment_id, .. } => segment_id
++                .as_ref()
++                .map(|id| id.trim().is_empty())
++                .unwrap_or(true),
+             _ => true,
+         })
+     {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/parts.rs:115:
+                 segment_id,
+                 model_round,
+             } => {
+-                let Some(segment_id) = segment_id.as_ref().map(|id| id.trim()).filter(|id| !id.is_empty())
++                let Some(segment_id) = segment_id
++                    .as_ref()
++                    .map(|id| id.trim())
++                    .filter(|id| !id.is_empty())
+                 else {
+                     continue;
+                 };
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/parts.rs:247:
+ }
+ 
+ pub fn progress_from_parts(parts: Option<&[TurnPart]>) -> Option<String> {
+-    parts?
+-        .iter()
+-        .rev()
+-        .find_map(|part| match part {
+-            TurnPart::Progress { markdown }
+-                if !markdown.trim().is_empty() && !is_runtime_startup_text(Some(markdown)) =>
+-            {
+-                Some(markdown.trim().to_string())
+-            }
+-            _ => None,
+-        })
++    parts?.iter().rev().find_map(|part| match part {
++        TurnPart::Progress { markdown }
++            if !markdown.trim().is_empty() && !is_runtime_startup_text(Some(markdown)) =>
++        {
++            Some(markdown.trim().to_string())
++        }
++        _ => None,
++    })
+ }
+ 
+ pub fn media_from_parts(parts: Option<&[TurnPart]>) -> Option<Vec<ChatMediaAttachment>> {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:97:
+ }
+ 
+ fn turn_mode_from_request(request: &BeginTurnRequest) -> String {
+-    if let Some(mode) = request.mode.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
++    if let Some(mode) = request
++        .mode
++        .as_deref()
++        .map(str::trim)
++        .filter(|m| !m.is_empty())
++    {
+         return mode.to_string();
+     }
+     match request.lane {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:164:
+             })
+             .unwrap_or_default();
+ 
+-        let index = if let Some(index) = self.items.iter().position(|item| item.id == synthesis_id) {
++        let index = if let Some(index) = self.items.iter().position(|item| item.id == synthesis_id)
++        {
+             let item = &mut self.items[index];
+             item.streaming = Some(streaming);
+             if status_line.is_some() {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:469:
+                 batches,
+                 promoted_ask_ids,
+                 expected_revision,
+-            } => self.hydrate_ask_threads(
+-                &session_id,
+-                batches,
+-                promoted_ask_ids,
+-                expected_revision,
+-            ),
++            } => {
++                self.hydrate_ask_threads(&session_id, batches, promoted_ask_ids, expected_revision)
++            }
+             ChatCommand::PromoteAskToChat {
+                 session_id,
+                 ask_job_id,
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:737:
+         };
+ 
+         if target_item_id.is_some() || session.turns.contains_key(&turn_id) {
+-            update_turn_from_stream(session, &turn_id, &envelope.event, target_item_id.as_deref());
++            update_turn_from_stream(
++                session,
++                &turn_id,
++                &envelope.event,
++                target_item_id.as_deref(),
++            );
+         } else if target_item_id.is_none() {
+             return Ok(ChatUpdate::Snapshot {
+                 snapshot: session.snapshot(),
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:1360:
+         return;
+     };
+     match event {
+-        TurnStreamEventV3::WorkerAck { ack_kind, work_id, .. } => {
++        TurnStreamEventV3::WorkerAck {
++            ack_kind, work_id, ..
++        } => {
+             turn.phase = match ack_kind {
+                 WorkerAckKind::Workshop => "workshop_handoff",
+                 WorkerAckKind::Worker => "worker_handoff",
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:1433:
+ ) -> Option<usize> {
+     use medousa_types::TurnStreamEventV3;
+ 
+-    let handoff = session.turns.get(turn_id).filter(|turn| {
+-        matches!(turn.phase.as_str(), "worker_handoff" | "workshop_handoff")
+-    });
++    let handoff = session
++        .turns
++        .get(turn_id)
++        .filter(|turn| matches!(turn.phase.as_str(), "worker_handoff" | "workshop_handoff"));
+     let handoff_worker = handoff
+         .and_then(|turn| turn.workspace_card_id.as_ref())
+         .and_then(|id| session.workers.get(id));
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:1443:
+         session.workers.values().find(|link| {
+             link.parent_turn_id.as_deref() == Some(turn_id)
+                 || link.synthesis_item_id.as_ref().is_some_and(|id| {
+-                    session.items.iter().any(|item| {
+-                        item.id == *id && item.turn_id.as_deref() == Some(turn_id)
+-                    })
++                    session
++                        .items
++                        .iter()
++                        .any(|item| item.id == *id && item.turn_id.as_deref() == Some(turn_id))
+                 })
+         })
+     });
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:1457:
+                 | TurnStreamEventV3::AssistantTextStarted { .. }
+                 | TurnStreamEventV3::AssistantTextCommitted { .. }
+                 | TurnStreamEventV3::TurnCompleted { .. }
+-        ) && handoff.is_some() && worker_for_turn.is_some_and(|link| {
+-            !link.synthesis_delivered && link.synthesis_item_id.is_some()
+-        }));
++        ) && handoff.is_some()
++            && worker_for_turn
++                .is_some_and(|link| !link.synthesis_delivered && link.synthesis_item_id.is_some()));
+ 
+     let prefers_handoff = matches!(
+         event,
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:1471:
+     if prefers_synthesis
+         && let Some(link) = worker_for_turn
+         && let Some(synthesis_id) = link.synthesis_item_id.as_deref()
+-        && let Some(index) = session.items.iter().position(|item| item.id == synthesis_id)
++        && let Some(index) = session
++            .items
++            .iter()
++            .position(|item| item.id == synthesis_id)
+     {
+         return Some(index);
+     }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/session.rs:1538:
+ }
+ 
+ /// Reject updates that belong to a different focused session.
+-pub fn guard_focused_session(
+-    focused: Option<&str>,
+-    session_id: &str,
+-) -> Result<(), ChatCoreError> {
++pub fn guard_focused_session(focused: Option<&str>, session_id: &str) -> Result<(), ChatCoreError> {
+     match focused {
+         Some(current) if current == session_id => Ok(()),
+         Some(_) => Err(ChatCoreError::Rejected(format!(
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/shell.rs:19:
+ const RATIO_MAX: f64 = 0.8;
+ const RATIO_DEFAULT: f64 = 0.5;
+ 
+-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
++#[derive(
++    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
++)]
+ #[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+ #[serde(transparent)]
+ pub struct ShellRevision(pub u64);
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/shell.rs:539:
+                 self.move_tab(&tab_id, &to_group_id)?;
+                 self.ok_snapshot()
+             }
+-            ShellCommand::MoveTabToDesktop {
+-                tab_id,
+-                desktop_id,
+-            } => {
++            ShellCommand::MoveTabToDesktop { tab_id, desktop_id } => {
+                 self.move_tab_to_desktop(&tab_id, &desktop_id)?;
+                 self.ok_snapshot()
+             }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/shell.rs:590:
+         group_id: Option<String>,
+         activate: bool,
+     ) -> Result<(), ShellCoreError> {
+-        let target_group = group_id
+-            .clone()
+-            .unwrap_or_else(|| self.active_layout().map(|l| l.active_group_id.clone()).unwrap_or_default());
++        let target_group = group_id.clone().unwrap_or_else(|| {
++            self.active_layout()
++                .map(|l| l.active_group_id.clone())
++                .unwrap_or_default()
++        });
+ 
+         // Reuse existing identity when the same work is already open.
+         let reusable = self
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/shell.rs:665:
+         };
+         for existing in &layout.tabs {
+             let same = match (tab, existing) {
++                (ShellTab::Chat { session_id: a, .. }, ShellTab::Chat { session_id: b, .. }) => {
++                    a == b
++                }
++                (ShellTab::Lme { lme_tab_id: a, .. }, ShellTab::Lme { lme_tab_id: b, .. }) => {
++                    a == b
++                }
+                 (
+-                    ShellTab::Chat {
+-                        session_id: a, ..
+-                    },
+-                    ShellTab::Chat {
+-                        session_id: b, ..
+-                    },
+-                ) => a == b,
+-                (ShellTab::Lme { lme_tab_id: a, .. }, ShellTab::Lme { lme_tab_id: b, .. }) => a == b,
+-                (
+                     ShellTab::Web {
+                         browser_tab_id: a, ..
+                     },
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/shell.rs:687:
+                     ShellTab::Surface { surface_id: b, .. },
+                 ) => a == b,
+                 (
+-                    ShellTab::Terminal {
+-                        session_id: a, ..
+-                    },
+-                    ShellTab::Terminal {
+-                        session_id: b, ..
+-                    },
++                    ShellTab::Terminal { session_id: a, .. },
++                    ShellTab::Terminal { session_id: b, .. },
+                 ) => a == b,
+                 (
+-                    ShellTab::Create {
+-                        document_id: a, ..
+-                    },
+-                    ShellTab::Create {
+-                        document_id: b, ..
+-                    },
++                    ShellTab::Create { document_id: a, .. },
++                    ShellTab::Create { document_id: b, .. },
+                 ) => a == b,
+                 _ => false,
+             };
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/shell.rs:982:
+         return Err(ShellCoreError::PaneLimit);
+     }
+     if leaves.is_empty() {
+-        return Err(ShellCoreError::InvalidLayout("split tree has no leaves".into()));
++        return Err(ShellCoreError::InvalidLayout(
++            "split tree has no leaves".into(),
++        ));
+     }
+     for leaf in &leaves {
+         if !layout.groups.iter().any(|g| g.id == *leaf) {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/shell.rs:1026:
+     if incoming.is_empty() {
+         return;
+     }
+-    let dest_group_id = if layout
+-        .groups
+-        .iter()
+-        .any(|g| g.id == layout.active_group_id)
+-    {
++    let dest_group_id = if layout.groups.iter().any(|g| g.id == layout.active_group_id) {
+         layout.active_group_id.clone()
+     } else {
+         layout
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/shell.rs:1213:
+ fn remove_leaf(root: SplitNode, group_id: &str) -> (SplitNode, bool) {
+     match root {
+         SplitNode::Group { .. } => (root, false),
+-        SplitNode::Branch { id, direction, ratio, a, b } => {
++        SplitNode::Branch {
++            id,
++            direction,
++            ratio,
++            a,
++            b,
++        } => {
+             if let SplitNode::Group { id: ref leaf } = *a
+                 && leaf == group_id
+             {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/stream.rs:25:
+ );
+ 
+ fn text_index(segments: &[ChatSegment], segment_id: &str) -> Option<usize> {
+-    segments.iter().position(|segment| matches!(
+-        segment,
+-        ChatSegment::Text { segment_id: id, .. } if id == segment_id
+-    ))
++    segments.iter().position(|segment| {
++        matches!(
++            segment,
++            ChatSegment::Text { segment_id: id, .. } if id == segment_id
++        )
++    })
+ }
+ 
+ fn apply_text_started(segments: &mut Vec<ChatSegment>, segment_id: &str, model_round: u64) {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/stream.rs:264:
+             let index = segments.iter().position(|segment| match segment {
+                 ChatSegment::Artifact { artifact: existing } => {
+                     existing.artifact_id == *previous_artifact_id
+-                        || root_artifact_id.as_ref().is_some_and(|root| {
+-                            existing.root_artifact_id.as_ref() == Some(root)
+-                        })
++                        || root_artifact_id
++                            .as_ref()
++                            .is_some_and(|root| existing.root_artifact_id.as_ref() == Some(root))
+                 }
+                 _ => false,
+             });
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/stream.rs:380:
+         TurnStreamEventV3::ToolStarted { .. } | TurnStreamEventV3::ToolFinished { .. } => {
+             apply_tool_event(&mut segments, event);
+         }
+-        TurnStreamEventV3::ArtifactPresented { .. }
+-        | TurnStreamEventV3::ArtifactUpdated { .. } => {
++        TurnStreamEventV3::ArtifactPresented { .. } | TurnStreamEventV3::ArtifactUpdated { .. } => {
+             apply_artifact_event(&mut segments, event);
+         }
+         TurnStreamEventV3::WorkerAck {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/stream.rs:448:
+             chrome.status_line = Some(None);
+         }
+         TurnStreamEventV3::ReasoningAppend { text } => {
+-            chrome.reasoning = Some(format!("{}{text}", message.reasoning.as_deref().unwrap_or("")));
++            chrome.reasoning = Some(format!(
++                "{}{text}",
++                message.reasoning.as_deref().unwrap_or("")
++            ));
+         }
+         TurnStreamEventV3::Status {
+             phase,
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/stream.rs:466:
+                 )
+             });
+         }
+-        TurnStreamEventV3::Progress { message: progress, .. } => {
++        TurnStreamEventV3::Progress {
++            message: progress, ..
++        } => {
+             if !is_runtime_startup_text(Some(progress)) {
+                 apply_progress(&mut segments, envelope, progress);
+                 chrome.status_line = Some(None);
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/stream.rs:533:
+         _ => {}
+     }
+ 
+-    let segments_changed = had_segments || segments.len() != initial_len_marker || !segments.is_empty() && !had_segments;
++    let segments_changed = had_segments
++        || segments.len() != initial_len_marker
++        || !segments.is_empty() && !had_segments;
+     // Detect mutation more carefully: any match arms that touch segments.
+     let has_segment_projection = message.segments.is_some()
+         || matches!(
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/undertaking_binding.rs:12:
+ #[cfg(feature = "json-schema")]
+ use schemars::JsonSchema;
+ 
+-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
++#[derive(
++    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
++)]
+ #[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+ #[serde(transparent)]
+ pub struct UndertakingBindingRevision(pub u64);
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/undertaking_binding.rs:171:
+                 self.bump();
+             }
+             UndertakingBindingCommand::SetActive { group_id, context } => {
+-                let group_id = normalize_id(&group_id)
+-                    .ok_or(UndertakingBindingCoreError::InvalidGroupId)?;
++                let group_id =
++                    normalize_id(&group_id).ok_or(UndertakingBindingCoreError::InvalidGroupId)?;
+                 let mut next = *context;
+                 if let Some(Some(prev)) = self.contexts.get(&group_id)
+                     && prev.work_id == next.work_id
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/undertaking_binding.rs:191:
+                         next.bound_chat_session_ids = prev.bound_chat_session_ids.clone();
+                     }
+                     if next.bound_terminal_session_ids.is_empty() {
+-                        next.bound_terminal_session_ids =
+-                            prev.bound_terminal_session_ids.clone();
++                        next.bound_terminal_session_ids = prev.bound_terminal_session_ids.clone();
+                     }
+                     if next.sealed_oid.is_none() {
+                         next.sealed_oid = prev.sealed_oid.clone();
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/undertaking_binding.rs:208:
+                 self.bump();
+             }
+             UndertakingBindingCommand::ClearActive { group_id } => {
+-                let group_id = normalize_id(&group_id)
+-                    .ok_or(UndertakingBindingCoreError::InvalidGroupId)?;
++                let group_id =
++                    normalize_id(&group_id).ok_or(UndertakingBindingCoreError::InvalidGroupId)?;
+                 self.contexts.insert(group_id, None);
+                 self.bump();
+             }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/undertaking_binding.rs:219:
+             } => {
+                 let session_id = normalize_id(&session_id)
+                     .ok_or(UndertakingBindingCoreError::InvalidSessionId)?;
+-                let group_id = normalize_id(&group_id)
+-                    .ok_or(UndertakingBindingCoreError::InvalidGroupId)?;
+-                if self.contexts.get(&group_id).and_then(|c| c.as_ref()).is_none() {
++                let group_id =
++                    normalize_id(&group_id).ok_or(UndertakingBindingCoreError::InvalidGroupId)?;
++                if self
++                    .contexts
++                    .get(&group_id)
++                    .and_then(|c| c.as_ref())
++                    .is_none()
++                {
+                     return Err(UndertakingBindingCoreError::GroupInactive(group_id));
+                 }
+                 self.move_chat_binding(&session_id, Some(&group_id));
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/undertaking_binding.rs:239:
+             } => {
+                 let session_id = normalize_id(&session_id)
+                     .ok_or(UndertakingBindingCoreError::InvalidSessionId)?;
+-                let group_id = normalize_id(&group_id)
+-                    .ok_or(UndertakingBindingCoreError::InvalidGroupId)?;
++                let group_id =
++                    normalize_id(&group_id).ok_or(UndertakingBindingCoreError::InvalidGroupId)?;
+                 let entry = self
+                     .contexts
+                     .get_mut(&group_id)
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/undertaking_binding.rs:247:
+                     .and_then(|c| c.as_mut())
+                     .ok_or(UndertakingBindingCoreError::GroupInactive(group_id))?;
+-                if !entry.bound_terminal_session_ids.iter().any(|id| id == &session_id) {
++                if !entry
++                    .bound_terminal_session_ids
++                    .iter()
++                    .any(|id| id == &session_id)
++                {
+                     entry.bound_terminal_session_ids.push(session_id);
+                 }
+                 self.bump();
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/undertaking_binding.rs:274:
+             if should_bind {
+                 context.bound_chat_session_ids.push(session_id.to_string());
+             } else {
+-                context
+-                    .bound_chat_session_ids
+-                    .retain(|id| id != session_id);
++                context.bound_chat_session_ids.retain(|id| id != session_id);
+             }
+         }
+     }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/vault_buffer.rs:12:
+ #[cfg(feature = "json-schema")]
+ use schemars::JsonSchema;
+ 
+-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
++#[derive(
++    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
++)]
+ #[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+ #[serde(transparent)]
+ pub struct VaultBufferRevision(pub u64);
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/vault_buffer.rs:141:
+ 
+     pub fn snapshot(&self, path: Option<&str>) -> VaultBufferSnapshot {
+         let buffers = if let Some(path) = path {
+-            self.buffers
+-                .get(path)
+-                .cloned()
+-                .into_iter()
+-                .collect()
++            self.buffers.get(path).cloned().into_iter().collect()
+         } else {
+             self.buffers.values().cloned().collect()
+         };
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/vault_buffer.rs:174:
+                     next.dirty = false;
+                     next.conflict = false;
+                 }
+-                let prev_rev = self.buffers.get(&path).map(|b| b.content_revision).unwrap_or(0);
++                let prev_rev = self
++                    .buffers
++                    .get(&path)
++                    .map(|b| b.content_revision)
++                    .unwrap_or(0);
+                 if next.content_revision <= prev_rev {
+                     next.content_revision = prev_rev.saturating_add(1);
+                 }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/vault_buffer.rs:192:
+                     .buffers
+                     .get_mut(&key)
+                     .ok_or_else(|| VaultBufferCoreError::BufferNotFound(key.clone()))?;
+-                if buffer.content == content
+-                    && title
+-                        .as_ref()
+-                        .is_none_or(|t| t == &buffer.title)
+-                {
++                if buffer.content == content && title.as_ref().is_none_or(|t| t == &buffer.title) {
+                     return self.ok_snapshot(Some(&key));
+                 }
+                 buffer.content = content;
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/vault_buffer.rs:292:
+                 self.bump();
+                 self.ok_snapshot(None)
+             }
+-            VaultBufferCommand::Snapshot { path } => {
+-                self.ok_snapshot(path.as_deref())
+-            }
++            VaultBufferCommand::Snapshot { path } => self.ok_snapshot(path.as_deref()),
+         }
+     }
+ 
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/vault_buffer.rs:302:
+         self.revision = self.revision.next();
+     }
+ 
+-    fn ok_snapshot(
+-        &self,
+-        path: Option<&str>,
+-    ) -> Result<VaultBufferUpdate, VaultBufferCoreError> {
++    fn ok_snapshot(&self, path: Option<&str>) -> Result<VaultBufferUpdate, VaultBufferCoreError> {
+         Ok(VaultBufferUpdate::Snapshot {
+             snapshot: self.snapshot(path),
+         })
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/wire_history.rs:81:
+     ChatItem, ChatItemRole, ChatLane, ChatSegment, TranscriptCoordinate, TranscriptSourceRef,
+ };
+ use crate::display::is_runtime_startup_text;
++use crate::history::attach_live_transcripts;
+ use crate::parts::{
+     chat_segments_from_parts, host_context_from_parts, media_from_parts, model_receipt_from_parts,
+     progress_from_parts, reasoning_from_parts, tool_runs_from_parts, ui_artifacts_from_parts,
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/wire_history.rs:87:
+ };
+-use crate::history::attach_live_transcripts;
+ 
+ fn project_wire_entry(
+     turn: &WireTranscriptEntry,
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/src/wire_history.rs:120:
+         None
+     };
+ 
+-    let content =
+-        if turn.role == "assistant" && is_runtime_startup_text(Some(&turn.content)) {
+-            String::new()
+-        } else {
+-            turn.content.clone()
+-        };
++    let content = if turn.role == "assistant" && is_runtime_startup_text(Some(&turn.content)) {
++        String::new()
++    } else {
++        turn.content.clone()
++    };
+ 
+     let failed = turn.answer_state.as_deref() == Some("failed");
+     let error_line = if failed {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/agent_placement.rs:474:
+     let groups = project_agent_placement(
+         &messages,
+         &visible_ids(&messages),
+-        &[proposal("first", 1, "local"), proposal("second", 3, "local")],
++        &[
++            proposal("first", 1, "local"),
++            proposal("second", 3, "local"),
++        ],
+         &[],
+         None,
+         None,
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/agent_placement.rs:598:
+         Some("local"),
+         Some("chat"),
+     );
+-    assert!(
+-        groups
+-            .iter()
+-            .any(|group| group.anchor_item_id.as_deref() == Some("request")
+-                && group.entries.len() == 1)
+-    );
++    assert!(groups.iter().any(
++        |group| group.anchor_item_id.as_deref() == Some("request") && group.entries.len() == 1
++    ));
+ }
+ 
+ #[test]
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/agent_placement.rs:645:
+         None,
+         None,
+     );
++    assert!(groups.iter().any(
++        |group| group.anchor_item_id.as_deref() == Some("request") && group.entries.len() == 1
++    ));
+     assert!(
+-        groups
++        !groups
+             .iter()
+-            .any(|group| group.anchor_item_id.as_deref() == Some("request")
+-                && group.entries.len() == 1)
++            .any(|group| group.anchor_item_id.as_deref() == Some("later-reply"))
+     );
+-    assert!(!groups
+-        .iter()
+-        .any(|group| group.anchor_item_id.as_deref() == Some("later-reply")));
+ }
+ 
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/apply_proposals.rs:1:
+ //! ApplyProposals stores thin facts so snapshot.agent_groups include proposal anchors.
+ 
+-use medousa_app_core::contract::{
+-    ChatCommand, ChatUpdate, ProposalFact, ProposalSourceFact,
+-};
+ use medousa_app_core::ChatCore;
++use medousa_app_core::contract::{ChatCommand, ChatUpdate, ProposalFact, ProposalSourceFact};
+ 
+ #[test]
+ fn apply_proposals_lands_on_snapshot_agent_groups() {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/ask_hydrate.rs:1:
+ //! Ask-lane hydrate / promote into the focused chat session.
+ 
+ use chrono::Utc;
++use medousa_app_core::ChatCore;
+ use medousa_app_core::contract::{
+     AskThreadBatch, BeginTurnRequest, ChatCommand, ChatLane, ChatUpdate,
+ };
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/ask_hydrate.rs:7:
+-use medousa_app_core::ChatCore;
+-use medousa_types::{
+-    AuthorityId, TranscriptEntry, TranscriptEntryId,
+-};
++use medousa_types::{AuthorityId, TranscriptEntry, TranscriptEntryId};
+ 
+ fn authority() -> AuthorityId {
+     AuthorityId::parse(format!("auth_{}", "a".repeat(64))).unwrap()
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/ask_hydrate.rs:73:
+             status_line: None,
+             speaker_profile_id: None,
+             media_attachments: None,
+-                    mode: None,
++            mode: None,
+             workspace_card_id: None,
+             reusable_stream: false,
+         },
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/ask_hydrate.rs:107:
+         .filter(|item| item.ask_job_id.as_deref() == Some(job))
+         .collect();
+     assert_eq!(ask_items.len(), 2);
+-    assert!(ask_items
+-        .iter()
+-        .all(|item| item.lane == Some(ChatLane::Ask)));
++    assert!(
++        ask_items
++            .iter()
++            .all(|item| item.lane == Some(ChatLane::Ask))
++    );
+     assert!(ask_items.iter().any(|item| {
+         item.transcript
+             .as_ref()
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/ask_hydrate.rs:152:
+         panic!("expected snapshot");
+     };
+     assert_eq!(snapshot.items.len(), before);
+-    assert!(!snapshot
+-        .items
+-        .iter()
+-        .any(|item| item.ask_job_id.as_deref() == Some("medousa-daemon-ask-promoted")));
++    assert!(
++        !snapshot
++            .items
++            .iter()
++            .any(|item| item.ask_job_id.as_deref() == Some("medousa-daemon-ask-promoted"))
++    );
+ }
+ 
+ #[test]
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/ask_hydrate.rs:188:
+         panic!("expected snapshot");
+     };
+ 
+-    assert!(snapshot
+-        .items
+-        .iter()
+-        .all(|item| item.ask_job_id.is_none()));
+-    assert!(snapshot
+-        .items
+-        .iter()
+-        .filter(|item| item.role == medousa_app_core::contract::ChatItemRole::User
+-            || item.role == medousa_app_core::contract::ChatItemRole::Assistant)
+-        .all(|item| item.lane == Some(ChatLane::Chat)));
++    assert!(snapshot.items.iter().all(|item| item.ask_job_id.is_none()));
++    assert!(
++        snapshot
++            .items
++            .iter()
++            .filter(
++                |item| item.role == medousa_app_core::contract::ChatItemRole::User
++                    || item.role == medousa_app_core::contract::ChatItemRole::Assistant
++            )
++            .all(|item| item.lane == Some(ChatLane::Chat))
++    );
+     assert_eq!(snapshot.promoted_ask_ids, vec![job.to_string()]);
+ 
+     // Session-owned promotions skip hydrate without a host param.
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/merge_regression.rs:1:
+ //! Regression coverage for live ↔ persisted reconciliation.
+ 
+-use medousa_app_core::contract::{
+-    ChatItem, ChatItemRole, ChatSegment, TranscriptCoordinate,
+-};
+-use medousa_app_core::{apply_v3_envelope_to_item, merge_transcript};
+-use medousa_types::{TurnStreamEnvelopeV3, TurnStreamEventV3, TURN_STREAM_V3_SCHEMA_VERSION};
+ use chrono::Utc;
++use medousa_app_core::contract::{ChatItem, ChatItemRole, ChatSegment, TranscriptCoordinate};
++use medousa_app_core::{apply_v3_envelope_to_item, merge_transcript};
++use medousa_types::{TURN_STREAM_V3_SCHEMA_VERSION, TurnStreamEnvelopeV3, TurnStreamEventV3};
+ 
+ fn saved(id: &str, seq: u64, role: ChatItemRole, content: &str) -> ChatItem {
+     ChatItem {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/register_turn_shell.rs:1:
+-use medousa_app_core::{
+-    ChatCommand, ChatCore, ChatItemRole, ChatLane, ChatUpdate, TurnFact,
+-};
++use medousa_app_core::{ChatCommand, ChatCore, ChatItemRole, ChatLane, ChatUpdate, TurnFact};
+ 
+ fn open(core: &mut ChatCore, session_id: &str) {
+     core.dispatch(ChatCommand::OpenSession {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:5:
+     BeginTurnRequest, ChatCommand, ChatItemRole, ChatLane, ChatRelationship, ChatRevision,
+     ChatUpdate,
+ };
+-use medousa_app_core::{guard_focused_session, ChatCore};
++use medousa_app_core::{ChatCore, guard_focused_session};
+ use medousa_types::{
+-    AuthorityId, SessionHistoryResponse, TranscriptEntry, TranscriptEntryId, TurnStreamEnvelopeV3,
+-    TurnStreamEventV3, TURN_STREAM_V3_SCHEMA_VERSION,
++    AuthorityId, SessionHistoryResponse, TURN_STREAM_V3_SCHEMA_VERSION, TranscriptEntry,
++    TranscriptEntryId, TurnStreamEnvelopeV3, TurnStreamEventV3,
+ };
+ 
+ fn authority() -> AuthorityId {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:59:
+             status_line: None,
+             speaker_profile_id: None,
+             media_attachments: None,
+-                    mode: None,
++            mode: None,
+             workspace_card_id: None,
+             reusable_stream: false,
+         },
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:130:
+             status_line: None,
+             speaker_profile_id: None,
+             media_attachments: None,
+-                    mode: None,
++            mode: None,
+             workspace_card_id: None,
+             reusable_stream: false,
+         },
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:202:
+                 status_line: None,
+                 speaker_profile_id: None,
+                 media_attachments: None,
+-                        mode: None,
+-            workspace_card_id: None,
+-            reusable_stream: false,
+-        },
++                mode: None,
++                workspace_card_id: None,
++                reusable_stream: false,
++            },
+             expected_revision: None,
+         })
+         .unwrap()
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:230:
+             promote_item_id: None,
+         })
+         .unwrap_err();
+-    assert!(matches!(err, medousa_app_core::ChatCoreError::StaleRevision { .. }));
++    assert!(matches!(
++        err,
++        medousa_app_core::ChatCoreError::StaleRevision { .. }
++    ));
+     assert_eq!(snapshot.revision, ChatRevision(1));
+ }
+ 
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:262:
+             status_line: None,
+             speaker_profile_id: None,
+             media_attachments: None,
+-                    mode: None,
++            mode: None,
+             workspace_card_id: None,
+             reusable_stream: false,
+         },
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:297:
+             parent_item_id: Some("a1".into()),
+             reply_to_work_id: None,
+             worker_session_id: None,
+-        expected_revision: None,
++            expected_revision: None,
+         })
+         .unwrap()
+     else {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:330:
+             parent_item_id: Some("wrong".into()),
+             reply_to_work_id: Some("work-0".into()),
+             worker_session_id: None,
+-        expected_revision: None,
++            expected_revision: None,
+         })
+         .unwrap()
+     else {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:413:
+     assert_eq!(snapshot.session_id, "ses_b");
+     assert!(snapshot.items.is_empty());
+     assert_eq!(core.focused_session_id(), Some("ses_a"));
+-    assert_eq!(
+-        core.snapshot("ses_a").unwrap().items[0].content,
+-        "focused"
+-    );
++    assert_eq!(core.snapshot("ses_a").unwrap().items[0].content, "focused");
+ 
+     let ChatUpdate::Snapshot { snapshot } = core
+         .dispatch(ChatCommand::SwitchFocus {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/session_lifecycle.rs:461:
+                 status_line: None,
+                 speaker_profile_id: None,
+                 media_attachments: None,
+-                        mode: None,
+-            workspace_card_id: None,
+-            reusable_stream: false,
+-        },
++                mode: None,
++                workspace_card_id: None,
++                reusable_stream: false,
++            },
+             expected_revision: None,
+         })
+         .unwrap()
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/shell_layout.rs:1:
+ //! Shell layout identity, focus, and pane-limit tests.
+ 
+ use medousa_app_core::shell::{
+-    ShellCommand, ShellCore, ShellCoreError, ShellTab, ShellUpdate, SplitEdge, SplitNode,
+-    MAX_SHELL_DESKTOPS, MAX_SHELL_PANES,
++    MAX_SHELL_DESKTOPS, MAX_SHELL_PANES, ShellCommand, ShellCore, ShellCoreError, ShellTab,
++    ShellUpdate, SplitEdge, SplitNode,
+ };
+ 
+ fn chat(id: &str, session: &str) -> ShellTab {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/visible_items.rs:1:
+ //! Painted visibility projection (handoff shells + linked raw returns).
+ 
++use medousa_app_core::ChatCore;
+ use medousa_app_core::contract::{
+     ChatCommand, ChatItem, ChatItemRole, ChatLane, ChatUpdate, WorkerReturnFact,
+ };
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/visible_items.rs:6:
+-use medousa_app_core::ChatCore;
+ 
+ fn assistant(id: &str, content: &str) -> ChatItem {
+     ChatItem {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/visible_items.rs:118:
+             status_line: Some("Background worker started".into()),
+             speaker_profile_id: None,
+             media_attachments: None,
+-                    mode: None,
++            mode: None,
+             workspace_card_id: None,
+             reusable_stream: false,
+         },
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/worker_lifecycle.rs:1:
+ //! Worker-lane follow-up bubble lifecycle and BeginTurn seed fields.
+ 
++use chrono::Utc;
++use medousa_app_core::ChatCore;
+ use medousa_app_core::contract::{
+     BeginTurnRequest, ChatCommand, ChatItemRole, ChatLane, ChatUpdate, WorkerLinkFact,
+ };
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/worker_lifecycle.rs:6:
+-use medousa_app_core::ChatCore;
+-use medousa_types::{
+-    TurnStreamEnvelopeV3, TurnStreamEventV3, TURN_STREAM_V3_SCHEMA_VERSION,
+-};
+-use chrono::Utc;
++use medousa_types::{TURN_STREAM_V3_SCHEMA_VERSION, TurnStreamEnvelopeV3, TurnStreamEventV3};
+ 
+ fn open(core: &mut ChatCore) {
+     core.dispatch(ChatCommand::OpenSession {
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/worker_lifecycle.rs:32:
+             status_line: Some("Background turn started".into()),
+             speaker_profile_id: Some("profile".into()),
+             media_attachments: None,
+-                    mode: None,
++            mode: None,
+             workspace_card_id: None,
+             reusable_stream: false,
+         },
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/worker_lifecycle.rs:47:
+     open(&mut core);
+     begin(&mut core);
+     let snapshot = core.snapshot("ses").unwrap();
+-    assert_eq!(snapshot.items[0].speaker_profile_id.as_deref(), Some("profile"));
+     assert_eq!(
++        snapshot.items[0].speaker_profile_id.as_deref(),
++        Some("profile")
++    );
++    assert_eq!(
+         snapshot.items[1].status_line.as_deref(),
+         Some("Background turn started")
+     );
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/worker_lifecycle.rs:174:
+         .unwrap();
+     assert_eq!(follow.content, "Done");
+     assert_eq!(follow.streaming, Some(false));
+-    assert_eq!(follow.tools.as_deref(), Some(["read".to_string()].as_slice()));
++    assert_eq!(
++        follow.tools.as_deref(),
++        Some(["read".to_string()].as_slice())
++    );
+     let handoff = snapshot.items.iter().find(|item| item.id == "a").unwrap();
+     assert_eq!(handoff.streaming, Some(false));
+     assert!(snapshot.workers[0].synthesis_delivered);
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/worker_lifecycle.rs:260:
+         "Result body"
+     );
+     assert_eq!(
+-        snapshot.items.iter().find(|item| item.id == "a").unwrap().content,
++        snapshot
++            .items
++            .iter()
++            .find(|item| item.id == "a")
++            .unwrap()
++            .content,
+         ""
+     );
+ }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/worker_lifecycle.rs:287:
+             },
+             expected_revision: None,
+             promote_item_id: None,
+-        }).unwrap();
++        })
++        .unwrap();
+     }
+     let snapshot = core.snapshot("ses").unwrap();
+     assert_eq!(snapshot.turns, parent.turns);
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/worker_lifecycle.rs:295:
+     assert_eq!(snapshot.items[..2], parent.items[..]);
+     assert_eq!(snapshot.workers.len(), 2);
+     for worker in snapshot.workers {
+-        let item = snapshot.items.iter().find(|item| Some(&item.id) == worker.synthesis_item_id.as_ref()).unwrap();
++        let item = snapshot
++            .items
++            .iter()
++            .find(|item| Some(&item.id) == worker.synthesis_item_id.as_ref())
++            .unwrap();
+         assert_eq!(item.content, format!("Result from {}", worker.work_id));
+         assert!(worker.synthesis_delivered);
+     }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-app-core/tests/worker_lifecycle.rs:338:
+         panic!("expected snapshot");
+     };
+     assert!(snapshot.active_turn_id.is_none());
+-    for item in snapshot.items.iter().filter(|item| item.role == ChatItemRole::Assistant) {
++    for item in snapshot
++        .items
++        .iter()
++        .filter(|item| item.role == ChatItemRole::Assistant)
++    {
+         assert_eq!(item.streaming, Some(false));
+     }
+ }
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-desktop-host/src/channels.rs:10:
+ use std::path::{Path, PathBuf};
+ use std::process::{Command, Stdio};
+ 
+-use medousa_types::secrets::{
+-    DaemonSecretPath, IntegrationConnection, IntegrationSecretSlot,
+-};
++use medousa_types::secrets::{DaemonSecretPath, IntegrationConnection, IntegrationSecretSlot};
+ use serde::{Deserialize, Serialize};
+ use serde_json::{Value, json};
+ 
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-desktop-host/src/channels.rs:479:
+             if !loopback(daemon_url) {
+                 return Err(format!(
+                     "{} must run on the connected workshop host",
+-                    if channel == "slack" { "Slack" } else { "WhatsApp" }
++                    if channel == "slack" {
++                        "Slack"
++                    } else {
++                        "WhatsApp"
++                    }
+                 ));
+             }
+             let credential = medousa_local_credential::load_named_secret(
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-desktop-host/src/channels.rs:622:
+         assert_eq!(s.telegram.allowed_user_ids, [42]);
+         assert_eq!(s.telegram.heartbeat_chat_ids, [-100]);
+         assert_eq!(s.discord.command_prefix, "?", "other channels survive");
+-        let raw: Value =
+-            serde_json::from_str(&fs::read_to_string(dir.path().join("product_config.json")).unwrap())
+-                .unwrap();
++        let raw: Value = serde_json::from_str(
++            &fs::read_to_string(dir.path().join("product_config.json")).unwrap(),
++        )
++        .unwrap();
+         assert_eq!(raw["other"], 1);
+         // No token yet: still needs setup.
+         assert_eq!(s.status("telegram"), Status::NeedsSetup);
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-desktop-host/src/mcp.rs:237:
+                 return Err("URL is required for remote MCP servers".to_string());
+             }
+             let has_token = token.is_some()
+-                || (!u.clear_bearer_token
+-                    && existing.is_some_and(|e| e.bearer_token_configured));
++                || (!u.clear_bearer_token && existing.is_some_and(|e| e.bearer_token_configured));
+             medousa_mcp_gateway::validate_remote_server_url(url, has_token)?;
+             let name = if u.transport == Transport::Sse {
+                 "sse"
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-desktop-host/src/mcp.rs:273:
+         bearer_token: None,
+         bearer_token_configured: remote
+             && (token.is_some()
+-                || (!u.clear_bearer_token
+-                    && existing.is_some_and(|e| e.bearer_token_configured))),
++                || (!u.clear_bearer_token && existing.is_some_and(|e| e.bearer_token_configured))),
+         allowed_lanes: existing.map_or_else(
+             || vec!["interactive".into(), "scheduled".into()],
+             |e| e.allowed_lanes.clone(),
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-desktop-host/src/mcp.rs:381:
+         .flat_map(|c| c.entries.iter())
+         .filter(|e| e.server_id.eq_ignore_ascii_case(&server.id))
+     {
+-        if tools.iter().any(|t| t.name.eq_ignore_ascii_case(&entry.tool_name)) {
++        if tools
++            .iter()
++            .any(|t| t.name.eq_ignore_ascii_case(&entry.tool_name))
++        {
+             continue;
+         }
+         let enabled = server.tool_enabled(&entry.tool_name);
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-desktop-host/src/mcp.rs:753:
+         assert!(!edited.enabled, "editing keeps a server off");
+         assert_eq!(edited.disabled_tools, ["delete"]);
+ 
+-        assert!(config_from(&Upsert { command: String::new(), ..stdio.clone() }, None).is_err());
+-        assert!(config_from(&Upsert { title: " ".into(), ..stdio.clone() }, None).is_err());
++        assert!(
++            config_from(
++                &Upsert {
++                    command: String::new(),
++                    ..stdio.clone()
++                },
++                None
++            )
++            .is_err()
++        );
++        assert!(
++            config_from(
++                &Upsert {
++                    title: " ".into(),
++                    ..stdio.clone()
++                },
++                None
++            )
++            .is_err()
++        );
+         let remote = Upsert {
+             transport: Transport::Sse,
+             url: "https://mcp.example/sse".into(),
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-desktop-host/src/mcp.rs:764:
+         let made = config_from(&remote, None).unwrap();
+         assert_eq!(made.transport, "sse");
+         assert!(made.bearer_token_configured && made.bearer_token.is_none());
+-        assert!(config_from(&Upsert { url: " ".into(), ..remote }, None).is_err());
++        assert!(
++            config_from(
++                &Upsert {
++                    url: " ".into(),
++                    ..remote
++                },
++                None
++            )
++            .is_err()
++        );
+     }
+ 
+     #[test]
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-sdk/src/generated/ops.rs:681:
+     streaming: false,
+ };
+ 
+-pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_APPROVE_POST: Operation = Operation {
+-    id: "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post",
+-    method: "POST",
+-    path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve",
+-    streaming: false,
+-};
++pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_APPROVE_POST: Operation =
++    Operation {
++        id: "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post",
++        method: "POST",
++        path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve",
++        streaming: false,
++    };
+ 
+-pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DENY_POST: Operation = Operation {
+-    id: "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
+-    method: "POST",
+-    path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny",
+-    streaming: false,
+-};
++pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DENY_POST: Operation =
++    Operation {
++        id: "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
++        method: "POST",
++        path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny",
++        streaming: false,
++    };
+ 
+-pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DISPATCH_POST: Operation = Operation {
+-    id: "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
+-    method: "POST",
+-    path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch",
+-    streaming: false,
+-};
++pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DISPATCH_POST: Operation =
++    Operation {
++        id: "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
++        method: "POST",
++        path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch",
++        streaming: false,
++    };
+ 
+ pub const COORDINATION_PROPOSALS_GET: Operation = Operation {
+     id: "coordination.proposals.get",
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-sdk/src/generated/ops.rs:2928:
+     streaming: false,
+ };
+ 
+-pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_GET: Operation = Operation {
++pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_GET:
++    Operation = Operation {
+     id: "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get",
+     method: "GET",
+     path: "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}",
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-sdk/src/generated/ops.rs:2935:
+     streaming: false,
+ };
+ 
+-pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_PUT: Operation = Operation {
++pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_PUT:
++    Operation = Operation {
+     id: "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put",
+     method: "PUT",
+     path: "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}",
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-types/src/lib.rs:11:
+ pub mod capability;
+ pub mod component_runtime;
+ pub mod component_store;
++pub mod context_display;
+ pub mod context_hud;
+ pub mod context_selection;
+ pub mod coordination;
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-types/src/lib.rs:17:
+ pub mod creative;
+ pub mod daemon_api;
+-pub mod llm_defaults;
+-pub mod receipt;
+-pub mod context_display;
+-pub mod identity_wire;
+ pub mod environment;
+ pub mod environment_default;
+ pub mod environment_icons;
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-types/src/lib.rs:29:
+ pub mod feed;
+ pub mod forge;
+ pub mod grapheme_extras;
++pub mod identity_wire;
+ pub mod inference;
+ pub mod layout;
+ pub mod liquid;
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-types/src/lib.rs:35:
++pub mod llm_defaults;
+ pub mod local;
+ pub mod mcp_gateway;
+ pub mod mcp_gateway_api;
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/crates/medousa-types/src/lib.rs:39:
+ pub mod message_effect;
+ pub mod model_catalog;
+ pub mod profile;
++pub mod receipt;
+ pub mod review_provider;
+ pub mod secrets;
+ pub mod session;
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/src/bin/medousa.rs:3032:
+                     "medousa_tui" => "medousa-tui",
+                     "medousa_cli" => "medousa-cli",
+                     _ => "medousa",
+-                }.to_string(),
++                }
++                .to_string(),
+                 "--bin".to_string(),
+                 binary_name.to_string(),
+                 "--".to_string(),
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/src/agent_runtime/prompt_policy.rs:516:
+     #[test]
+     fn coder_policy_separates_permissions_from_engineering_responsibility() {
+         for actor in [SttpPolicyActor::Host, SttpPolicyActor::Worker] {
+-            let policy = compile_sttp_policy(SttpPolicySelection::new(
+-                SttpPolicyMode::CoderWork,
+-                actor,
+-            ))
+-            .expect("compile Coder policy");
++            let policy =
++                compile_sttp_policy(SttpPolicySelection::new(SttpPolicyMode::CoderWork, actor))
++                    .expect("compile Coder policy");
+             for contract in [
+                 "execution ownership and mutation permissions",
+                 "not the limits of engineering analysis",
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/src/agent_runtime/prompt_policy.rs:541:
+     #[test]
+     fn assistant_policy_stewards_goals_and_preserves_native_gates() {
+         for actor in [SttpPolicyActor::Host, SttpPolicyActor::Worker] {
+-            let policy = compile_sttp_policy(SttpPolicySelection::new(
+-                SttpPolicyMode::Assistant,
+-                actor,
+-            ))
+-            .expect("compile Assistant policy");
++            let policy =
++                compile_sttp_policy(SttpPolicySelection::new(SttpPolicyMode::Assistant, actor))
++                    .expect("compile Assistant policy");
+             for contract in [
+                 "across time, tasks, projects",
+                 "delegation transfers execution, not responsibility",
+Diff in /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/reap-turn-owned-coder-terminals/src/lib.rs:6:
+ 
+ pub mod agent_mode_context;
+ #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
+-pub mod chat_stickies;
+-#[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
+ pub mod assistant_placement;
++#[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
++pub mod chat_stickies;
+ #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+ pub(crate) mod portable_grapheme_engine;
+ 

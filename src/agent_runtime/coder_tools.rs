@@ -708,6 +708,7 @@ pub async fn finalize_coder_memory_lineage(
 }
 
 pub struct CoderTurnLease {
+    shell_owner: medousa_session::owner::TurnOwner,
     forge: Arc<Forge>,
     lease: ExecutionLease,
     actor: ActorRef,
@@ -1055,6 +1056,9 @@ impl CoderTurnLease {
         identity: CoderAgentIdentity,
         execution_guard: Option<Arc<dyn CoderExecutionGuard>>,
     ) -> Result<Self> {
+        let shell_owner = medousa_session::owner::TurnOwner::new().map_err(|err| {
+            StasisError::PortFailure(format!("cannot establish turn PTY ownership: {err}"))
+        })?;
         if let Err(err) = activity.register_agent(&lease.work_id.to_string(), &identity) {
             let actor = Forge::system_actor();
             if let Err(release_err) =
@@ -1073,6 +1077,7 @@ impl CoderTurnLease {
             activity,
             identity,
             execution_guard,
+            shell_owner,
         })
     }
 
@@ -1317,6 +1322,7 @@ impl CoderBoundToolRegistry {
 
 impl Drop for CoderTurnLease {
     fn drop(&mut self) {
+        self.shell_owner.release();
         if let Err(err) = self
             .activity
             .leave_agent(&self.lease.work_id.to_string(), &self.identity)
@@ -1392,7 +1398,9 @@ impl CoderBoundToolRegistry {
             visible_tools: Arc::new(StdMutex::new(visible_tools)),
             memory_cursor: Arc::new(StdMutex::new(None)),
             change_sets: Arc::new(StdMutex::new(Default::default())),
-            shell_state: Arc::new(Mutex::new(CoderShellState::default())),
+            shell_state: Arc::new(Mutex::new(CoderShellState::for_turn(
+                authority.shell_owner.path().to_path_buf(),
+            ))),
         }
     }
 
@@ -2417,34 +2425,47 @@ impl CoderBoundToolRegistry {
         Ok(())
     }
 
-    pub async fn interrupt_shell_sessions(&self) {
+    pub async fn destroy_shell_sessions(&self) {
+        // Release the OS owner first: host cleanup survives cancellation of this
+        // future, failed HTTP responses, and a daemon crash.
+        if let Ok(authority) = self.authority() {
+            authority.shell_owner.release();
+        }
         let session_ids = {
             let mut state = self.shell_state.lock().await;
             state.preferred_session = None;
-            state.cursors.clear();
-            state.busy_sessions.clear();
-            state.owned_sessions.drain().collect::<Vec<_>>()
+            state.owned_sessions.iter().cloned().collect::<Vec<_>>()
         };
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         for session_id in session_ids {
-            let input = json!({ "session_id": session_id });
-            let result = self
-                .inner
-                .invoke_tool(
-                    crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT,
-                    input.clone(),
-                )
-                .await;
+            let result = match tokio::time::timeout_at(
+                deadline,
+                crate::coding_tools::destroy_turn_shell_session(&session_id),
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(_) => {
+                    tracing::warn!(
+                        "turn PTY cleanup observation deadline reached; host retains and retries cleanup"
+                    );
+                    break;
+                }
+            };
             if let Ok(authority) = self.authority() {
-                authority.append_receipt(tool_receipt(
-                    crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT,
-                    "Release the governed shell session before ending the Coder turn",
-                    "runtime-cleanup",
-                    &input,
-                    result.as_ref(),
-                ));
+                authority.append_receipt(json!({
+                    "kind": "shell_session_cleanup", "session_id": session_id,
+                    "terminated": result.is_ok(),
+                    "error": result.as_ref().err().map(ToString::to_string),
+                }));
             }
-            if let Err(err) = result {
-                tracing::warn!(error = %err, "failed to interrupt Coder shell session");
+            match result {
+                Ok(()) => {
+                    let mut state = self.shell_state.lock().await;
+                    state.forget_confirmed_session(&session_id);
+                }
+                Err(err) => tracing::warn!(error = %err, %session_id,
+                    "PTY cleanup unconfirmed; ID retained; surviving owner supervisor retries"),
             }
         }
     }
@@ -4478,11 +4499,16 @@ mod tests {
             authority.lease().attempt_id.to_string()
         );
 
-        registry.interrupt_shell_sessions().await;
-        assert_eq!(
-            inner.invoked_tools.lock().expect("tools lock").last(),
-            Some(&crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT.to_string())
-        );
+        // A mock registry returns synthetic IDs, never send these to a real
+        // workshop daemon. Verify release with no transport sessions instead.
+        registry.shell_state.lock().await.owned_sessions.clear();
+        registry.destroy_shell_sessions().await;
+        let owner_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(authority.shell_owner.path())
+            .unwrap();
+        fs2::FileExt::try_lock_exclusive(&owner_file).expect("turn owner released");
     }
 
     #[tokio::test]

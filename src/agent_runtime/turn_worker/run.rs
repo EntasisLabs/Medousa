@@ -203,7 +203,7 @@ struct PreparedWorkerCoder {
 async fn release_worker_coder(coder: Option<PreparedWorkerCoder>) {
     if let Some(coder) = coder {
         let _ = coder.registry.flush_memory_queue().await;
-        coder.registry.interrupt_shell_sessions().await;
+        coder.registry.destroy_shell_sessions().await;
         drop(coder);
     }
 }

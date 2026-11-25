@@ -21,6 +21,13 @@ terminal. The assistant may own up to eight terminals concurrently.
 Windows retains the existing AppContainer/Job execution backend. Bound container
 work environments keep their existing execution path. Persistent human terminal
 tabs and Forge-bound Coder terminals continue to use the workshop session host.
+Coder shells are reused during their owning turn. Finishing, cancelling, or
+losing that turn closes its shells; Ctrl-C still only interrupts a command.
+Human tabs, other turns, and independently managed background jobs are not
+closed by that cleanup. Start work intended to outlive a turn through the job
+or project-task tools, rather than backgrounding it inside a turn shell.
+See [Coder PTY lifecycle and bounds](../engine/coding-engine.md#turn-owned-coder-ptys-sidecar-revision-8)
+for the confirmation, retry, platform, and process-containment limits.
 
 Opening or polling a Coder terminal uses the daemon's in-memory connection
 credential. It does not unlock Keychain to retrieve a local CLI token.

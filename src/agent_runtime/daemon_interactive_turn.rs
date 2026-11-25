@@ -2742,7 +2742,7 @@ async fn run_agent_turn_inner(
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
     if let Some(registry) = coder_registry {
         let _ = registry.flush_memory_queue().await;
-        registry.interrupt_shell_sessions().await;
+        registry.destroy_shell_sessions().await;
     }
     drop(coder_authority);
 }

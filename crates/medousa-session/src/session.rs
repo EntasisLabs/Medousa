@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore, broadcast};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -61,8 +61,8 @@ pub struct SessionMeta {
 }
 
 struct PtyHandles {
-    master: Mutex<Box<dyn MasterPty + Send>>,
-    writer: Mutex<Box<dyn Write + Send>>,
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
+    writer: Mutex<Option<Box<dyn Write + Send>>>,
     kill: Mutex<Box<dyn portable_pty::ChildKiller + Send>>,
     exited: Arc<AtomicBool>,
     exit_code: Arc<Mutex<Option<i32>>>,
@@ -82,9 +82,13 @@ struct OutputHistory {
     bytes: usize,
 }
 
+pub const MAX_SESSIONS: usize = 64;
+const CONFIRMED_DESTROY_RECEIPTS: usize = 256;
+const OUTPUT_HISTORY_CHUNKS: usize = 4096;
 const OUTPUT_HISTORY_BYTES: usize = 2 * 1024 * 1024;
 
 pub struct Session {
+    _capacity: Option<Arc<OwnedSemaphorePermit>>,
     pub meta: SessionMeta,
     /// Fan-out of raw PTY output bytes to all attaches + agent readers.
     pub output: broadcast::Sender<OutputChunk>,
@@ -122,6 +126,20 @@ impl Session {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Self>> {
+        Self::spawn_command_admitted(session_id, cwd, root_kind, work_id, argv, cols, rows, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_command_admitted(
+        session_id: SessionId,
+        cwd: PathBuf,
+        root_kind: SessionRootKind,
+        work_id: Option<String>,
+        argv: Vec<String>,
+        cols: u16,
+        rows: u16,
+        capacity: Option<OwnedSemaphorePermit>,
+    ) -> anyhow::Result<Arc<Self>> {
         let mut cmd = if let Some(program) = argv.first() {
             let mut command = CommandBuilder::new(program);
             for arg in &argv[1..] {
@@ -145,7 +163,9 @@ impl Session {
         cmd.cwd(&cwd);
         cmd.env("TERM", "xterm-256color");
 
-        Self::spawn_prepared_command(session_id, cwd, root_kind, work_id, argv, cmd, cols, rows)
+        Self::spawn_prepared_admitted(
+            session_id, cwd, root_kind, work_id, argv, cmd, cols, rows, capacity,
+        )
     }
 
     /// Host-only entry point for a daemon-prepared sandbox command. This is not
@@ -157,10 +177,28 @@ impl Session {
         root_kind: SessionRootKind,
         work_id: Option<String>,
         argv: Vec<String>,
-        mut cmd: CommandBuilder,
+        cmd: CommandBuilder,
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Self>> {
+        Self::spawn_prepared_admitted(
+            session_id, cwd, root_kind, work_id, argv, cmd, cols, rows, None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_prepared_admitted(
+        session_id: SessionId,
+        cwd: PathBuf,
+        root_kind: SessionRootKind,
+        work_id: Option<String>,
+        argv: Vec<String>,
+        mut cmd: CommandBuilder,
+        cols: u16,
+        rows: u16,
+        capacity: Option<OwnedSemaphorePermit>,
+    ) -> anyhow::Result<Arc<Self>> {
+        let capacity = capacity.map(Arc::new);
         // The directory must already exist. Creating it here would let a
         // caller-supplied cwd materialize arbitrary filesystem locations.
         let cwd = cwd.canonicalize().map_err(|error| {
@@ -191,18 +229,25 @@ impl Session {
         let exited_reader = Arc::clone(&exited);
         let exit_code = Arc::new(Mutex::new(None));
         let exit_code_reader = Arc::clone(&exit_code);
+        let waiter_capacity = capacity.clone();
         std::thread::spawn(move || {
-            if let Ok(status) = child.wait()
-                && let Ok(mut code) = exit_code_reader.lock()
-            {
-                *code = Some(status.exit_code() as i32);
+            let _admission = waiter_capacity;
+            match child.wait() {
+                Ok(status) => {
+                    if let Ok(mut code) = exit_code_reader.lock() {
+                        *code = Some(status.exit_code() as i32);
+                    }
+                    exited_reader.store(true, Ordering::SeqCst);
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "PTY child wait failed; termination unconfirmed")
+                }
             }
-            exited_reader.store(true, Ordering::SeqCst);
         });
 
         let master = pair.master;
 
-        let (output, _) = broadcast::channel(4096);
+        let (output, _) = broadcast::channel(256);
         let output_reader = output.clone();
         let output_history = Arc::new(Mutex::new(OutputHistory::default()));
         let history_reader = Arc::clone(&output_history);
@@ -210,7 +255,9 @@ impl Session {
         let sequence_reader = Arc::clone(&next_sequence);
         let output_finished = Arc::new(AtomicBool::new(false));
         let reader_finished = output_finished.clone();
+        let reader_capacity = capacity.clone();
         std::thread::spawn(move || {
+            let _admission = reader_capacity;
             let mut buf = [0u8; 8192];
             loop {
                 match reader.read(&mut buf) {
@@ -223,7 +270,9 @@ impl Session {
                         if let Ok(mut history) = history_reader.lock() {
                             history.bytes += chunk.bytes.len();
                             history.chunks.push_back(chunk.clone());
-                            while history.bytes > OUTPUT_HISTORY_BYTES {
+                            while history.bytes > OUTPUT_HISTORY_BYTES
+                                || history.chunks.len() > OUTPUT_HISTORY_CHUNKS
+                            {
                                 let Some(removed) = history.chunks.pop_front() else {
                                     break;
                                 };
@@ -240,6 +289,7 @@ impl Session {
         });
 
         Ok(Arc::new(Self {
+            _capacity: capacity,
             meta: SessionMeta {
                 session_id,
                 cwd,
@@ -252,8 +302,8 @@ impl Session {
             output,
             output_history,
             pty: PtyHandles {
-                master: Mutex::new(master),
-                writer: Mutex::new(writer),
+                master: Mutex::new(Some(master)),
+                writer: Mutex::new(Some(writer)),
                 kill: Mutex::new(killer),
                 exited,
                 exit_code,
@@ -269,6 +319,9 @@ impl Session {
             .writer
             .lock()
             .map_err(|_| anyhow::anyhow!("pty writer poisoned"))?;
+        let writer = writer
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("session destroyed"))?;
         writer.write_all(bytes)?;
         writer.flush()?;
         Ok(())
@@ -281,6 +334,9 @@ impl Session {
             .master
             .lock()
             .map_err(|_| anyhow::anyhow!("pty master poisoned"))?;
+        let master = master
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("session destroyed"))?;
         master.resize(size)?;
         master.get_size()
     }
@@ -290,6 +346,8 @@ impl Session {
             .master
             .lock()
             .map_err(|_| anyhow::anyhow!("pty master poisoned"))?
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("session destroyed"))?
             .get_size()
     }
 
@@ -320,8 +378,46 @@ impl Session {
         self.pty.exit_code.lock().ok().and_then(|code| *code)
     }
 
+    fn request_hangup(&self) {
+        #[cfg(unix)]
+        if !self.exited()
+            && let Some(pid) = self.process_id().map(|pid| pid as libc::pid_t)
+        {
+            // Let interactive shells forward HUP to their job-control jobs
+            // before escalation. No process-table enumeration is involved.
+            unsafe {
+                if pid > 1 && libc::getsid(pid) == pid && libc::getpgid(pid) == pid {
+                    libc::kill(-pid, libc::SIGHUP);
+                }
+            }
+        }
+    }
+
     pub fn kill(&self) {
-        if let Ok(mut k) = self.pty.kill.lock() {
+        if self.exited() {
+            return;
+        }
+        // Only signal groups proven to belong to this still-live PTY session.
+        // Never revisit a numeric PID once our child waiter confirmed exit.
+        #[cfg(unix)]
+        if !self.exited()
+            && let Some(pid) = self.process_id().map(|pid| pid as libc::pid_t)
+            && let Ok(master) = self.pty.master.lock()
+            && let Some(fd) = master.as_ref().and_then(|master| master.as_raw_fd())
+        {
+            unsafe {
+                let foreground = libc::tcgetpgrp(fd);
+                if foreground > 1 && libc::getsid(foreground) == pid {
+                    libc::kill(-foreground, libc::SIGKILL);
+                }
+                if pid > 1 && libc::getsid(pid) == pid && libc::getpgid(pid) == pid {
+                    libc::kill(-pid, libc::SIGKILL);
+                }
+            }
+        }
+        if !self.exited()
+            && let Ok(mut k) = self.pty.kill.lock()
+        {
             let _ = k.kill();
         }
     }
@@ -348,8 +444,21 @@ fn normalized_pty_size(cols: u16, rows: u16) -> PtySize {
     }
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct SessionResources {
+    pub registered_sessions: usize,
+    pub reserved_sessions: usize,
+    pub waiter_threads: usize,
+    pub reader_threads: usize,
+    pub history_bytes: usize,
+}
+
 pub struct SessionManager {
     sessions: RwLock<HashMap<SessionId, Arc<Session>>>,
+    destroyed: RwLock<VecDeque<SessionId>>,
+    capacity: Arc<Semaphore>,
+    #[cfg(test)]
+    failed_destroys: std::sync::atomic::AtomicUsize,
     default_workspace: PathBuf,
     execution: medousa_forge::execution::ForgeExecutionService,
 }
@@ -358,6 +467,10 @@ impl SessionManager {
     pub fn new(default_workspace: PathBuf) -> Arc<Self> {
         Arc::new(Self {
             sessions: RwLock::new(HashMap::new()),
+            destroyed: RwLock::new(VecDeque::new()),
+            capacity: Arc::new(Semaphore::new(MAX_SESSIONS)),
+            #[cfg(test)]
+            failed_destroys: std::sync::atomic::AtomicUsize::new(0),
             default_workspace,
             execution: medousa_forge::execution::ForgeExecutionService::new(),
         })
@@ -380,11 +493,8 @@ impl SessionManager {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Session>> {
-        let cwd = self.session_cwd(cwd)?;
-        let id = SessionId::new();
-        let session = Session::spawn_with_size(id.clone(), cwd, root_kind, work_id, cols, rows)?;
-        self.sessions.write().await.insert(id, Arc::clone(&session));
-        Ok(session)
+        self.create_command_with_size(root_kind, cwd, work_id, Vec::new(), cols, rows)
+            .await
     }
 
     pub async fn create_command_with_size(
@@ -396,6 +506,11 @@ impl SessionManager {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Session>> {
+        let capacity = self
+            .capacity
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| anyhow::anyhow!("session host capacity reached ({MAX_SESSIONS})"))?;
         let cwd = self.session_cwd(cwd)?;
         let id = SessionId::new();
         let spawn_id = id.clone();
@@ -405,8 +520,15 @@ impl SessionManager {
                 medousa_forge::execution::ExecutionClass::WorkEnvironment,
                 256 * 1024,
                 move || {
-                    Ok(Session::spawn_command_with_size(
-                        spawn_id, cwd, root_kind, work_id, argv, cols, rows,
+                    Ok(Session::spawn_command_admitted(
+                        spawn_id,
+                        cwd,
+                        root_kind,
+                        work_id,
+                        argv,
+                        cols,
+                        rows,
+                        Some(capacity),
                     ))
                 },
             )
@@ -435,12 +557,121 @@ impl SessionManager {
             .collect()
     }
 
+    /// Only retained confirmation receipts make an absent ID idempotent.
+    /// Unknown IDs (including after host replacement) are not proof of exit.
+    /// Failed confirmation leaves the record and capacity reserved for retry.
+    pub async fn resources(&self) -> SessionResources {
+        let sessions = self.sessions.read().await;
+        SessionResources {
+            registered_sessions: sessions.len(),
+            reserved_sessions: MAX_SESSIONS - self.capacity.available_permits(),
+            waiter_threads: sessions.values().filter(|s| !s.exited()).count(),
+            reader_threads: sessions.values().filter(|s| !s.output_finished()).count(),
+            history_bytes: sessions
+                .values()
+                .map(|s| s.output_history.lock().unwrap().bytes)
+                .sum(),
+        }
+    }
+
     pub async fn destroy(&self, id: &SessionId) -> bool {
-        let Some(session) = self.sessions.write().await.remove(id) else {
+        #[cfg(test)]
+        if self
+            .failed_destroys
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
             return false;
+        }
+        let Some(session) = self.get(id).await else {
+            return self.destroyed.read().await.contains(id);
         };
+        session.request_hangup();
+        let grace = tokio::time::Instant::now() + Duration::from_millis(100);
+        while !session.exited() && tokio::time::Instant::now() < grace {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
         session.kill();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while !session.exited() || !session.output_finished() {
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        // Release descriptors and replay storage even if an attachment still
+        // holds an Arc. Admission capacity remains reserved until that Arc drops.
+        session.pty.writer.lock().unwrap().take();
+        session.pty.master.lock().unwrap().take();
+        *session.output_history.lock().unwrap() = OutputHistory::default();
+        {
+            let mut destroyed = self.destroyed.write().await;
+            if !destroyed.contains(id) {
+                destroyed.push_back(id.clone());
+            }
+            while destroyed.len() > CONFIRMED_DESTROY_RECEIPTS {
+                destroyed.pop_front();
+            }
+        }
+        self.sessions.write().await.remove(id);
         true
+    }
+
+    /// Creation is supervised independently of the request future. Cancellation
+    /// cannot lose a spawned PTY between host creation and returning its ID.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_turn_command(
+        self: &Arc<Self>,
+        owner_path: PathBuf,
+        root_kind: SessionRootKind,
+        cwd: PathBuf,
+        work_id: Option<String>,
+        argv: Vec<String>,
+        cols: u16,
+        rows: u16,
+    ) -> anyhow::Result<Arc<Session>> {
+        let owner = crate::owner::OwnerWatch::open(owner_path)?;
+        let manager = self.clone();
+        tokio::spawn(async move {
+            let session = manager
+                .create_command_with_size(root_kind, Some(cwd), work_id, argv, cols, rows)
+                .await?;
+            let id = session.meta.session_id.clone();
+            let supervisor = manager.clone();
+            let supervisor_capacity = session._capacity.clone();
+            tokio::spawn(async move {
+                let _admission = supervisor_capacity;
+                loop {
+                    if supervisor.get(&id).await.is_none() {
+                        // Only confirmed destroy removes a record in this manager.
+                        // Don't wait forever if its bounded receipt was evicted.
+                        if matches!(owner.gone(), Ok(true)) {
+                            owner.remove();
+                        }
+                        return;
+                    }
+                    match owner.gone() {
+                        Ok(true) => break,
+                        Ok(false) => {}
+                        Err(error) => tracing::warn!(%error, %id, "cannot confirm PTY owner loss"),
+                    }
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+                while supervisor.get(&id).await.is_some() && !supervisor.destroy(&id).await {
+                    tracing::warn!(%id, "PTY termination unconfirmed; retrying");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+                // Only remove the lease inode after actual owner loss, not an
+                // explicit destroy of one shell during an otherwise live turn.
+                if matches!(owner.gone(), Ok(true)) {
+                    owner.remove();
+                }
+            });
+            Ok::<_, anyhow::Error>(session)
+        })
+        .await?
     }
 
     /// Reap idle sessions (no attach / activity) older than `ttl`. Caller decides
@@ -457,9 +688,11 @@ impl SessionManager {
                 }
             }
         }
-        let count = removed.len();
+        let mut count = 0;
         for id in removed {
-            self.destroy(&id).await;
+            if self.destroy(&id).await {
+                count += 1;
+            }
         }
         count
     }
@@ -507,6 +740,379 @@ fn confined_workspace(requested: &std::path::Path) -> anyhow::Result<PathBuf> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    async fn wait_for(mut predicate: impl FnMut() -> bool) {
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while !predicate() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("OS process condition timed out");
+    }
+
+    #[cfg(unix)]
+    async fn assert_reclaimed(manager: &SessionManager, session: Arc<Session>) {
+        let pid = session.process_id().unwrap() as i32;
+        wait_for(|| session.exited() && session.output_finished()).await;
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            -1,
+            "owned shell still exists"
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while manager.get(&session.meta.session_id).await.is_some() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(session.pty.master.lock().unwrap().is_none());
+        assert!(session.pty.writer.lock().unwrap().is_none());
+        assert!(session.output_snapshot().is_empty());
+        drop(session);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while manager.resources().await.reserved_sessions != 0 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            manager.resources().await,
+            SessionResources {
+                registered_sessions: 0,
+                reserved_sessions: 0,
+                waiter_threads: 0,
+                reader_threads: 0,
+                history_bytes: 0,
+            }
+        );
+    }
+
+    #[cfg(unix)]
+    async fn turn_shell(
+        manager: &Arc<SessionManager>,
+        owner: &crate::owner::TurnOwner,
+    ) -> Arc<Session> {
+        manager
+            .create_turn_command(
+                owner.path().to_owned(),
+                SessionRootKind::Forge,
+                manager.default_workspace.clone(),
+                Some("test-turn".into()),
+                vec!["/bin/sh".into(), "-i".into()],
+                80,
+                24,
+            )
+            .await
+            .unwrap()
+    }
+
+    #[cfg(unix)]
+    async fn shell_marker(session: &Session, marker: &str) {
+        // Split the marker in the echoed input so only executed output matches.
+        let (a, b) = marker.split_at(marker.len() / 2);
+        session
+            .write(format!("printf '%s%s\n' '{a}' '{b}'\n").as_bytes())
+            .unwrap();
+        wait_for(|| {
+            session
+                .output_snapshot()
+                .iter()
+                .any(|c| String::from_utf8_lossy(&c.bytes).contains(marker))
+        })
+        .await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn turn_finish_reuses_shell_then_reclaims_all_resources() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(dir.path().to_owned());
+        for _ in 0..4 {
+            let owner = crate::owner::TurnOwner::new().unwrap();
+            let shell = turn_shell(&manager, &owner).await;
+            let pid = shell.process_id();
+            shell_marker(&shell, "FIRST_COMMAND").await;
+            shell_marker(&shell, "SECOND_COMMAND").await;
+            assert_eq!(shell.process_id(), pid);
+            assert!(!shell.exited());
+            owner.release();
+            assert!(manager.destroy(&shell.meta.session_id).await);
+            assert!(
+                manager.destroy(&shell.meta.session_id).await,
+                "idempotent destroy"
+            );
+            assert_reclaimed(&manager, shell).await;
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn interrupt_keeps_shell_cancel_kills_foreground_child_and_preserves_human() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(dir.path().to_owned());
+        let human = manager
+            .create_command_with_size(
+                SessionRootKind::Scripts,
+                None,
+                None,
+                vec!["/bin/sh".into(), "-i".into()],
+                80,
+                24,
+            )
+            .await
+            .unwrap();
+        let other_owner = crate::owner::TurnOwner::new().unwrap();
+        let other = turn_shell(&manager, &other_owner).await;
+        let job = manager
+            .create_command_with_size(
+                SessionRootKind::Forge,
+                None,
+                Some("adopted-job".into()),
+                vec!["/bin/sh".into(), "-c".into(), "sleep 60".into()],
+                80,
+                24,
+            )
+            .await
+            .unwrap();
+        shell_marker(&human, "HUMAN_BEFORE").await;
+        let owner = crate::owner::TurnOwner::new().unwrap();
+        let shell = turn_shell(&manager, &owner).await;
+        shell.write(b"sleep 60\n").unwrap();
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        shell.signal_interrupt();
+        shell_marker(&shell, "AFTER_CTRL_C").await;
+        assert!(!shell.exited());
+        let child_file = dir.path().join("child.pid");
+        shell
+            .write(
+                format!(
+                    "/bin/sh -c 'sleep 60 & echo $! > {}; wait'\n",
+                    child_file.display()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        wait_for(|| child_file.exists()).await;
+        let child: i32 = std::fs::read_to_string(&child_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(unsafe { libc::kill(child, 0) }, 0);
+        // Dropping a cancelled turn's owner must work without a final HTTP call.
+        drop(owner);
+        wait_for(|| shell.exited() && shell.output_finished()).await;
+        wait_for(|| unsafe { libc::kill(child, 0) } == -1).await;
+        assert!(!human.exited());
+        assert!(!other.exited());
+        assert!(!job.exited());
+        shell_marker(&human, "HUMAN_STILL_USABLE").await;
+        shell_marker(&other, "OTHER_TURN_USABLE").await;
+        assert_eq!(manager.list().await.len(), 3);
+        assert!(manager.destroy(&human.meta.session_id).await);
+        assert!(manager.destroy(&other.meta.session_id).await);
+        assert!(manager.destroy(&job.meta.session_id).await);
+        drop((human, other, job));
+        assert_reclaimed(&manager, shell).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn normal_finish_destroys_shell_and_its_background_child() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(dir.path().to_owned());
+        let owner = crate::owner::TurnOwner::new().unwrap();
+        let shell = turn_shell(&manager, &owner).await;
+        let child_file = dir.path().join("background.pid");
+        shell
+            .write(format!("sleep 60 & echo $! > {}\n", child_file.display()).as_bytes())
+            .unwrap();
+        wait_for(|| child_file.exists()).await;
+        let child: i32 = std::fs::read_to_string(child_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        owner.release();
+        assert!(manager.destroy(&shell.meta.session_id).await);
+        wait_for(|| unsafe { libc::kill(child, 0) } == -1).await;
+        assert_reclaimed(&manager, shell).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_cleanup_is_retained_and_retried_after_owner_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(dir.path().to_owned());
+        let owner = crate::owner::TurnOwner::new().unwrap();
+        let shell = turn_shell(&manager, &owner).await;
+        manager.failed_destroys.store(2, Ordering::SeqCst);
+        let result: anyhow::Result<()> = async move {
+            let _owner = owner;
+            anyhow::bail!("test turn error")
+        }
+        .await;
+        assert!(result.is_err());
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        assert!(manager.get(&shell.meta.session_id).await.is_some());
+        assert_reclaimed(&manager, shell).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn aborting_turn_task_drops_owner_and_reaps_all_created_shells() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(dir.path().to_owned());
+        let owner = crate::owner::TurnOwner::new().unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let turn_manager = manager.clone();
+        let task = tokio::spawn(async move {
+            let first = turn_shell(&turn_manager, &owner).await;
+            let second = turn_shell(&turn_manager, &owner).await;
+            tx.send((first, second)).ok().unwrap();
+            std::future::pending::<()>().await;
+            drop(owner);
+        });
+        let (first, second) = rx.await.unwrap();
+        // A quiet owner is still live, even after several supervisor intervals.
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert!(!first.exited() && !second.exited());
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        wait_for(|| second.exited() && second.output_finished()).await;
+        drop(second);
+        assert_reclaimed(&manager, first).await;
+    }
+
+    #[tokio::test]
+    async fn stale_or_unowned_owner_file_cannot_spawn_a_pty() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(dir.path().to_owned());
+        let owner = crate::owner::TurnOwner::new().unwrap();
+        owner.release();
+        assert!(
+            manager
+                .create_turn_command(
+                    owner.path().to_owned(),
+                    SessionRootKind::Forge,
+                    dir.path().to_owned(),
+                    None,
+                    vec![],
+                    80,
+                    24
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            manager
+                .create_turn_command(
+                    dir.path().join("unrelated"),
+                    SessionRootKind::Forge,
+                    dir.path().to_owned(),
+                    None,
+                    vec![],
+                    80,
+                    24
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(manager.resources().await.reserved_sessions, 0);
+    }
+
+    // A separate OS process owns the lock; killing it bypasses Rust Drop.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn turn_owner_crash_helper() {
+        let Some(path) = std::env::var_os("MEDOUSA_TEST_OWNER_PATH") else {
+            return;
+        };
+        let owner = crate::owner::TurnOwner::new().unwrap();
+        std::fs::write(path, owner.path().to_str().unwrap()).unwrap();
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn confirmed_owner_process_crash_reclaims_shell_without_pid_sweep() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("owner-path");
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "session::tests::turn_owner_crash_helper",
+                "--ignored",
+            ])
+            .env("MEDOUSA_TEST_OWNER_PATH", &path)
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        wait_for(|| path.exists()).await;
+        let owner_path = std::path::PathBuf::from(std::fs::read_to_string(path).unwrap());
+        let manager = SessionManager::new(dir.path().to_owned());
+        let shell = manager
+            .create_turn_command(
+                owner_path.clone(),
+                SessionRootKind::Forge,
+                dir.path().to_owned(),
+                None,
+                vec!["/bin/sh".into(), "-i".into()],
+                80,
+                24,
+            )
+            .await
+            .unwrap();
+        shell_marker(&shell, "CRASH_TEST_READY").await;
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert_reclaimed(&manager, shell).await;
+        assert!(!owner_path.exists(), "crashed owner's lease file reclaimed");
+    }
+
+    #[tokio::test]
+    async fn unknown_or_evicted_destroy_receipt_is_not_confirmation() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(dir.path().to_owned());
+        assert!(!manager.destroy(&SessionId::new()).await);
+        let old = SessionId::new();
+        manager.destroyed.write().await.push_back(old.clone());
+        assert!(manager.destroy(&old).await);
+        manager.destroyed.write().await.clear();
+        assert!(!manager.destroy(&old).await);
+    }
+
+    #[tokio::test]
+    async fn host_capacity_rejects_before_spawning_without_evicting_any_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(dir.path().to_owned());
+        let permits = manager
+            .capacity
+            .clone()
+            .acquire_many_owned(MAX_SESSIONS as u32)
+            .await
+            .unwrap();
+        assert!(
+            manager
+                .create(SessionRootKind::Scripts, None, None)
+                .await
+                .is_err()
+        );
+        assert!(manager.list().await.is_empty());
+        drop(permits);
+        assert_eq!(manager.resources().await.reserved_sessions, 0);
+    }
+
     #[tokio::test]
     async fn spawn_echo_session() {
         let dir = tempfile::tempdir().unwrap();
@@ -550,7 +1156,15 @@ mod tests {
             .unwrap();
 
         let acknowledged = session.resize(132, 43).unwrap();
-        let size = session.pty.master.lock().unwrap().get_size().unwrap();
+        let size = session
+            .pty
+            .master
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .get_size()
+            .unwrap();
 
         session.kill();
         assert_eq!(acknowledged.cols, 132);

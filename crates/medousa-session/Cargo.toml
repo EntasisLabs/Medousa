@@ -16,6 +16,8 @@ axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
+fs2 = "0.4"
+libc = "0.2"
 medousa-forge = { path = "../medousa-forge" }
 portable-pty = "0.9"
 serde = { version = "1", features = ["derive"] }

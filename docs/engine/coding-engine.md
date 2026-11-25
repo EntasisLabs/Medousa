@@ -26,7 +26,7 @@ known). An exited PTY can remain in scrollback storage until retention reaps it;
 clients should not treat its presence in the list as proof that its shell is alive.
 
 Tracked task/agent sessions retain their existing `/v1/sessions/shell` path and
-attachment validation. The session sidecar API revision is 7; older daemons or
+attachment validation. The session sidecar API revision is 8; older daemons or
 sidecars do not downgrade this request into a tracked attempt.
 
 SSH terminals use a separate sidecar-only `POST /v1/sessions/ssh` launch route.
@@ -38,6 +38,79 @@ or lease fields. This directory is not added to the generic shell allowlist.
 Existing shell WebSocket and signal routes still attach to the resulting PTY.
 Sidecar health includes `ssh_root`; the daemon rejects mismatched state roots or
 older sidecars. Rebuild/update both the daemon and Shell session host together.
+
+### Turn-owned Coder PTYs (sidecar revision 8)
+
+Interactive Coder and native worker turns reuse their shell during the turn.
+Ctrl-C remains an interrupt, not destruction. At normal finish, cancellation,
+or error the turn releases its **OS-backed owner lease** and requests
+`POST /v1/sessions/shell/{id}/signal` with `{"signal":"destroy"}`. A successful
+reply includes `terminated: true`. The last 256 confirmed-destroy IDs are retained
+for idempotent replies. An unknown ID (including after host replacement or receipt
+eviction) is **unconfirmed**, not proof that an old OS process exited. The host confirms both child wait completion and PTY reader completion before
+removing the session. Unconfirmed termination returns an error, keeps the host
+record and admission slot, and is retried. The caller forgets its ID only on
+confirmation; its total cleanup observation window is five seconds. Cleanup
+continues in the host even if that observation times out or the caller disappears.
+
+The native turn alone holds an exclusive file lock on a private, random,
+zero-byte file in the daemon's temporary directory. The session host opens the
+same inode **before creating an owned PTY**, and checks lock availability every
+250 ms. An unavailable lock means a live owner, regardless of output, idleness,
+network silence, or Forge lease expiry. Acquiring the lock proves the original
+holder released it (normal release, task Drop, unwind, or OS process exit).
+An I/O error is unknown, not proof of loss. Owner supervision is independent of
+the create request future, covering cancellation between spawning and returning
+the ID. After confirmed loss, failed destruction is retried after one second
+(each confirmation attempt waits up to two seconds, after a 100 ms Unix HUP
+grace period). There is no inactivity timer or process-table/PID sweep.
+
+Human workspace/SSH terminals and independently tracked task/background-job
+sessions do not receive this turn-owner field. Merely sharing a Forge work ID
+never makes a terminal owned by a Coder turn. A job intended to survive the turn
+must use the independent task/job lifecycle, not `&` inside a turn shell. There
+is no implicit transfer of a turn PTY to a later turn.
+
+**Retained host bounds:** at most 64 admitted or still-retained sessions per
+host, including in-flight creation and unconfirmed cleanup. Capacity exhaustion
+rejects creation; it never evicts a human terminal or another turn. Each session
+has one waiter and one PTY reader (at most 128 such threads), up to 2 MiB / 4,096
+chunks of replay history, and 256 broadcast chunks (reader chunks are at most
+8 KiB). Thus replay payload is at most 128 MiB and broadcast payload at most
+128 MiB, plus bounded entry, stack, PTY, and task overhead—not an RSS promise.
+Confirmed destruction closes writer/master descriptors and clears history even
+if an attachment still holds the session. That attachment retains its admission
+slot until its Arc and owner supervisor are released (the waiter and reader also
+hold that slot until their threads finish), preventing churn from bypassing the
+session cap. Confirmed-destroy receipts retain at most 256 UUIDs.
+Host `/health.resources` reports registered/reserved sessions, unfinished
+waiters/readers and replay bytes; these are lifecycle counters, not RSS or OS
+thread measurements. HTTP/WebSocket client buffers and child process memory
+are outside these payload bounds.
+
+**Limits:** the lease requires a co-located daemon/host with the same local
+temporary filesystem and working file-lock semantics. Files are not inherited
+across exec on Unix. A crash before any host has accepted the lease can leave a
+zero-byte temporary file; no directory sweep is added to guess its ownership.
+On Unix, destruction first hangs up the owned shell so it can forward HUP to
+its job-control jobs, then escalates against the owned shell/foreground process
+groups while their session identity matches. A reaped shell PID is never
+intentionally revisited. This is not general process-tree containment: `setsid`,
+explicitly disowned/HUP-ignoring descendants, or uninterruptible kernel waits
+can escape or prevent confirmation. Such failures retain a bounded slot and
+retry; the host never claims success just because a signal was sent. Windows
+uses the existing portable PTY killer; full descendant containment there is not
+established by these Unix process tests. A session-host crash loses its
+in-memory inventory; this change does not persist/reconstruct terminal ownership
+or kill arbitrary old PIDs on restart. OCI one-shot execution and the separate
+sandboxed assistant-terminal backend are unchanged.
+
+The regression suite (`cargo test -p medousa-session --lib`) creates only its
+own isolated sessions. It checks normal finish (including a background child),
+Ctrl-C/reuse, cancellation with a foreground child, task abort, error/retry,
+owner subprocess crash, independent human/other-turn/job survival, and resource
+counters returning to baseline. The ignored crash-helper test is invoked by
+the crash regression in a separate OS process; it is not skipped coverage.
 
 `GET /v1/coding-engine` and `GET /v1/shell-sessions` report `available` and
 `starting`. When `starting: true`, the managed process is alive but has not

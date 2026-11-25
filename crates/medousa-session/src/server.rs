@@ -123,6 +123,7 @@ pub struct HealthResponse {
     pub api_revision: u32,
     pub uptime_secs: u64,
     pub active_sessions: usize,
+    pub resources: crate::session::SessionResources,
     pub workspace_root: String,
     pub allowed_roots: Vec<String>,
     pub forge_root: Option<PathBuf>,
@@ -131,6 +132,8 @@ pub struct HealthResponse {
 
 #[derive(Deserialize)]
 pub struct CreateSessionBody {
+    #[serde(default)]
+    pub turn_owner: Option<PathBuf>,
     #[serde(default)]
     pub work_id: Option<String>,
     #[serde(default)]
@@ -220,6 +223,7 @@ async fn health(State(state): State<Arc<SessionHostState>>) -> Json<HealthRespon
         api_revision: ENGINE_API_REVISION,
         uptime_secs: state.started.elapsed().as_secs(),
         active_sessions: state.manager.list().await.len(),
+        resources: state.manager.resources().await,
         workspace_root: state.config.workspace_root.display().to_string(),
         allowed_roots: state
             .effective_allowed_roots()
@@ -319,6 +323,22 @@ async fn create_session(
         .map_err(|error| (axum::http::StatusCode::FORBIDDEN, error))?;
     let argv = body.argv.unwrap_or_default();
     validate_hosted_argv(&argv)?;
+    if let Some(owner) = body.turn_owner {
+        let session = state
+            .manager
+            .create_turn_command(
+                owner,
+                root_kind,
+                cwd,
+                body.work_id,
+                argv.clone(),
+                body.cols,
+                body.rows,
+            )
+            .await
+            .map_err(|e| (axum::http::StatusCode::CONFLICT, e.to_string()))?;
+        return hosted_session_response(&session, argv);
+    }
     create_hosted_session(
         &state,
         root_kind,
@@ -393,6 +413,13 @@ async fn create_hosted_session(
         .create_command_with_size(root_kind, Some(cwd), work_id, argv.clone(), cols, rows)
         .await
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    hosted_session_response(&session, argv)
+}
+
+fn hosted_session_response(
+    session: &crate::Session,
+    argv: Vec<String>,
+) -> Result<Json<CreateSessionResponse>, (axum::http::StatusCode, String)> {
     let size = session
         .size()
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -732,6 +759,17 @@ async fn signal_session(
     Json(body): Json<SignalBody>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
     let session_id = SessionId(id);
+    if body.signal == "destroy" {
+        let terminated = state.manager.destroy(&session_id).await;
+        return if terminated {
+            Ok(Json(json!({ "ok": true, "terminated": true })))
+        } else {
+            Err((
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "termination unconfirmed; retry destroy".into(),
+            ))
+        };
+    }
     let Some(session) = state.manager.get(&session_id).await else {
         return Err((
             axum::http::StatusCode::NOT_FOUND,
@@ -741,9 +779,6 @@ async fn signal_session(
     match body.signal.as_str() {
         "interrupt" | "sigint" => session.signal_interrupt(),
         "kill" => session.kill(),
-        "destroy" => {
-            state.manager.destroy(&session_id).await;
-        }
         other => {
             return Err((
                 axum::http::StatusCode::BAD_REQUEST,
@@ -767,6 +802,41 @@ mod tests {
             forge_root: Some(root.join("forge")),
             ssh_root: Some(root.join("ssh")),
         })
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn destroy_signal_confirms_real_exit_and_is_idempotent() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("scripts")).unwrap();
+        let host = std::sync::Arc::new(state(root.path()));
+        let session = host
+            .manager
+            .create_command_with_size(
+                crate::session::SessionRootKind::Scripts,
+                None,
+                None,
+                vec!["/bin/sh".into(), "-i".into()],
+                80,
+                24,
+            )
+            .await
+            .unwrap();
+        let id = session.meta.session_id.to_string();
+        for _ in 0..2 {
+            let response = super::signal_session(
+                axum::extract::State(host.clone()),
+                axum::extract::Path(id.clone()),
+                axum::Json(super::SignalBody {
+                    signal: "destroy".into(),
+                }),
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.0["terminated"], true);
+            assert!(session.exited() && session.output_finished());
+            assert!(host.manager.list().await.is_empty());
+        }
     }
 
     #[cfg(unix)]
@@ -1083,6 +1153,7 @@ mod tests {
             let response = super::create_session(
                 axum::extract::State(std::sync::Arc::new(state.clone())),
                 axum::Json(super::CreateSessionBody {
+                    turn_owner: None,
                     work_id: wid.clone(),
                     cwd: Some(repo.path().to_string_lossy().into_owned()),
                     argv: Some(vec![

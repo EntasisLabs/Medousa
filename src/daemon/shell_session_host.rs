@@ -29,7 +29,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7862";
-const EXPECTED_API_REVISION: u32 = 7;
+const EXPECTED_API_REVISION: u32 = 8;
 /// Windows Defender / cold start often exceeds the old 1s probe window.
 const HEALTH_WAIT_ATTEMPTS: u32 = 100;
 const HEALTH_WAIT_INTERVAL_MS: u64 = 50;
@@ -445,6 +445,8 @@ async fn list_sessions(
 #[derive(Debug, Deserialize)]
 pub struct CreateSessionBody {
     #[serde(default)]
+    pub turn_owner: Option<PathBuf>,
+    #[serde(default)]
     pub work_id: Option<String>,
     #[serde(default)]
     pub cwd: Option<String>,
@@ -543,6 +545,7 @@ async fn create_session(
         "cols": body.cols,
         "rows": body.rows,
         "argv": body.argv,
+        "turn_owner": body.turn_owner,
     });
     let mut response = proxy_http(&state, "POST", "/v1/sessions/shell", Some(payload)).await?;
 

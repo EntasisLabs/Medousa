@@ -312,12 +312,32 @@ fn decode_daemon_response_bytes(status: reqwest::StatusCode, bytes: &[u8]) -> St
     )))
 }
 
+pub(crate) async fn destroy_turn_shell_session(session_id: &str) -> StasisResult<()> {
+    let response = daemon_post(
+        &format!("/v1/sessions/shell/{session_id}/signal"),
+        json!({ "signal": "destroy" }),
+    )
+    .await?;
+    if response.get("terminated").and_then(Value::as_bool) == Some(true) {
+        Ok(())
+    } else {
+        Err(StasisError::PortFailure(
+            "host did not confirm PTY termination".into(),
+        ))
+    }
+}
+
 async fn create_bound_shell_session(
     work_id: Option<&str>,
     lease_id: Option<&str>,
     lease_generation: Option<u64>,
     attempt_id: Option<&str>,
 ) -> StasisResult<Value> {
+    let turn_owner = if let Ok(state) = CODER_SHELL_STATE.try_with(Clone::clone) {
+        state.lock().await.owner_path.clone()
+    } else {
+        None
+    };
     let mut created = daemon_post(
         "/v1/sessions/shell",
         json!({
@@ -327,6 +347,7 @@ async fn create_bound_shell_session(
             "attempt_id": attempt_id,
             "cwd": Value::Null,
             "argv": agent_shell_argv(),
+            "turn_owner": turn_owner,
         }),
     )
     .await?;
