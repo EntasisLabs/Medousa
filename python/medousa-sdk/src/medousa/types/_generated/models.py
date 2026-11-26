@@ -4430,6 +4430,10 @@ class BeginChatGptOAuthResponse(MedousaModel):
 
 
 class BeginMcpOAuthRequest(MedousaModel):
+    access_type_offline: bool | None = Field(
+        None,
+        description='Google refresh tokens: append `access_type=offline` to the authorization URL.',
+    )
     challenge: str | None = None
     client_id: str | None = None
     client_metadata_url: str | None = None
@@ -4437,6 +4441,9 @@ class BeginMcpOAuthRequest(MedousaModel):
     redirect_uri: str
     scopes: list[str] | None = []
     server_id: str
+    server_url: str | None = Field(
+        None, description='When set, authorization can start before the server is saved.'
+    )
 
 
 class BeginMcpOAuthResponse(MedousaModel):

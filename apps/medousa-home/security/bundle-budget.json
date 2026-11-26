@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "notes": "FRONT-001 regression ceilings for kit.output.bundleStrategy=single (one packaged client JS/CSS payload). Source-level H09 tests enforce platform shell isolation. The 2026-11-06 build with both ChatGPT sign-in methods measured 14344297 JS bytes. The ceilings allow 256 bytes above each measurement for runner drift.",
+  "notes": "FRONT-001 regression ceilings for kit.output.bundleStrategy=single (one packaged client JS/CSS payload). Source-level H09 tests enforce platform shell isolation. Ceilings sit 256 bytes above the local production measurement so runner drift does not fail CI. The connector gallery raised the single client bundle.",
   "manifest": ".svelte-kit/output/client/.vite/manifest.json",
   "bundleStrategy": "single",
   "ceilings": {
@@ -8,21 +8,21 @@
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 14344553,
-      "jsGzipBytes": 4158792,
-      "cssBytes": 1600712,
-      "cssGzipBytes": 223392,
-      "largestJsChunkBytes": 14344553
+      "jsBytes": 14350328,
+      "jsGzipBytes": 4160624,
+      "cssBytes": 1600811,
+      "cssGzipBytes": 223401,
+      "largestJsChunkBytes": 14350328
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 14344553,
-      "jsGzipBytes": 4158792,
-      "cssBytes": 1600712,
-      "cssGzipBytes": 223392,
-      "largestJsChunkBytes": 14344553
+      "jsBytes": 14350328,
+      "jsGzipBytes": 4160624,
+      "cssBytes": 1600811,
+      "cssGzipBytes": 223401,
+      "largestJsChunkBytes": 14350328
     }
   },
   "measured": {
@@ -34,21 +34,21 @@
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 14344297,
-      "jsGzipBytes": 4158536,
-      "cssBytes": 1600456,
-      "cssGzipBytes": 223136,
-      "largestJsChunkBytes": 14344297
+      "jsBytes": 14350072,
+      "jsGzipBytes": 4160368,
+      "cssBytes": 1600555,
+      "cssGzipBytes": 223145,
+      "largestJsChunkBytes": 14350072
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 14344297,
-      "jsGzipBytes": 4158536,
-      "cssBytes": 1600456,
-      "cssGzipBytes": 223136,
-      "largestJsChunkBytes": 14344297
+      "jsBytes": 14350072,
+      "jsGzipBytes": 4160368,
+      "cssBytes": 1600555,
+      "cssGzipBytes": 223145,
+      "largestJsChunkBytes": 14350072
     }
   }
 }
