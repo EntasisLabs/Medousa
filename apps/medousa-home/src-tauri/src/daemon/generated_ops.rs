@@ -642,6 +642,10 @@ pub enum DaemonOperation {
     ManuscriptsGet,
     #[serde(rename = "manuscripts.post")]
     ManuscriptsPost,
+    #[serde(rename = "mcp.elicitations.by_id.post")]
+    McpElicitationsByIdPost,
+    #[serde(rename = "mcp.elicitations.get")]
+    McpElicitationsGet,
     #[serde(rename = "mcp.gateway.status.get")]
     McpGatewayStatusGet,
     #[serde(rename = "mcp.oauth.begin.post")]
@@ -656,6 +660,8 @@ pub enum DaemonOperation {
     McpOauthRefreshPost,
     #[serde(rename = "mcp.policy.evaluate.post")]
     McpPolicyEvaluatePost,
+    #[serde(rename = "mcp.probe.post")]
+    McpProbePost,
     #[serde(rename = "media.by_media_id.get")]
     MediaByMediaIdGet,
     #[serde(rename = "media.upload.post")]
@@ -1370,6 +1376,8 @@ impl DaemonOperation {
             Self::ManuscriptsCreatePost => "manuscripts.create.post",
             Self::ManuscriptsGet => "manuscripts.get",
             Self::ManuscriptsPost => "manuscripts.post",
+            Self::McpElicitationsByIdPost => "mcp.elicitations.by_id.post",
+            Self::McpElicitationsGet => "mcp.elicitations.get",
             Self::McpGatewayStatusGet => "mcp.gateway.status.get",
             Self::McpOauthBeginPost => "mcp.oauth.begin.post",
             Self::McpOauthByServerIdDelete => "mcp.oauth.by_server_id.delete",
@@ -1377,6 +1385,7 @@ impl DaemonOperation {
             Self::McpOauthCompletePost => "mcp.oauth.complete.post",
             Self::McpOauthRefreshPost => "mcp.oauth.refresh.post",
             Self::McpPolicyEvaluatePost => "mcp.policy.evaluate.post",
+            Self::McpProbePost => "mcp.probe.post",
             Self::MediaByMediaIdGet => "media.by_media_id.get",
             Self::MediaUploadPost => "media.upload.post",
             Self::MeshActiveWorkPost => "mesh.active_work.post",
