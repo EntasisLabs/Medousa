@@ -1,0 +1,32 @@
+schema = "medousa.connector/v1"
+id = "desktop-local"
+title = "Local MCP command"
+publisher = "Medousa"
+version = "1.0.0"
+categories = ["developer"]
+
+[transport]
+kind = "local"
+command = "${setup.command}"
+
+[auth]
+kind = "none"
+
+[[setup]]
+key = "command"
+title = "Command to run"
+sensitive = false
+required = true
+
+[[setup]]
+key = "args"
+title = "Arguments (optional, space-separated)"
+sensitive = false
+required = false
+
+[tools]
+default_excluded = ["delete_*"]
+
+[platforms]
+desktop = true
+mobile = false

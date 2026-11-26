@@ -1,0 +1,41 @@
+schema = "medousa.connector/v1"
+id = "google-tasks"
+title = "Google Tasks"
+publisher = "Google"
+version = "1.0.0"
+categories = ["work-management"]
+source = "https://developers.google.com/workspace/guides/configure-mcp-servers"
+
+[transport]
+kind = "remote"
+url = "https://tasksmcp.googleapis.com/mcp/v1"
+elicitation_fallback_url = "https://tasksmcp.googleapis.com/mcp/v1self"
+
+[auth]
+kind = "oauth"
+# Tried in order. No client id is shipped: Entasis registers an AI-agent
+# Desktop/iOS/Android client, or the user supplies their own (Personal mode).
+clients = ["preregistered", "byo"]
+scopes = [
+  "https://www.googleapis.com/auth/tasks",
+]
+offline_access = true
+access_type_offline = true
+google_agent_client = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[tools.effects]
+delete_task = "external_side_effect"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["google tasks", "tasks"]
+hosts = ["tasks.google.com"]
+
+[platforms]
+desktop = true
+mobile = true

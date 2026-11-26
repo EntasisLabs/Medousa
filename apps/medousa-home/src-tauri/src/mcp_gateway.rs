@@ -355,6 +355,9 @@ fn validate_server(
             tool_tags,
             disabled_tools,
             use_mock: true,
+            connector_id: None,
+            oauth: Default::default(),
+            tool_effects: Default::default(),
         });
     }
 
@@ -395,6 +398,9 @@ fn validate_server(
             tool_tags,
             disabled_tools,
             use_mock: false,
+            connector_id: None,
+            oauth: Default::default(),
+            tool_effects: Default::default(),
         });
     }
 
@@ -426,6 +432,9 @@ fn validate_server(
         tool_tags,
         disabled_tools,
         use_mock: false,
+        connector_id: None,
+        oauth: Default::default(),
+        tool_effects: Default::default(),
     })
 }
 

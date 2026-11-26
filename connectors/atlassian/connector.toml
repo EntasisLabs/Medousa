@@ -1,0 +1,34 @@
+schema = "medousa.connector/v1"
+id = "atlassian"
+title = "Atlassian"
+publisher = "Atlassian"
+version = "1.0.0"
+categories = ["work-management"]
+source = "https://support.atlassian.com/atlassian-rovo-mcp-server/"
+
+[transport]
+kind = "remote"
+url = "https://mcp.atlassian.com/v1/mcp"
+
+[auth]
+kind = "oauth"
+clients = ["preregistered", "dcr", "byo"]
+scopes = []
+offline_access = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[tools.effects]
+delete_issue = "external_side_effect"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["jira", "confluence", "atlassian"]
+hosts = ["atlassian.net"]
+
+[platforms]
+desktop = true
+mobile = true

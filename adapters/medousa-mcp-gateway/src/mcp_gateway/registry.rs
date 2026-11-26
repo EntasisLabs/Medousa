@@ -146,6 +146,25 @@ impl ServerRegistry {
                 continue;
             }
 
+            if server.is_channel() {
+                let ready = server.bearer_token_configured
+                    || server
+                        .command
+                        .as_deref()
+                        .is_some_and(|command| !command.trim().is_empty());
+                servers.push(status_from_config(
+                    server,
+                    ready,
+                    0,
+                    if ready {
+                        None
+                    } else {
+                        Some("channel connector is waiting for its saved credential".to_string())
+                    },
+                ));
+                continue;
+            }
+
             if server_unconfigured(server) {
                 let mock_tools: Vec<_> = mock_tool_catalog()
                     .into_iter()
@@ -712,10 +731,16 @@ fn tool_entry_from_definition(
     server: &McpServerConfig,
     tool: crate::mcp_gateway::stdio_client::McpToolDefinition,
 ) -> McpToolCatalogEntry {
-    let effect_class = infer_effect_class_with_annotations(
-        &tool.name,
-        tool.description.as_deref(),
-        tool.annotations.as_ref(),
+    let effect_class = raise_effect_class(
+        infer_effect_class_with_annotations(
+            &tool.name,
+            tool.description.as_deref(),
+            tool.annotations.as_ref(),
+        ),
+        server.tool_effects.iter().find_map(|(name, effect)| {
+            name.eq_ignore_ascii_case(&tool.name)
+                .then_some(effect.as_str())
+        }),
     );
     let capability_ids = auto_tag_capabilities(&tool.name, tool.description.as_deref());
     let ui_resource_uri = tool
@@ -917,6 +942,40 @@ fn effect_allowed(server: &McpServerConfig, effect: McpEffectClass) -> bool {
         .any(|allowed| allowed.eq_ignore_ascii_case(effect.as_str()))
 }
 
+/// Manifest pins may only raise risk. A catalog that marks a tool as a read
+/// cannot lower a side effect that the name heuristic or annotations found.
+pub fn raise_effect_class(inferred: McpEffectClass, pinned: Option<&str>) -> McpEffectClass {
+    let Some(pinned) = pinned
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(parse_effect_class)
+    else {
+        return inferred;
+    };
+    if effect_rank(pinned) > effect_rank(inferred) {
+        pinned
+    } else {
+        inferred
+    }
+}
+
+fn effect_rank(effect: McpEffectClass) -> u8 {
+    match effect {
+        McpEffectClass::ExternalRead => 0,
+        McpEffectClass::ExternalWrite => 1,
+        McpEffectClass::ExternalSideEffect => 2,
+    }
+}
+
+fn parse_effect_class(raw: &str) -> Option<McpEffectClass> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "external_read" | "read" => Some(McpEffectClass::ExternalRead),
+        "external_write" | "write" => Some(McpEffectClass::ExternalWrite),
+        "external_side_effect" | "side_effect" => Some(McpEffectClass::ExternalSideEffect),
+        _ => None,
+    }
+}
+
 pub fn infer_effect_class(tool_name: &str, description: Option<&str>) -> McpEffectClass {
     let corpus = format!(
         "{} {}",
@@ -1105,6 +1164,9 @@ mod tests {
                 tool_tags: Default::default(),
                 disabled_tools: Vec::new(),
                 use_mock: true,
+                connector_id: None,
+                oauth: Default::default(),
+                tool_effects: Default::default(),
             }],
         });
         ServerRegistry::new(config)

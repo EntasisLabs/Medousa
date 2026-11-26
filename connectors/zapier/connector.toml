@@ -1,0 +1,29 @@
+schema = "medousa.connector/v1"
+id = "zapier"
+title = "Zapier"
+publisher = "Zapier"
+version = "1.0.0"
+categories = ["commerce"]
+source = "https://zapier.com/mcp"
+
+[transport]
+kind = "remote"
+url = "https://mcp.zapier.com/api/mcp/mcp"
+
+[auth]
+kind = "oauth"
+clients = ["preregistered", "dcr", "byo"]
+scopes = []
+offline_access = true
+
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["zapier"]
+hosts = ["zapier.com"]
+
+[platforms]
+desktop = true
+mobile = true

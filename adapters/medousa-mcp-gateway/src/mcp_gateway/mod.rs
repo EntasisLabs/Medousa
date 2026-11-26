@@ -4,6 +4,7 @@ mod auth;
 pub mod catalog;
 pub mod config;
 mod connection_actor;
+pub mod connector;
 pub mod local_process;
 pub mod oauth;
 pub mod policy_client;

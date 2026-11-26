@@ -1,0 +1,38 @@
+schema = "medousa.connector/v1"
+id = "home-assistant"
+title = "Home Assistant"
+publisher = "Home Assistant"
+version = "1.0.0"
+categories = ["consumer"]
+source = "https://www.home-assistant.io/integrations/mcp/"
+
+[transport]
+kind = "remote"
+url = "${setup.mcp_url}"
+
+[auth]
+kind = "token"
+
+[[setup]]
+key = "mcp_url"
+title = "Home Assistant MCP server URL"
+sensitive = false
+
+[[setup]]
+key = "token"
+title = "Long-lived access token"
+sensitive = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["home assistant", "lights", "thermostat"]
+hosts = ["home-assistant.io"]
+
+[platforms]
+desktop = true
+mobile = true

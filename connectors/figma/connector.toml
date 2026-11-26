@@ -1,0 +1,29 @@
+schema = "medousa.connector/v1"
+id = "figma"
+title = "Figma"
+publisher = "Figma"
+version = "1.0.0"
+categories = ["design"]
+source = "https://developers.figma.com/docs/figma-mcp-server/"
+
+[transport]
+kind = "remote"
+url = "https://mcp.figma.com/mcp"
+
+[auth]
+kind = "oauth"
+clients = ["preregistered", "dcr", "byo"]
+scopes = []
+offline_access = true
+
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["figma", "design"]
+hosts = ["figma.com"]
+
+[platforms]
+desktop = true
+mobile = true

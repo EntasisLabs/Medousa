@@ -1,0 +1,35 @@
+schema = "medousa.connector/v1"
+id = "asana"
+title = "Asana"
+publisher = "Asana"
+version = "1.0.0"
+categories = ["work-management"]
+source = "https://developers.asana.com/docs/using-asanas-mcp-server"
+
+[transport]
+kind = "remote"
+url = "https://mcp.asana.com/v2/mcp"
+
+[auth]
+kind = "oauth"
+# No public client id is committed. Register an Entasis app or supply your own.
+clients = ["preregistered", "byo"]
+scopes = []
+offline_access = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[tools.effects]
+send_message = "external_side_effect"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["asana", "task"]
+hosts = ["asana.com"]
+
+[platforms]
+desktop = true
+mobile = true

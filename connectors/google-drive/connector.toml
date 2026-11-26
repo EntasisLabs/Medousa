@@ -1,0 +1,42 @@
+schema = "medousa.connector/v1"
+id = "google-drive"
+title = "Google Drive"
+publisher = "Google"
+version = "1.0.0"
+categories = ["docs"]
+source = "https://developers.google.com/workspace/guides/configure-mcp-servers"
+
+[transport]
+kind = "remote"
+url = "https://drivemcp.googleapis.com/mcp/v1"
+elicitation_fallback_url = "https://drivemcp.googleapis.com/mcp/v1self"
+
+[auth]
+kind = "oauth"
+# Tried in order. No client id is shipped: Entasis registers an AI-agent
+# Desktop/iOS/Android client, or the user supplies their own (Personal mode).
+clients = ["preregistered", "byo"]
+scopes = [
+  "https://www.googleapis.com/auth/drive",
+]
+offline_access = true
+access_type_offline = true
+google_agent_client = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[tools.effects]
+delete_file = "external_side_effect"
+update_file = "external_write"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["drive", "google drive", "files"]
+hosts = ["drive.google.com"]
+
+[platforms]
+desktop = true
+mobile = true

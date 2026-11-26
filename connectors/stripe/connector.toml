@@ -1,0 +1,34 @@
+schema = "medousa.connector/v1"
+id = "stripe"
+title = "Stripe"
+publisher = "Stripe"
+version = "1.0.0"
+categories = ["commerce"]
+source = "https://docs.stripe.com/mcp"
+
+[transport]
+kind = "remote"
+url = "https://mcp.stripe.com"
+
+[auth]
+kind = "oauth"
+clients = ["preregistered", "dcr", "byo"]
+scopes = []
+offline_access = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[tools.effects]
+create_refund = "external_side_effect"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["stripe", "payment"]
+hosts = ["stripe.com"]
+
+[platforms]
+desktop = true
+mobile = true

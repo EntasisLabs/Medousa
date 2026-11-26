@@ -409,6 +409,9 @@ mod tests {
             tool_tags: Default::default(),
             disabled_tools: Vec::new(),
             use_mock: false,
+            connector_id: None,
+            oauth: Default::default(),
+            tool_effects: Default::default(),
         }
     }
 
