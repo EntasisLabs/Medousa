@@ -210,7 +210,8 @@ struct Code {
     truncated: HashSet<String>,
     expanded: HashSet<(String, String)>,
     current: HashMap<String, String>,
-    // Visible tabs are independent of retained documents: closing never discards a draft.
+    // Visible tabs are independent of retained drafts: closing never discards
+    // one. Closing a clean file releases its buffer, editor and document.
     open_tabs: Vec<Key>,
     buffers: HashMap<Key, Buffer>,
     views: HashMap<Key, View>,
@@ -1419,10 +1420,33 @@ pub fn sync(w: &mut World) {
                         }
                         clear_focus(w, &c);
                     }
-                    c.status = format!(
-                        "Closed {} · draft and undo history retained; reopen from Explorer.",
-                        key.1
-                    );
+                    // A clean file gives everything back; reopening loads it
+                    // again. A draft keeps its editor and undo history.
+                    let (w0, p0) = (&key.0, &key.1);
+                    let busy = c.pending.contains_key(&format!("load:{w0}:{p0}"))
+                        || c.pending.contains_key(&format!("save:{w0}:{p0}"));
+                    let clean = c
+                        .buffers
+                        .get(&key)
+                        .is_some_and(|b| !b.dirty() && !b.uncertain && b.remote.is_none());
+                    if clean && !busy {
+                        if let Some(v) = c.views.remove(&key) {
+                            if let Some(bar) = v.find {
+                                despawn(w, bar.root);
+                            }
+                            despawn(w, v.handle.root);
+                            if let Some(docs) = w.resource_mut::<SourceDocuments>() {
+                                docs.close(v.document);
+                            }
+                        }
+                        c.buffers.remove(&key);
+                        c.status = format!("Closed {}.", key.1);
+                    } else {
+                        c.status = format!(
+                            "Closed {} · draft and undo history retained; reopen from Explorer.",
+                            key.1
+                        );
+                    }
                 }
             }
             TabStripEventKind::Reordered(moved) => {

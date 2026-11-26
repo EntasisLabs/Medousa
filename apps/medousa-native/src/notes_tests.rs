@@ -1582,3 +1582,18 @@ fn note_header_is_one_quiet_row_and_the_rest_lives_behind_more() {
     tick(app.world_mut());
     assert_ne!(app.world().resource::<Notes>().unwrap().source, before);
 }
+#[test]
+fn closing_a_clean_note_releases_its_source_and_rich_documents() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", &"# Long note\n\nBody text.\n".repeat(500), Some("v1"));
+    let (document, rich) = {
+        let v = &w.resource::<Notes>().unwrap().views["a.md"];
+        (v.document, v.rich_document)
+    };
+    assert!(w.resource::<SourceDocuments>().unwrap().get(document).is_some());
+    click(w, Action::Manage(management::Action::CloseNote));
+    assert!(!w.resource::<Notes>().unwrap().views.contains_key("a.md"));
+    assert!(w.resource::<SourceDocuments>().unwrap().get(document).is_none());
+    assert!(w.resource::<MarkdownDocuments>().unwrap().get(rich).is_none());
+}

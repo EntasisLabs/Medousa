@@ -153,6 +153,14 @@ fn forget(w: &mut World, n: &mut Notes, path: &str) {
         if let Some(bar) = v.find {
             despawn(w, bar.root);
         }
+        // Its views are gone; give back the text, undo history and rich
+        // session too, or every note ever opened stays in memory.
+        if let Some(docs) = w.resource_mut::<SourceDocuments>() {
+            docs.close(v.document);
+        }
+        if let Some(docs) = w.resource_mut::<MarkdownDocuments>() {
+            docs.close(v.rich_document);
+        }
     }
     let _ = n
         .core

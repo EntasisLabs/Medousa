@@ -102,6 +102,16 @@ pub(super) struct State {
     reply_notice: Option<String>,
     nonce: u64,
 }
+impl State {
+    /// Reply drafts this conversation opened, for releasing a closed tab.
+    pub(super) fn documents(&self) -> impl Iterator<Item = DocumentId> + '_ {
+        self.drafts
+            .values()
+            .copied()
+            .chain(self.reply_document)
+            .chain(self.reply_pending.as_ref().map(|p| p.2))
+    }
+}
 #[derive(Clone, Copy)]
 pub(super) struct View {
     root: Entity,

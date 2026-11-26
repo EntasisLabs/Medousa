@@ -1496,3 +1496,32 @@ fn status_line_follows_the_caret_and_names_the_language_only_with_a_file_open() 
     assert_eq!(language("notes/README"), None);
     assert_eq!(language("Dockerfile"), Some("Dockerfile"));
 }
+#[test]
+fn closing_a_clean_file_releases_its_editor_document_and_buffer() {
+    let mut app = fixture();
+    load(app.world_mut(), "one", "a.rs", "fn main() {}", "d1");
+    let c = app.world().resource::<Code>().unwrap();
+    let k = key("one", "a.rs");
+    let document = c.views[&k].document;
+    let root = c.views[&k].handle.root;
+    let id = TabId(c.views[&k].id.0);
+    tab_event(&mut app, TabStripEventKind::CloseRequested(id));
+    let c = app.world().resource::<Code>().unwrap();
+    assert!(!c.views.contains_key(&k));
+    assert!(!c.buffers.contains_key(&k));
+    assert!(!app.world().is_alive(root));
+    assert!(
+        app.world()
+            .resource::<SourceDocuments>()
+            .unwrap()
+            .get(document)
+            .is_none()
+    );
+    // Reopening loads it again rather than finding a stale copy.
+    click(app.world_mut(), Action::File("a.rs".into()));
+    assert!(
+        take_commands(app.world_mut())
+            .iter()
+            .any(|c| format!("{c:?}").contains("a.rs"))
+    );
+}

@@ -32,6 +32,9 @@ struct Deck {
     strips: [Option<Entity>; 2],
     strip_cache: [Option<(Vec<TabSpec>, TabId, bool, TabStripHandle)>; 2],
     closed: std::collections::HashSet<u64>,
+    /// Unsent text of released conversations, by session. Reopening one
+    /// starts its composer with this instead of keeping the whole tab alive.
+    stashed: HashMap<String, String>,
     empty: Entity,
 }
 fn command(world: &mut World, command: ShellCommand) {
@@ -127,6 +130,7 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> Entity {
         strips: [None, None],
         strip_cache: [None, None],
         closed: Default::default(),
+        stashed: HashMap::new(),
         empty,
     });
     bodies[0]
@@ -344,8 +348,16 @@ pub(super) fn open(world: &mut World, session: Option<String>) {
     }
     let ui = *world.resource::<Ui>().unwrap();
     let shared = shared(ui);
-    let document = world.resource_mut::<SourceDocuments>().unwrap().open("");
+    // A released conversation's draft comes back as its composer text.
+    let draft = session
+        .as_ref()
+        .and_then(|s| world.resource_mut::<Deck>().unwrap().stashed.remove(s))
+        .unwrap_or_default();
+    let document = world.resource_mut::<SourceDocuments>().unwrap().open(draft);
     let mut next = Model::new(document);
+    if let Some(s) = &session {
+        next.drafts.insert(s.clone(), document);
+    }
     let m = world.resource::<Model>().unwrap();
     if world.resource::<crate::workshops::Workshops>().is_some() {
         let Some(owner) = crate::workshops::owner(world, session.as_deref()) else {
@@ -699,7 +711,71 @@ pub(super) fn tab_events(world: &mut World) {
         }
     }
 }
+/// A closed conversation that is idle gives back everything but its unsent
+/// text: history, view tree (with its tooltips and menus) and documents.
+/// Reopening reloads history; a draft returns as composer text. One with a
+/// turn running, or a send not yet confirmed, stays parked until it settles.
+fn release_closed(world: &mut World) {
+    let deck = world.resource::<Deck>().unwrap();
+    let idle: Vec<u64> = deck
+        .closed
+        .iter()
+        .copied()
+        .filter(|r| {
+            deck.parked
+                .get(r)
+                .is_some_and(|p| !p.model.chat.busy() && p.model.pending_draft.is_none())
+        })
+        .collect();
+    for r in idle {
+        release(world, r);
+    }
+}
+fn release(world: &mut World, route: u64) {
+    let deck = world.resource_mut::<Deck>().unwrap();
+    let Some(Parked { model, ui }) = deck.parked.remove(&route) else {
+        return;
+    };
+    deck.closed.remove(&route);
+    let mut documents: std::collections::HashSet<DocumentId> = [model.document].into();
+    documents.extend(model.drafts.values().copied());
+    documents.extend(model.external_drafts.values().map(|d| d.0));
+    documents.extend(model.collaboration.documents());
+    // Editors mounted in the view may hold documents no model field names.
+    let mut stack = vec![ui.content];
+    while let Some(e) = stack.pop() {
+        documents.extend(rndr_core::editing::attached_source(world, e));
+        stack.extend(children_of(world, e));
+    }
+    let current_session = model
+        .chat
+        .session()
+        .map(str::to_owned)
+        .or(model.requested_session.clone());
+    let docs = world.resource::<SourceDocuments>().unwrap();
+    let text = |d: DocumentId| {
+        docs.get(d)
+            .map(|d| d.text().to_string())
+            .filter(|t| !t.trim().is_empty())
+    };
+    let mut stash: Vec<(String, String)> = model
+        .drafts
+        .iter()
+        .filter_map(|(s, d)| Some((s.clone(), text(*d)?)))
+        .collect();
+    if let (Some(session), Some(draft)) = (current_session, text(model.document)) {
+        stash.push((session, draft));
+    }
+    world.resource_mut::<Deck>().unwrap().stashed.extend(stash);
+    despawn(world, ui.content);
+    let docs = world.resource_mut::<SourceDocuments>().unwrap();
+    for d in documents {
+        docs.close(d);
+    }
+    drop(model);
+}
 pub(super) fn sync_all(world: &mut World) {
+    release_closed(world);
     if current(world) == 0
         && world.resource::<Model>().unwrap().chat.session().is_some()
         && snapshot(world).layout.tabs.is_empty()
@@ -1139,12 +1215,99 @@ mod tests {
                 kind: TabStripEventKind::CloseRequested(TabId(a)),
             },
         );
+        let view = app
+            .world()
+            .resource::<Deck>()
+            .unwrap()
+            .parked
+            .get(&a)
+            .map(|p| p.ui.content);
         app.update();
         assert!(snapshot(app.world()).layout.tabs.is_empty());
+        // Closed and idle: its history, view and documents are released and
+        // only the unsent text is kept.
+        assert!(
+            !app.world()
+                .resource::<Deck>()
+                .unwrap()
+                .parked
+                .contains_key(&a)
+        );
+        assert!(view.is_none_or(|v| !app.world().is_alive(v)));
+        assert_eq!(
+            app.world()
+                .resource::<Deck>()
+                .unwrap()
+                .stashed
+                .get("a")
+                .map(String::as_str),
+            Some("keep me")
+        );
         open(app.world_mut(), Some("a".into()));
-        assert_eq!(current(app.world()), a);
         assert_eq!(draft(app.world()), "keep me");
-        assert_eq!(snapshot(app.world()).layout.tabs.len(), 1);
+        assert!(app.world().resource::<Deck>().unwrap().stashed.is_empty());
+    }
+    #[test]
+    fn closing_idle_long_chats_releases_their_history_views_and_documents() {
+        let mut app = fixture();
+        let layouts = |w: &World| w.entities_with::<Layout>().len();
+        let documents = |w: &World| w.resource::<SourceDocuments>().unwrap().ids().count();
+        let (base_layouts, base_documents) = (layouts(app.world()), documents(app.world()));
+        let body = "Long reply with **markdown** and `code`. ".repeat(40);
+        let mut routes = vec![];
+        for n in 0..3 {
+            let session = format!("long-{n}");
+            open(app.world_mut(), Some(session.clone()));
+            let generation = current(app.world());
+            let turns: Vec<_> = (0..120)
+                .map(|i| {
+                    serde_json::json!({"entry_id": format!("{session}-{i}"), "entry_seq": i + 1,
+                        "role": if i % 2 == 0 {"user"} else {"assistant"}, "content": body})
+                })
+                .collect();
+            reply(
+                app.world_mut(),
+                Reply {
+                    generation,
+                    update: Update::History(session, "a".into(), turns, None),
+                },
+            );
+            for _ in 0..6 {
+                app.update();
+            }
+            routes.push(generation);
+        }
+        assert!(layouts(app.world()) > base_layouts + 900);
+        let strip = app.world().resource::<Deck>().unwrap().strips[0].unwrap();
+        for r in routes {
+            send(
+                app.world_mut(),
+                TabStripEvent {
+                    strip,
+                    kind: TabStripEventKind::CloseRequested(TabId(r)),
+                },
+            );
+            for _ in 0..3 {
+                app.update();
+            }
+        }
+        let w = app.world();
+        let deck = w.resource::<Deck>().unwrap();
+        let held: usize = deck
+            .parked
+            .values()
+            .filter_map(|p| p.model.chat.snapshot())
+            .map(|s| s.items.len())
+            .sum();
+        assert_eq!(held, 0, "no closed conversation keeps its history");
+        assert!(deck.parked.is_empty());
+        // Back to the empty window: every view and document is gone.
+        assert!(
+            layouts(w) <= base_layouts + 100,
+            "{} vs base {base_layouts}",
+            layouts(w)
+        );
+        assert_eq!(documents(w), base_documents);
     }
     #[test]
     fn split_join_and_responsive_collapse_preserve_both_conversations() {
