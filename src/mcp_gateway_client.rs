@@ -7,9 +7,10 @@ use std::sync::Arc;
 use crate::capability_catalog::McpCatalogSyncResponse;
 use crate::mcp_gateway_api::{
     BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthRequest, CompleteMcpOAuthResponse,
-    DisconnectMcpOAuthResponse, McpDiscoverRequest, McpDiscoverResponse, McpGatewayHealthResponse,
-    McpInvokeRequest, McpInvokeResponse, McpOAuthStatusResponse, McpServersResponse,
-    RefreshMcpOAuthRequest, resolve_mcp_gateway_url,
+    DisconnectMcpOAuthResponse, McpDiscoverRequest, McpDiscoverResponse,
+    McpElicitationListResponse, McpElicitationReply, McpGatewayHealthResponse, McpInvokeRequest,
+    McpInvokeResponse, McpOAuthStatusResponse, McpProbeRequest, McpProbeResponse,
+    McpServersResponse, RefreshMcpOAuthRequest, resolve_mcp_gateway_url,
 };
 use medousa_mcp_gateway::resolve_mcp_gateway_token;
 
@@ -426,6 +427,112 @@ impl McpGatewayClient {
             McpGatewayBackend::InProcess { active } => {
                 let active = Self::active_in_process(active).await;
                 Ok(active.registry.disconnect_oauth(server_id).await?)
+            }
+        }
+    }
+
+    pub async fn list_elicitations(&self) -> Result<McpElicitationListResponse> {
+        match &self.backend {
+            McpGatewayBackend::Http {
+                base_url,
+                token,
+                client,
+            } => {
+                let response = Self::apply_auth(
+                    token.as_deref(),
+                    client.get(format!("{base_url}/v1/mcp/elicitations")),
+                )
+                .send()
+                .await
+                .context("failed to reach MCP elicitation endpoint")?
+                .error_for_status()
+                .context("MCP elicitation endpoint returned error")?;
+                Ok(response.json().await?)
+            }
+            McpGatewayBackend::InProcess { .. } => Ok(McpElicitationListResponse {
+                prompts: medousa_mcp_gateway::elicitation::shared_broker()
+                    .list()
+                    .await,
+            }),
+        }
+    }
+
+    pub async fn respond_elicitation(&self, id: &str, reply: McpElicitationReply) -> Result<()> {
+        match &self.backend {
+            McpGatewayBackend::Http {
+                base_url,
+                token,
+                client,
+            } => {
+                let response = Self::apply_auth(
+                    token.as_deref(),
+                    client
+                        .post(format!("{base_url}/v1/mcp/elicitations/{}", id.trim()))
+                        .json(&reply),
+                )
+                .send()
+                .await
+                .context("failed to reach MCP elicitation response endpoint")?
+                .error_for_status()
+                .context("MCP elicitation response endpoint returned error")?;
+                let _ = response.bytes().await;
+                Ok(())
+            }
+            McpGatewayBackend::InProcess { .. } => {
+                medousa_mcp_gateway::elicitation::shared_broker()
+                    .respond(id, reply)
+                    .await
+                    .map_err(anyhow::Error::msg)
+            }
+        }
+    }
+
+    pub async fn probe_tools(&self, server_id: &str, url: &str) -> Result<McpProbeResponse> {
+        let request = McpProbeRequest {
+            server_id: server_id.trim().to_string(),
+            url: url.trim().to_string(),
+        };
+        match &self.backend {
+            McpGatewayBackend::Http {
+                base_url,
+                token,
+                client,
+            } => {
+                let response = Self::apply_auth(
+                    token.as_deref(),
+                    client
+                        .post(format!("{base_url}/v1/mcp/probe"))
+                        .json(&request),
+                )
+                .send()
+                .await
+                .context("failed to reach MCP probe endpoint")?
+                .error_for_status()
+                .context("MCP probe endpoint returned error")?;
+                Ok(response.json().await?)
+            }
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                let tool_names = active
+                    .registry
+                    .probe_remote_tools(&request.server_id, &request.url)
+                    .await
+                    .map_err(anyhow::Error::msg)?;
+                Ok(McpProbeResponse { tool_names })
+            }
+        }
+    }
+
+    /// Drop suspended MCP streams and refresh saved OAuth grants.
+    /// Used when a phone returns to the foreground.
+    pub async fn reconnect_after_resume(&self) -> Result<()> {
+        match &self.backend {
+            McpGatewayBackend::Http { .. } => Ok(()),
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                active.registry.suspend_live_sessions().await;
+                let _ = active.registry.refresh_saved_oauth().await;
+                Ok(())
             }
         }
     }

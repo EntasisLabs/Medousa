@@ -305,6 +305,13 @@ pub enum DaemonSecretPath {
         installation_id: InstallationId,
         server_id: McpServerId,
     },
+    /// A connector setup value marked secret (API key, bot token, user-supplied
+    /// OAuth client secret). The value never appears in connector.toml.
+    McpSetup {
+        installation_id: InstallationId,
+        server_id: McpServerId,
+        key: String,
+    },
     LocalAuth {
         installation_id: InstallationId,
         client_kind: LocalClientKind,
@@ -346,6 +353,16 @@ impl DaemonSecretPath {
                 "v1/{}/mcp/{}/bearer",
                 installation_id.as_str(),
                 server_id.as_str()
+            ),
+            Self::McpSetup {
+                installation_id,
+                server_id,
+                key,
+            } => format!(
+                "v1/{}/mcp/{}/setup/{}",
+                installation_id.as_str(),
+                server_id.as_str(),
+                key
             ),
             Self::LocalAuth {
                 installation_id,
@@ -393,6 +410,22 @@ impl DaemonSecretPath {
                 installation_id: InstallationId::parse(installation)?,
                 server_id: McpServerId::parse(server_id)?,
             }),
+            ["v1", installation, "mcp", server_id, "setup", key] => {
+                if !key.chars().all(|ch| {
+                    ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-'
+                }) || key.is_empty()
+                {
+                    return Err(IdentifierError::new(
+                        "daemon_secret_path",
+                        "unsupported_syntax",
+                    ));
+                }
+                Ok(Self::McpSetup {
+                    installation_id: InstallationId::parse(installation)?,
+                    server_id: McpServerId::parse(server_id)?,
+                    key: (*key).to_string(),
+                })
+            }
             ["v1", installation, "local-auth", kind, client_id, "token"] => {
                 if client_id.is_empty() || !client_id.is_ascii() {
                     return Err(IdentifierError::new(
@@ -554,5 +587,21 @@ mod tests {
             "v1/550e8400-e29b-41d4-a716-446655440000/mcp/notion/bearer"
         );
         assert_eq!(DaemonSecretPath::parse(&account).unwrap(), path);
+    }
+
+    #[test]
+    fn mcp_setup_path_round_trips() {
+        let path = DaemonSecretPath::McpSetup {
+            installation_id: InstallationId::parse("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            server_id: McpServerId::parse("home-assistant").unwrap(),
+            key: "token".into(),
+        };
+        let account = path.account();
+        assert_eq!(
+            account,
+            "v1/550e8400-e29b-41d4-a716-446655440000/mcp/home-assistant/setup/token"
+        );
+        assert_eq!(DaemonSecretPath::parse(&account).unwrap(), path);
+        assert!(DaemonSecretPath::parse(&format!("{account}/extra")).is_err());
     }
 }

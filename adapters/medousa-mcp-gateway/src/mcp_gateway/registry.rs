@@ -320,9 +320,25 @@ impl ServerRegistry {
 
     pub async fn begin_oauth(
         &self,
-        request: BeginMcpOAuthRequest,
+        mut request: BeginMcpOAuthRequest,
     ) -> Result<BeginMcpOAuthResponse, McpOAuthError> {
-        let server_url = self.server_url(&request.server_id)?.to_string();
+        let saved = self.config.server_by_id(&request.server_id).cloned();
+        if let Some(server) = saved.as_ref() {
+            fill_oauth_request(&mut request, server);
+        }
+        let server_url = request
+            .server_url
+            .clone()
+            .map(|url| url.trim().to_string())
+            .filter(|url| !url.is_empty())
+            .or_else(|| {
+                saved
+                    .as_ref()
+                    .and_then(|server| server.url.clone())
+                    .map(|url| url.trim().to_string())
+                    .filter(|url| !url.is_empty())
+            })
+            .ok_or_else(|| McpOAuthError::ServerUrlMissing(request.server_id.clone()))?;
         crate::mcp_gateway::server_config::validate_remote_server_url(&server_url, true).map_err(
             |error| McpOAuthError::OAuth(rmcp::transport::AuthError::AuthorizationFailed(error)),
         )?;
@@ -336,6 +352,7 @@ impl ServerRegistry {
                 client_id: request.client_id,
                 client_secret: request.client_secret,
                 challenge: request.challenge,
+                access_type_offline: request.access_type_offline,
             })
             .await
     }
@@ -375,6 +392,59 @@ impl ServerRegistry {
         self.invalidate_server_connection(server_id).await;
         let _ = self.refresh_catalog().await;
         Ok(response)
+    }
+
+    /// Drop live MCP streams so the next call opens a fresh one.
+    ///
+    /// Mobile hosts call this after the process was suspended. A stream that
+    /// sat in the background is not resumed in place.
+    pub async fn suspend_live_sessions(&self) {
+        let connections = self.connections.lock().await;
+        for connection in connections.values() {
+            connection.invalidate().await;
+        }
+    }
+
+    /// Best-effort refresh of saved OAuth grants. One failure does not stop the rest.
+    pub async fn refresh_saved_oauth(&self) -> Vec<(String, String)> {
+        let Some(broker) = self.oauth.clone() else {
+            return Vec::new();
+        };
+        let mut errors = Vec::new();
+        for server in &self.config.servers {
+            let Some(url) = server
+                .url
+                .as_deref()
+                .map(str::trim)
+                .filter(|url| !url.is_empty())
+            else {
+                continue;
+            };
+            if let Err(error) = broker.refresh(&server.id, url).await {
+                errors.push((server.id.clone(), error.to_string()));
+            }
+        }
+        errors
+    }
+
+    /// List tools at `url` using a saved OAuth token when one exists.
+    /// Does not write server config.
+    pub async fn probe_remote_tools(
+        &self,
+        server_id: &str,
+        url: &str,
+    ) -> Result<Vec<String>, String> {
+        let bearer = if let Some(broker) = &self.oauth {
+            match broker.access_token(server_id, url).await {
+                Ok(token) => Some(token),
+                Err(McpOAuthError::NotConnected) => None,
+                Err(error) => return Err(error.to_string()),
+            }
+        } else {
+            None
+        };
+        crate::mcp_gateway::server_config::validate_remote_server_url(url, bearer.is_some())?;
+        crate::mcp_gateway::connector::probe_remote_tool_names(url, bearer).await
     }
 
     pub async fn invoke(
@@ -926,6 +996,38 @@ fn status_from_config(
         allowed_lanes: server.allowed_lanes.clone(),
         last_error,
     }
+}
+
+fn fill_oauth_request(request: &mut BeginMcpOAuthRequest, server: &McpServerConfig) {
+    if request.scopes.is_empty() {
+        request.scopes = server.oauth.scopes.clone();
+    }
+    if request
+        .client_id
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+    {
+        request.client_id = server.oauth.client_id.clone();
+    }
+    if request
+        .client_metadata_url
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+    {
+        request.client_metadata_url = server.oauth.client_metadata_url.clone();
+    }
+    if !request.access_type_offline {
+        request.access_type_offline = server.oauth.access_type_offline;
+    }
+    request.scopes = crate::mcp_gateway::connector::scopes_for_authorization(
+        &request.scopes,
+        server.oauth.offline_access || request.access_type_offline,
+        request.access_type_offline,
+    );
 }
 
 fn lane_allowed(server: &McpServerConfig, lane: McpTurnLane) -> bool {

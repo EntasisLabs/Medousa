@@ -14,6 +14,8 @@ use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(target_os = "ios")]
+use block2::RcBlock;
+#[cfg(target_os = "ios")]
 use objc2::rc::Retained;
 #[cfg(target_os = "ios")]
 use objc2::runtime::{AnyClass, AnyObject};
@@ -269,3 +271,135 @@ pub fn dismiss(app: &tauri::AppHandle) {
 
 #[cfg(not(target_os = "ios"))]
 pub fn dismiss(_app: &tauri::AppHandle) {}
+
+/// Mobile OAuth cannot listen on a desktop loopback port. The authorization
+/// server redirects to `medousa://oauth/callback`, which the app receives as
+/// a deep link (iOS ASWebAuthenticationSession or the system browser /
+/// Custom Tab on Android).
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub async fn authorize_mobile(
+    app: &tauri::AppHandle,
+    authorization_url: &str,
+) -> Result<String, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    {
+        let mut pending = mobile_oauth_sender()
+            .lock()
+            .map_err(|_| "OAuth redirect channel is unavailable".to_string())?;
+        *pending = Some(sender);
+    }
+    if let Err(error) = present_mobile_authorization(app, authorization_url) {
+        let _ = mobile_oauth_sender()
+            .lock()
+            .map(|mut pending| pending.take());
+        return Err(error);
+    }
+    match tokio::time::timeout(CALLBACK_TIMEOUT, receiver).await {
+        Ok(Ok(url)) => Ok(url),
+        _ => {
+            let _ = mobile_oauth_sender()
+                .lock()
+                .map(|mut pending| pending.take());
+            dismiss(app);
+            Err("Sign-in timed out".to_string())
+        }
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub fn deliver_oauth_redirect(url: &str) {
+    if !url.starts_with("medousa://oauth/") {
+        return;
+    }
+    let Ok(mut pending) = mobile_oauth_sender().lock() else {
+        return;
+    };
+    if let Some(sender) = pending.take() {
+        let _ = sender.send(url.to_string());
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn mobile_oauth_sender() -> &'static std::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>
+{
+    static PENDING: std::sync::OnceLock<
+        std::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>,
+    > = std::sync::OnceLock::new();
+    PENDING.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+#[cfg(target_os = "ios")]
+fn present_mobile_authorization(
+    app: &tauri::AppHandle,
+    authorization_url: &str,
+) -> Result<(), String> {
+    if start_as_web_authentication_session(app, authorization_url).is_ok() {
+        return Ok(());
+    }
+    open(app, authorization_url)
+}
+
+#[cfg(target_os = "android")]
+fn present_mobile_authorization(
+    app: &tauri::AppHandle,
+    authorization_url: &str,
+) -> Result<(), String> {
+    // Android resolves https URLs through the system, which opens Custom Tabs
+    // when the device has a browser that provides them. The redirect comes
+    // back on the medousa:// scheme registered with the deep-link plugin.
+    let _ = app;
+    open(app, authorization_url)
+}
+
+#[cfg(target_os = "ios")]
+fn start_as_web_authentication_session(
+    app: &tauri::AppHandle,
+    authorization_url: &str,
+) -> Result<(), String> {
+    let url = authorization_url.to_string();
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let result = (|| {
+            let class = AnyClass::get(
+                CStr::from_bytes_with_nul(b"ASWebAuthenticationSession\0")
+                    .expect("static class name"),
+            )
+            .ok_or_else(|| "system sign-in session is unavailable".to_string())?;
+            let ns_url = NSURL::URLWithString(&NSString::from_str(&url))
+                .ok_or_else(|| "invalid OAuth authorization URL".to_string())?;
+            let scheme = NSString::from_str("medousa");
+            let callback = RcBlock::new(move |callback: *mut NSURL, error: *mut AnyObject| {
+                if callback.is_null() {
+                    let _ = error;
+                    return;
+                }
+                let callback = unsafe { &*callback };
+                if let Some(absolute) = callback.absoluteString() {
+                    deliver_oauth_redirect(&absolute.to_string());
+                }
+            });
+            unsafe {
+                let allocated: *mut AnyObject = msg_send![class, alloc];
+                let session: *mut AnyObject = msg_send![allocated,
+                    initWithURL: &*ns_url,
+                    callbackURLScheme: &*scheme,
+                    completionHandler: &*callback
+                ];
+                let session = Retained::from_raw(session)
+                    .ok_or_else(|| "could not create system sign-in session".to_string())?;
+                let started: bool = msg_send![&*session, start];
+                if !started {
+                    return Err("system sign-in session did not start".to_string());
+                }
+                // The session must stay alive until the callback.
+                std::mem::forget(session);
+                std::mem::forget(callback);
+            }
+            Ok(())
+        })();
+        let _ = tx.send(result);
+    })
+    .map_err(|error| error.to_string())?;
+    rx.recv()
+        .map_err(|_| "system sign-in session channel closed".to_string())?
+}

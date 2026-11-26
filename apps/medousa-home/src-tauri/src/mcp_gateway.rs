@@ -610,7 +610,7 @@ async fn reindex_daemon_capabilities(
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
-async fn reload_embedded_mcp(
+pub(crate) async fn reload_embedded_mcp(
     client: &medousa::embedded_daemon::EmbeddedDaemonClient,
 ) -> Result<(), String> {
     let config = medousa_mcp_gateway::McpGatewayFullConfig::from_env_and_args(&[]).remote_only();
@@ -964,43 +964,139 @@ pub async fn mcp_oauth_status(
         .await
 }
 
-/// Run the host browser ceremony while the selected runtime remains the sole
-/// owner of OAuth discovery, state validation, token exchange, and storage.
+/// Saved-server sign-in. Client id, secret, scopes, and the Google offline
+/// flag come from the connector record when the caller does not override them.
 #[tauri::command]
 pub async fn mcp_oauth_authorize(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::daemon::DaemonState>,
     embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     server_id: String,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+    server_url: Option<String>,
 ) -> Result<medousa_types::CompleteMcpOAuthResponse, String> {
-    let browser = crate::oauth_browser::OAuthBrowserSession::bind().await?;
-    let login = mcp_oauth_begin(
-        state.clone(),
-        embedded_state.clone(),
-        medousa_types::BeginMcpOAuthRequest {
-            server_id,
-            redirect_uri: browser.redirect_uri().to_string(),
-            scopes: Vec::new(),
-            client_metadata_url: None,
-            client_id: None,
-            client_secret: None,
-            challenge: None,
-        },
-    )
-    .await?;
+    let plan = oauth_plan_for_saved_server(&server_id, client_id, client_secret, server_url)?;
+    run_oauth_browser(app, state, embedded_state, plan).await
+}
 
-    let callback = browser.authorize(&app, &login.authorization_url).await?;
-    let result = mcp_oauth_complete(
-        state,
-        embedded_state,
-        medousa_types::CompleteMcpOAuthRequest {
-            login_id: login.login_id,
-            callback_url: callback.url().to_string(),
-        },
-    )
-    .await;
-    callback.finish(&app, result.is_ok()).await;
-    result
+pub(crate) struct OAuthBrowserPlan {
+    pub server_id: String,
+    pub server_url: Option<String>,
+    pub scopes: Vec<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub client_metadata_url: Option<String>,
+    pub access_type_offline: bool,
+}
+
+fn oauth_plan_for_saved_server(
+    server_id: &str,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+    server_url: Option<String>,
+) -> Result<OAuthBrowserPlan, String> {
+    let saved = load_file_config().ok().and_then(|(config, _, _)| {
+        config
+            .servers
+            .into_iter()
+            .find(|server| server.id.eq_ignore_ascii_case(server_id.trim()))
+    });
+    let oauth = saved.as_ref().map(|server| server.oauth.clone());
+    let stored_secret = medousa_mcp_gateway::SecureMcpOAuthBundleStore::new(medousa_data_dir())
+        .ok()
+        .and_then(|store| {
+            store
+                .load_setup_secret(server_id, "oauth_client_secret")
+                .ok()
+                .flatten()
+        });
+    Ok(OAuthBrowserPlan {
+        server_id: server_id.trim().to_string(),
+        server_url: server_url.or_else(|| saved.as_ref().and_then(|server| server.url.clone())),
+        scopes: oauth
+            .as_ref()
+            .map(|oauth| oauth.scopes.clone())
+            .unwrap_or_default(),
+        client_id: client_id.or_else(|| oauth.as_ref().and_then(|oauth| oauth.client_id.clone())),
+        client_secret: client_secret.or(stored_secret),
+        client_metadata_url: oauth
+            .as_ref()
+            .and_then(|oauth| oauth.client_metadata_url.clone()),
+        access_type_offline: oauth
+            .as_ref()
+            .is_some_and(|oauth| oauth.access_type_offline),
+    })
+}
+
+pub(crate) async fn run_oauth_browser(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+    embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    plan: OAuthBrowserPlan,
+) -> Result<medousa_types::CompleteMcpOAuthResponse, String> {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        let login = mcp_oauth_begin(
+            state.clone(),
+            embedded_state.clone(),
+            begin_request(
+                &plan,
+                medousa_mcp_gateway::MOBILE_OAUTH_REDIRECT.to_string(),
+            ),
+        )
+        .await?;
+        let callback =
+            crate::oauth_browser::authorize_mobile(&app, &login.authorization_url).await?;
+        mcp_oauth_complete(
+            state,
+            embedded_state,
+            medousa_types::CompleteMcpOAuthRequest {
+                login_id: login.login_id,
+                callback_url: callback,
+            },
+        )
+        .await
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        let browser = crate::oauth_browser::OAuthBrowserSession::bind().await?;
+        let login = mcp_oauth_begin(
+            state.clone(),
+            embedded_state.clone(),
+            begin_request(&plan, browser.redirect_uri().to_string()),
+        )
+        .await?;
+        let callback = browser.authorize(&app, &login.authorization_url).await?;
+        let result = mcp_oauth_complete(
+            state,
+            embedded_state,
+            medousa_types::CompleteMcpOAuthRequest {
+                login_id: login.login_id,
+                callback_url: callback.url().to_string(),
+            },
+        )
+        .await;
+        callback.finish(&app, result.is_ok()).await;
+        result
+    }
+}
+
+fn begin_request(
+    plan: &OAuthBrowserPlan,
+    redirect_uri: String,
+) -> medousa_types::BeginMcpOAuthRequest {
+    medousa_types::BeginMcpOAuthRequest {
+        server_id: plan.server_id.clone(),
+        redirect_uri,
+        server_url: plan.server_url.clone(),
+        scopes: plan.scopes.clone(),
+        client_metadata_url: plan.client_metadata_url.clone(),
+        client_id: plan.client_id.clone(),
+        client_secret: plan.client_secret.clone(),
+        challenge: None,
+        access_type_offline: plan.access_type_offline,
+    }
 }
 
 #[tauri::command]

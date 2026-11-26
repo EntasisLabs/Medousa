@@ -5,8 +5,11 @@ use std::process::Stdio;
 
 use anyhow::{Context, Result, bail};
 use rmcp::handler::client::ClientHandler;
-use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation, Tool};
-use rmcp::service::{NotificationContext, RunningService};
+use rmcp::model::{
+    CallToolRequestParams, ClientCapabilities, ClientInfo, ElicitRequestParams, ElicitResult,
+    ErrorData as McpError, Implementation, Tool,
+};
+use rmcp::service::{NotificationContext, RequestContext, RunningService};
 use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
 use rmcp::{RoleClient, ServiceExt};
 use serde_json::{Map, Value};
@@ -39,11 +42,12 @@ pub struct StdioMcpSession {
 }
 
 impl StdioMcpSession {
-    pub async fn spawn_with_events(
+    pub async fn spawn_for_server(
         command: &str,
         args: &[String],
         request_timeout: Duration,
         tool_list_changed: Option<mpsc::UnboundedSender<()>>,
+        server_id: Option<String>,
     ) -> Result<Self> {
         let transport =
             TokioChildProcess::new(tokio::process::Command::new(command).configure(|child| {
@@ -53,7 +57,9 @@ impl StdioMcpSession {
 
         let client = timeout(
             request_timeout,
-            MedousaClientHandler::new(tool_list_changed).serve(transport),
+            MedousaClientHandler::new(tool_list_changed)
+                .with_server(server_id)
+                .serve(transport),
         )
         .await
         .context("MCP initialize timed out")?
@@ -97,11 +103,22 @@ impl StdioMcpSession {
 #[derive(Clone)]
 pub(super) struct MedousaClientHandler {
     tool_list_changed: Option<mpsc::UnboundedSender<()>>,
+    server_id: Option<String>,
+    elicitations: std::sync::Arc<super::elicitation::ElicitationBroker>,
 }
 
 impl MedousaClientHandler {
     pub(super) fn new(tool_list_changed: Option<mpsc::UnboundedSender<()>>) -> Self {
-        Self { tool_list_changed }
+        Self {
+            tool_list_changed,
+            server_id: None,
+            elicitations: super::elicitation::shared_broker(),
+        }
+    }
+
+    pub(super) fn with_server(mut self, server_id: Option<String>) -> Self {
+        self.server_id = server_id.filter(|value| !value.trim().is_empty());
+        self
     }
 
     fn signal_tool_list_changed(&self) {
@@ -125,12 +142,29 @@ impl ClientHandler for MedousaClientHandler {
             handler.signal_tool_list_changed();
         }
     }
+
+    fn create_elicitation(
+        &self,
+        request: ElicitRequestParams,
+        _context: RequestContext<RoleClient>,
+    ) -> impl Future<Output = Result<ElicitResult, McpError>> + Send + '_ {
+        let handler = self.clone();
+        async move {
+            Ok(handler
+                .elicitations
+                .resolve(handler.server_id.clone(), request)
+                .await)
+        }
+    }
 }
 
 pub(super) fn medousa_client_info() -> ClientInfo {
     let mut info = ClientInfo::default();
     info.client_info =
         Implementation::new("medousa-mcp-gateway", env!("CARGO_PKG_VERSION")).with_title("Medousa");
+    let mut capabilities = ClientCapabilities::default();
+    capabilities.elicitation = Some(super::elicitation::capability());
+    info.capabilities = capabilities;
     info
 }
 

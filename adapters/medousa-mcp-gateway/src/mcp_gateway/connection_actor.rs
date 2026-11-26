@@ -264,12 +264,13 @@ impl ConnectionActor {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .context("remote MCP server missing URL")?;
-            let session = RemoteMcpSession::connect_with_events(
+            let session = RemoteMcpSession::connect_for_server(
                 url,
                 transport,
                 self.bearer_token.clone(),
                 self.request_timeout,
                 Some(self.local_tool_changes.clone()),
+                Some(self.server.id.clone()),
             )
             .await?;
             return Ok(LiveSession::Remote(session));
@@ -285,11 +286,12 @@ impl ConnectionActor {
         if self.server.transport.trim() != "stdio" {
             bail!("unsupported MCP transport '{}'", self.server.transport);
         }
-        let session = StdioMcpSession::spawn_with_events(
+        let session = StdioMcpSession::spawn_for_server(
             command,
             &self.server.args,
             self.request_timeout,
             Some(self.local_tool_changes.clone()),
+            Some(self.server.id.clone()),
         )
         .await?;
         Ok(LiveSession::Stdio(session))

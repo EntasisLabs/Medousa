@@ -8,21 +8,11 @@ use std::collections::HashMap;
 
 use super::{ConnectorAuth, ConnectorPlatform, OAuthClientMode};
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct SuppliedOAuthClient {
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
     pub client_metadata_url: Option<String>,
-}
-
-impl Default for SuppliedOAuthClient {
-    fn default() -> Self {
-        Self {
-            client_id: None,
-            client_secret: None,
-            client_metadata_url: None,
-        }
-    }
 }
 
 /// What Home and the gateway should pass into the OAuth broker.

@@ -2229,6 +2229,15 @@ impl EmbeddedDaemon {
         if lifecycle_epoch == self.lifecycle_epoch.load(Ordering::Acquire) {
             self.backgrounded.store(false, Ordering::Release);
         }
+        // Suspended MCP streams are not resumed in place. Refresh OAuth grants
+        // in the background so a phone can keep using remote connectors after
+        // the OS froze the process.
+        let gateway = self.mcp_gateway_client.clone();
+        tokio::spawn(async move {
+            if let Err(error) = gateway.reconnect_after_resume().await {
+                eprintln!("embedded MCP resume: {error:#}");
+            }
+        });
         Ok(report)
     }
 
@@ -2955,6 +2964,37 @@ impl EmbeddedDaemonClient {
         self.daemon
             .mcp_gateway_client
             .disconnect_oauth(server_id)
+            .await
+    }
+
+    pub async fn list_mcp_elicitations(
+        &self,
+    ) -> Result<medousa_types::mcp_gateway_api::McpElicitationListResponse> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon.mcp_gateway_client.list_elicitations().await
+    }
+
+    pub async fn respond_mcp_elicitation(
+        &self,
+        id: &str,
+        reply: medousa_types::mcp_gateway_api::McpElicitationReply,
+    ) -> Result<()> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon
+            .mcp_gateway_client
+            .respond_elicitation(id, reply)
+            .await
+    }
+
+    pub async fn probe_mcp_tools(
+        &self,
+        server_id: &str,
+        url: &str,
+    ) -> Result<medousa_types::mcp_gateway_api::McpProbeResponse> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon
+            .mcp_gateway_client
+            .probe_tools(server_id, url)
             .await
     }
 

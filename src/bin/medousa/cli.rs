@@ -68,6 +68,8 @@ pub enum Commands {
     Pull(PullArgs),
     Update(UpdateArgs),
     Packages(PackagesArgs),
+    /// Connector catalog and MCP confirmation prompts.
+    Mcp(crate::mcp_cli::McpArgs),
 }
 
 #[derive(Debug, Args)]

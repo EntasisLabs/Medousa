@@ -36,6 +36,8 @@ const DEFAULT_OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434/v1/";
 mod cli;
 #[path = "medousa/credentials_cli.rs"]
 mod credentials_cli;
+#[path = "medousa/mcp_cli.rs"]
+mod mcp_cli;
 
 #[path = "medousa/onboard_wizard/mod.rs"]
 mod onboard_wizard;
@@ -121,6 +123,7 @@ fn main() -> Result<()> {
         Some(cli::Commands::Pull(args)) => packages_cli::run_pull(&args.to_legacy()),
         Some(cli::Commands::Update(args)) => packages_cli::run_update(&args.to_legacy()),
         Some(cli::Commands::Packages(args)) => packages_cli::run_packages(&args.to_legacy()),
+        Some(cli::Commands::Mcp(args)) => mcp_cli::run(args),
     }
 }
 
