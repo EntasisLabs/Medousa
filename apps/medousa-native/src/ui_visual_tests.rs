@@ -1366,3 +1366,193 @@ fn destination_sidebars_collapse_expand_and_resize_like_chat() {
         );
     }
 }
+
+/// A turn with two tool rounds: the first a mix of shell and reads with one
+/// failure, the second larger. Calls carry an `intent` like the coder's.
+fn tool_rounds() -> serde_json::Value {
+    let intents = [
+        "Inspect icon and packaging configuration",
+        "Read desktop example and packaging script",
+        "Trace runtime identity and startup",
+        "Find native naming and build configuration",
+        "Choose platform integration surface",
+        "Confirm winit exports and build features",
+    ];
+    let mut parts = vec![
+        serde_json::json!({"kind":"text","segment_id":"intro","markdown":"Let me look at how icons are registered today."}),
+    ];
+    for (i, intent) in intents.iter().enumerate() {
+        let tool = if i == 1 {
+            "cognition_coder_read_batch"
+        } else {
+            "cognition_coder_shell_run"
+        };
+        parts.push(serde_json::json!({"kind":"tool_run","run_id":format!("a{i}"),"tool_name":tool,
+            "status": if i == 3 { "failed" } else { "succeeded" }, "tool_round":1,
+            "input_summary": intent, "started_at":"2026-11-15T15:00:00Z",
+            "input_params":[{"key":"intent","value":intent},{"key":"command","value":"rg -n \"set_window_icon|bundle_identifier\" crates apps --glob '*.rs'"}],
+            "output_summary": if i == 3 { "exit 2: rg: apps/medousa-native/build.rs: No such file or directory".to_string() } else { format!("crates/rndr_core/src/desktop.rs:212: fn set_window_icon(&self, rgba: &[u8])\n… {} matches", 3 + i) }}));
+    }
+    parts.push(serde_json::json!({"kind":"text","segment_id":"mid","markdown":"`rndr` can set the running app's Dock icon; the bundle icon is still app-owned."}));
+    for i in 0..9 {
+        parts.push(serde_json::json!({"kind":"tool_run","run_id":format!("b{i}"),"tool_name":"cognition_coder_shell_run",
+            "status":"succeeded","tool_round":2,"input_summary":format!("Check platform export {i}"),"started_at":"2026-11-15T15:01:00Z",
+            "input_params":[{"key":"intent","value":format!("Check platform export {i}")}],"output_summary":"ok"}));
+    }
+    parts.push(serde_json::json!({"kind":"text","segment_id":"reply","markdown":"**Short answer:** yes for the running Dock icon, not yet for a shipped bundle icon.\n\n| Platform | What works today | What's still app-owned |\n|---|---|---|\n| macOS | `rndr::set_app_icon` sets the Dock and Cmd+Tab icon. | Each app's bundle ID and bundled icon. |"}));
+    serde_json::json!({"entry_id":"a","entry_seq":2,"role":"assistant","content":"Short answer.","parts":parts})
+}
+
+#[test]
+#[ignore = "Tool thread panel GPU acceptance"]
+fn tool_thread_visual_acceptance() {
+    let (mut app, _rx) = fixture();
+    let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+    app.world_mut().insert_resource(engine);
+    app.world_mut().resource_mut::<Model>().unwrap().chat.hydrate("s".into(), "a".into(), vec![
+        serde_json::json!({"entry_id":"u","entry_seq":1,"role":"user","content":"ok now do we support proper icon registration for apps? for dock, os icon you know?"}),
+        tool_rounds(),
+    ], None).unwrap();
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    for (width, height, suffix) in [
+        (1300, 850, "wide"),
+        (1210, 850, "mid"),
+        (820, 700, "narrow"),
+        (1210, 560, "short"),
+    ] {
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(suffix != "narrow"),
+                ..Default::default()
+            },
+        );
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, height as f32));
+        settle(&mut app);
+        settle(&mut app);
+        let w = app.world();
+        let ui = *w.resource::<Ui>().unwrap();
+        if w.query::<Semantics>()
+            .iter()
+            .all(|(_, s)| s.name.as_deref() != Some("Tool activity"))
+        {
+            // The first round's summary: the one higher in the transcript.
+            let pill = w
+                .query::<Semantics>()
+                .iter()
+                .filter(|(_, s)| {
+                    s.name
+                        .as_deref()
+                        .is_some_and(|n| n.starts_with("Open tool activity:"))
+                })
+                .map(|(e, _)| *e)
+                .min_by(|a, b| {
+                    let y = |e: &Entity| w.get::<Rect>(*e).map_or(f32::MAX, |r| r.y);
+                    y(a).total_cmp(&y(b))
+                })
+                .expect("round summary is in the transcript");
+            assert_eq!(
+                try_activate(app.world_mut(), pill),
+                ActivationResult::Accepted
+            );
+            settle(&mut app);
+            let row = app
+                .world()
+                .query::<Semantics>()
+                .iter()
+                .find(|(_, s)| {
+                    s.name
+                        .as_deref()
+                        .is_some_and(|n| n.starts_with("Expand Find native naming"))
+                })
+                .map(|(e, _)| *e)
+                .expect("the failed call is listed by its intent");
+            assert_eq!(
+                try_activate(app.world_mut(), row),
+                ActivationResult::Accepted
+            );
+        }
+        // Focus scroll-into-view while the lane narrows used to leave the
+        // transcript shifted sideways, cut off on the left.
+        let timeline = app.world().resource::<Ui>().unwrap().timeline;
+        app.world_mut().get_mut::<Scroll>(timeline).unwrap().offset[0] = -300.;
+        for _ in 0..12 {
+            rndr_paint::frame(&mut app);
+        }
+        assert_eq!(app.world().get::<Scroll>(timeline).unwrap().offset[0], 0.);
+        // The panel's list scrolls with exactly one scrollbar.
+        let body = app
+            .world()
+            .query::<Semantics>()
+            .iter()
+            .find(|(_, s)| s.name.as_deref() == Some("Tool activity"))
+            .map(|(e, _)| *e)
+            .unwrap();
+        let bars = app
+            .world()
+            .query::<Scrollbar>()
+            .iter()
+            .filter(|(e, _)| {
+                let mut e = *e;
+                loop {
+                    if e == body {
+                        break true;
+                    }
+                    match app.world().get::<Parent>(e) {
+                        Some(p) => e = p.entity,
+                        None => break false,
+                    }
+                }
+            })
+            .count();
+        assert_eq!(bars, 0, "no extra rail beside the toolkit's indicator");
+        let w = app.world();
+        let panel = w
+            .query::<Semantics>()
+            .iter()
+            .find(|(_, s)| s.name.as_deref() == Some("Tool activity"))
+            .map(|(e, _)| *w.get::<Rect>(*e).unwrap())
+            .unwrap();
+        let timeline = *w.get::<Rect>(ui.timeline).unwrap();
+        let editor = *w.get::<Rect>(ui.composer.editor).unwrap();
+        let sidebar = *w.get::<Rect>(ui.sidebar).unwrap();
+        assert!(panel.x + panel.w <= width as f32 + 0.5, "{panel:?}");
+        let main = *w.get::<Rect>(ui.exchange.main).unwrap();
+        let dock = *w
+            .get::<Rect>(w.get::<Parent>(ui.exchange.main).unwrap().entity)
+            .unwrap();
+        eprintln!(
+            "GEOM {suffix} dock={dock:?} main={main:?} timeline={timeline:?} panel={panel:?} editor={editor:?} sidebar={sidebar:?}"
+        );
+        if suffix == "wide" {
+            // Docked: the conversation and its composer narrow beside it.
+            assert!(
+                timeline.x + timeline.w <= panel.x + 0.5,
+                "{timeline:?} {panel:?}"
+            );
+            assert!(editor.x + editor.w <= panel.x + 0.5, "{editor:?} {panel:?}");
+            assert!(
+                timeline.x >= sidebar.x + sidebar.w - 0.5,
+                "{timeline:?} {sidebar:?}"
+            );
+            assert!(
+                panel.y <= timeline.y + 0.5 && panel.y + panel.h >= editor.y + editor.h - 0.5,
+                "{panel:?}"
+            );
+        }
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-tool-thread-{suffix}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
+}

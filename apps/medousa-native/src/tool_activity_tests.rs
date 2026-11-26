@@ -1,43 +1,4 @@
 use super::*;
-#[test]
-fn backdrop_hit_target_is_an_activatable_native_button() {
-    let mut app = App::new();
-    app.add_plugin(Chrome);
-    app.add_plugin(MarkdownPlugin);
-    app.add_plugin(rndr_ui::UiPlugin);
-    app.world_mut().insert_resource(Viewport::new(1000., 800.));
-    let s = history(vec![run("r1", "read", "completed")], 1);
-    launch(app.world_mut(), &s);
-    for _ in 0..3 {
-        app.update();
-    }
-    let hit_inside = hit_test(app.world(), 500., 300.).unwrap();
-    assert_ne!(
-        ancestor_with::<Button>(app.world(), hit_inside)
-            .and_then(|b| app.world().get::<Button>(b))
-            .map(|b| b.action.as_str()),
-        Some("tool-activity-backdrop"),
-        "interior hit={hit_inside:?}, rect={:?}",
-        app.world().get::<Rect>(hit_inside)
-    );
-    let hit = hit_test(app.world(), 10., 10.).unwrap();
-    let button = ancestor_with::<Button>(app.world(), hit);
-    assert!(
-        button.is_some(),
-        "hit={hit:?} rect={:?} semantics={:?}",
-        app.world().get::<Rect>(hit),
-        app.world().get::<Semantics>(hit)
-    );
-    assert_eq!(
-        app.world().get::<Button>(button.unwrap()).unwrap().action,
-        "tool-activity-backdrop"
-    );
-    assert_eq!(
-        try_activate(app.world_mut(), button.unwrap()),
-        ActivationResult::Accepted
-    );
-    assert!(app.world().entities_with::<Modal>().is_empty());
-}
 use medousa_app_core::{ChatItem, contract::ChatSegment};
 use medousa_types::ToolInputParam;
 fn run(id: &str, tool: &str, status: &str) -> ToolRunState {
@@ -59,26 +20,63 @@ fn history(runs: Vec<ToolRunState>, revision: u64) -> ChatSnapshot {
     item.tool_runs = Some(runs);
     serde_json::from_value(serde_json::json!({"sessionId":"s", "authorityId":"a", "revision":revision, "items":[item]})).unwrap()
 }
+/// A timeline frame (transcript + navigation) with one round's summary in
+/// it, as the chat tab mounts them, and the panel opened from it.
 fn launch(world: &mut World, snapshot: &ChatSnapshot) -> Entity {
+    let (_, button) = launch_in(world, snapshot, 0);
+    button
+}
+fn launch_in(world: &mut World, snapshot: &ChatSnapshot, round: usize) -> (Entity, Entity) {
+    let tab = world.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Fill,
+        ..Layout::column()
+    },));
+    let timeline = super::super::setup(world, tab);
+    let frame = world.get::<Parent>(timeline).unwrap().entity;
+    world.get_mut::<Timeline>(timeline).unwrap().session = snapshot.session_id.clone();
     sync(world, Some(snapshot));
-    let parent = world.spawn((Layout::column(),));
     let part = project(&snapshot.items[0])
         .into_iter()
-        .find(|p| !p.tools.is_empty())
+        .filter(|p| !p.tools.is_empty())
+        .nth(round)
         .unwrap();
-    let row = mount(world, parent, None, "a", &part);
+    let row = mount(world, timeline, None, &snapshot.items[0].id, &part);
     let button = children_of(world, row)[0];
     world.insert_resource(Focus {
         entity: Some(button),
     });
-    assert!(action(
-        world,
-        &ActionIntent {
-            entity: button,
-            name: world.get::<Button>(button).unwrap().action.clone()
-        }
-    ));
-    button
+    assert!(click(world, button));
+    (frame, button)
+}
+fn click(world: &mut World, entity: Entity) -> bool {
+    let name = world.get::<Button>(entity).unwrap().action.clone();
+    action(world, &ActionIntent { entity, name })
+}
+fn toggle(world: &mut World, run_id: &str) {
+    let row = world
+        .entities_with::<RunToggle>()
+        .into_iter()
+        .find(|&e| world.get::<RunToggle>(e).unwrap().0 == run_id)
+        .unwrap();
+    assert!(click(world, row));
+}
+fn state(world: &World) -> &Inspector {
+    world.resource::<Inspector>().unwrap()
+}
+fn markdown_has(world: &World, needle: &str) -> bool {
+    world
+        .query::<MarkdownView>()
+        .iter()
+        .any(|(_, v)| v.source().contains(needle))
+}
+fn ui_app(width: f32) -> App {
+    let mut app = App::new();
+    app.add_plugin(Chrome);
+    app.add_plugin(MarkdownPlugin);
+    app.add_plugin(rndr_ui::UiPlugin);
+    app.world_mut().insert_resource(Viewport::new(width, 800.));
+    app
 }
 #[test]
 fn summary_matches_tauri_bounded_context_and_status_priority() {
@@ -99,11 +97,6 @@ fn summary_matches_tauri_bounded_context_and_status_priority() {
         summary(&[run("1", "cognition_code_read", "failed")]),
         "1 tool  Code read"
     );
-    assert_eq!(
-        subtitle(&[run("1", "a", "running"), run("2", "b", "failed")]),
-        "1 running · 2 total"
-    );
-    assert_eq!(subtitle(&[run("1", "a", "failed")]), "1 failed · 1 total");
     assert_eq!(
         result(&run("1", "a", "failed")),
         "The tool did not return a result summary."
@@ -158,12 +151,86 @@ fn adjacent_rounds_group_without_crossing_narrative_or_losing_ids() {
     );
 }
 #[test]
-fn open_inspector_reconciles_live_runs_retains_scroll_and_does_no_idle_remount() {
+fn panel_docks_beside_the_transcript_without_a_modal() {
+    let mut app = ui_app(1200.);
+    let s = history(vec![run("r1", "read", "completed")], 1);
+    let (frame, _) = launch_in(app.world_mut(), &s, 0);
+    for _ in 0..3 {
+        app.update();
+        sync(app.world_mut(), Some(&s));
+    }
+    let w = app.world();
+    assert!(w.entities_with::<Modal>().is_empty());
+    let panel = state(w).root.unwrap();
+    let sash = state(w).sash.unwrap();
+    let children = children_of(w, frame);
+    assert_eq!(&children[children.len() - 2..], &[sash, panel]);
+    let rect = *w.get::<Rect>(panel).unwrap();
+    assert!((rect.w - PANEL_DEFAULT).abs() < 2., "panel {rect:?}");
+    assert!(rect.x > 700., "panel {rect:?}");
+    assert!(!w.has::<Absolute>(panel));
+}
+#[test]
+fn second_click_closes_and_another_round_retargets() {
+    let mut world = World::new();
+    let mut s = history(
+        vec![
+            run("r1", "read", "completed"),
+            run("r2", "run", "completed"),
+        ],
+        1,
+    );
+    split_rounds(&mut s);
+    let (frame, first) = launch_in(&mut world, &s, 0);
+    let panel = state(&world).root.unwrap();
+    let timeline = children_of(&world, frame)[0];
+    let other = project(&s.items[0])
+        .into_iter()
+        .filter(|p| !p.tools.is_empty())
+        .nth(1)
+        .unwrap();
+    let row = mount(&mut world, timeline, None, "a", &other);
+    let second = children_of(&world, row)[0];
+    assert!(click(&mut world, second));
+    assert_eq!(state(&world).root, Some(panel), "retarget keeps the panel");
+    assert_eq!(state(&world).selected.as_ref().unwrap().part.id, other.id);
+    assert!(click(&mut world, second));
+    assert!(!world.is_alive(panel));
+    assert!(state(&world).selected.is_none());
+    assert!(click(&mut world, first));
+    assert!(state(&world).root.is_some());
+}
+/// Two rounds in one turn, split by narrative.
+fn split_rounds(s: &mut ChatSnapshot) {
+    let runs = s.items[0].tool_runs.clone().unwrap();
+    s.items[0].segments = Some(vec![
+        ChatSegment::ToolGroup {
+            group_id: "g1".into(),
+            tool_round: 1,
+            runs: vec![runs[0].clone()],
+        },
+        ChatSegment::Text {
+            segment_id: "t".into(),
+            model_round: None,
+            markdown: "Narrative".into(),
+            committed: true,
+        },
+        ChatSegment::ToolGroup {
+            group_id: "g2".into(),
+            tool_round: 2,
+            runs: vec![runs[1].clone()],
+        },
+    ]);
+}
+#[test]
+fn panel_reconciles_live_runs_retains_scroll_and_does_no_idle_remount() {
     let mut world = World::new();
     let mut s = history(vec![run("r1", "cognition_code_read", "running")], 1);
     launch(&mut world, &s);
-    let root = world.resource::<Inspector>().unwrap().root.unwrap();
-    let body = world.resource::<Inspector>().unwrap().body.unwrap();
+    sync(&mut world, Some(&s));
+    let root = state(&world).root.unwrap();
+    let body = state(&world).body.unwrap();
+    toggle(&mut world, "r1");
     world.get_mut::<Scroll>(body).unwrap().offset[1] = -20.;
     let first = children_of(&world, body);
     for _ in 0..20 {
@@ -179,59 +246,27 @@ fn open_inspector_reconciles_live_runs_retains_scroll_and_does_no_idle_remount()
         .push(run("r2", "cognition_image_view", "running"));
     s.revision = ChatRevision(2);
     sync(&mut world, Some(&s));
-    assert_eq!(world.resource::<Inspector>().unwrap().root, Some(root));
+    assert_eq!(state(&world).root, Some(root));
     assert_eq!(children_of(&world, body).len(), 2);
     assert_eq!(world.get::<Scroll>(body).unwrap().offset[1], -20.);
     assert!(
-        world
-            .query::<MarkdownView>()
-            .iter()
-            .any(|(_, v)| v.source().contains("Source loaded"))
+        markdown_has(&world, "Source loaded"),
+        "expanded call stays open"
     );
-    let state = world.resource::<Inspector>().unwrap();
-    assert_eq!(
-        world.get::<Label>(state.subtitle.unwrap()).unwrap().text,
-        "1 running · 2 total"
-    );
+    let stats: Vec<String> = children_of(&world, state(&world).stats.unwrap())
+        .into_iter()
+        .filter_map(|e| world.get::<Label>(e).map(|l| l.text.clone()))
+        .collect();
+    assert_eq!(stats[0], "Round 1 · 2 calls");
+    assert_eq!(stats.len(), 3, "round, running and done: {stats:?}");
     s.session_id = "other".into();
     sync(&mut world, Some(&s));
     assert!(!world.is_alive(root));
-    assert!(world.resource::<Inspector>().unwrap().selected.is_none());
+    assert!(state(&world).selected.is_none());
 }
 #[test]
-fn escape_and_backdrop_restore_focus_without_leaking_modal() {
-    let mut app = App::new();
-    app.add_plugin(Chrome);
-    let s = history(vec![run("r1", "read", "completed")], 1);
-    let trigger = launch(app.world_mut(), &s);
-    app.world_mut().resource_mut::<Input>().unwrap().keys =
-        vec![KeyEvent::named(NamedKey::Escape, Modifiers::default())];
-    app.update();
-    sync(app.world_mut(), Some(&s));
-    assert!(app.world().entities_with::<Modal>().is_empty());
-    assert_eq!(
-        app.world().resource::<Focus>().unwrap().entity,
-        Some(trigger)
-    );
-    launch(app.world_mut(), &s);
-    let backdrop = app
-        .world()
-        .query::<Button>()
-        .into_iter()
-        .find(|(_, b)| b.action == "tool-activity-backdrop")
-        .unwrap()
-        .0;
-    let handler = app.world().get::<ActivationHandler>(backdrop).unwrap().0;
-    handler(app.world_mut(), backdrop);
-    assert!(app.world().entities_with::<Modal>().is_empty());
-}
-#[test]
-fn native_modal_geometry_scroll_and_parameter_values_are_readable_not_json_wrappers() {
-    let mut app = App::new();
-    app.add_plugin(Chrome);
-    app.add_plugin(MarkdownPlugin);
-    app.add_plugin(rndr_ui::UiPlugin);
-    app.world_mut().insert_resource(Viewport::new(1000., 800.));
+fn calls_expand_in_place_several_at_once_with_readable_parameters() {
+    let mut world = World::new();
     let mut r = run("r1", "cognition_schema", "succeeded");
     r.input_params = Some(vec![
         ToolInputParam {
@@ -245,50 +280,135 @@ fn native_modal_geometry_scroll_and_parameter_values_are_readable_not_json_wrapp
             truncated: true,
         },
     ]);
-    let s = history(
-        (0..25)
-            .map(|i| {
-                let mut r = r.clone();
-                r.run_id = i.to_string();
-                r
-            })
-            .collect(),
+    let mut r2 = r.clone();
+    r2.run_id = "r2".into();
+    r2.output_summary = Some("Second result".into());
+    let s = history(vec![r, r2], 1);
+    launch(&mut world, &s);
+    assert!(!markdown_has(&world, "finish"), "rows start collapsed");
+    let row = world.entities_with::<RunToggle>()[0];
+    let labels: Vec<String> = world
+        .query::<Label>()
+        .into_iter()
+        .filter(|(e, _)| within(&world, *e, row))
+        .map(|(_, l)| l.text.clone())
+        .collect();
+    // The intent is the title and the tool kind sits under it.
+    assert!(labels.contains(&"Load schemas".to_string()), "{labels:?}");
+    let name = world.get::<Semantics>(row).unwrap().name.clone().unwrap();
+    assert_eq!(name, "Expand Load schemas");
+    toggle(&mut world, "r1");
+    toggle(&mut world, "r2");
+    assert!(markdown_has(&world, "finish"));
+    assert!(markdown_has(&world, "Second result"));
+    assert!(
+        !markdown_has(&world, "Load schemas"),
+        "intent is not repeated"
+    );
+    assert!(!markdown_has(&world, "truncated"));
+    toggle(&mut world, "r2");
+    assert!(!markdown_has(&world, "Second result"));
+    assert!(markdown_has(&world, "finish"));
+}
+#[test]
+fn a_turns_other_rounds_are_dividers_to_jump_between() {
+    let mut world = World::new();
+    let mut s = history(
+        vec![
+            run("r1", "read", "completed"),
+            run("r2", "run", "completed"),
+        ],
         1,
     );
-    launch(app.world_mut(), &s);
-    for _ in 0..5 {
-        app.update();
-    }
-    let state = app.world().resource::<Inspector>().unwrap();
-    let sheet = app.world().get::<Rect>(state.sheet.unwrap()).unwrap();
-    assert!((sheet.w - 608.).abs() < 2., "sheet {sheet:?}");
-    assert!((sheet.x - 196.).abs() < 2., "sheet {sheet:?}");
-    assert!((sheet.h - 640.).abs() < 2., "sheet {sheet:?}");
-    let scroll = app.world().get::<Scroll>(state.body.unwrap()).unwrap();
-    assert!(scroll.content[1] > 640.);
-    assert!(
-        app.world()
-            .query::<MarkdownView>()
-            .iter()
-            .any(|(_, v)| v.source().contains("Load schemas"))
-    );
-    assert!(
-        !app.world()
-            .query::<MarkdownView>()
-            .iter()
-            .any(|(_, v)| v.source().contains("truncated"))
-    );
-    app.world_mut().insert_resource(Viewport::new(400., 500.));
+    split_rounds(&mut s);
+    launch(&mut world, &s);
+    sync(&mut world, Some(&s));
+    let body = state(&world).body.unwrap();
+    // Round 1 header, its call, Round 2 header.
+    assert_eq!(children_of(&world, body).len(), 3);
+    let target = world
+        .entities_with::<RoundTarget>()
+        .into_iter()
+        .find(|&e| world.get::<RoundTarget>(e).unwrap().0 != "tool:r1")
+        .unwrap();
+    assert!(click(&mut world, target));
+    assert_eq!(state(&world).selected.as_ref().unwrap().part.id, "tool:r2");
+    assert_eq!(children_of(&world, body).len(), 3);
+}
+#[test]
+fn a_newer_round_shows_a_chip_instead_of_following() {
+    let mut world = World::new();
+    let mut s = history(vec![run("r1", "read", "completed")], 1);
+    launch(&mut world, &s);
+    sync(&mut world, Some(&s));
+    let chip = state(&world).chip.unwrap();
+    assert!(world.has::<Hidden>(chip));
+    let mut next: ChatItem =
+        serde_json::from_value(serde_json::json!({"id":"b", "role":"assistant", "content":""}))
+            .unwrap();
+    next.tool_runs = Some(vec![run("r9", "search", "running")]);
+    s.items.push(next);
+    s.revision = ChatRevision(2);
+    sync(&mut world, Some(&s));
+    assert_eq!(state(&world).selected.as_ref().unwrap().item, "a");
+    assert_eq!(state(&world).newer.as_ref().unwrap().item, "b");
+    assert!(!world.has::<Hidden>(chip));
+    let jump = children_of(&world, chip)[0];
+    assert!(click(&mut world, jump));
+    sync(&mut world, Some(&s));
+    assert_eq!(state(&world).selected.as_ref().unwrap().item, "b");
+    assert!(state(&world).newer.is_none());
+    assert!(world.has::<Hidden>(chip));
+}
+#[test]
+fn escape_and_close_return_focus_to_the_summary() {
+    let mut app = App::new();
+    app.add_plugin(Chrome);
+    let s = history(vec![run("r1", "read", "completed")], 1);
+    let trigger = launch(app.world_mut(), &s);
+    app.world_mut().resource_mut::<Input>().unwrap().keys =
+        vec![KeyEvent::named(NamedKey::Escape, Modifiers::default())];
     sync(app.world_mut(), Some(&s));
+    assert!(state(app.world()).root.is_none());
+    assert_eq!(
+        app.world().resource::<Focus>().unwrap().entity,
+        Some(trigger)
+    );
+    let trigger = launch(app.world_mut(), &s);
+    let close = app
+        .world()
+        .query::<Semantics>()
+        .into_iter()
+        .find(|(e, s)| {
+            s.name.as_deref() == Some("Close tool activity") && app.world().has::<Button>(*e)
+        })
+        .unwrap()
+        .0;
+    app.world_mut().resource_mut::<Focus>().unwrap().entity = Some(close);
+    assert!(click(app.world_mut(), close));
+    assert!(state(app.world()).root.is_none());
+    assert_eq!(
+        app.world().resource::<Focus>().unwrap().entity,
+        Some(trigger)
+    );
+}
+#[test]
+fn a_narrow_tab_floats_the_panel_over_the_transcript() {
+    let mut app = ui_app(560.);
+    let s = history(vec![run("r1", "read", "completed")], 1);
+    launch(app.world_mut(), &s);
     for _ in 0..3 {
         app.update();
+        sync(app.world_mut(), Some(&s));
     }
-    let state = app.world().resource::<Inspector>().unwrap();
-    assert!(app.world().get::<Rect>(state.sheet.unwrap()).unwrap().w <= 368.);
+    let w = app.world();
+    let panel = state(w).root.unwrap();
+    assert!(w.has::<Absolute>(panel));
+    assert!(w.has::<Hidden>(state(w).sash.unwrap()));
+    assert!(w.get::<Rect>(panel).unwrap().w <= 560.);
 }
-
 #[test]
-fn inline_gallery_preserves_inspector_image() {
+fn expanded_image_call_keeps_its_gallery() {
     let mut r = run("r1", "cognition_image_view", "succeeded");
     r.artifact_refs = Some(
         serde_json::from_value(serde_json::json!([{
@@ -305,10 +425,114 @@ fn inline_gallery_preserves_inspector_image() {
             .any(|p| p.images == [("art:trial".into(), "Trial".into())])
     );
     launch(&mut world, &snapshot);
+    toggle(&mut world, "r1");
     assert!(
         world
             .query::<Semantics>()
             .iter()
             .any(|(_, s)| s.name.as_deref() == Some("Image attachment: Trial"))
     );
+}
+
+#[test]
+fn intent_leads_and_kind_drops_the_namespace() {
+    let mut r = run("1", "cognition_coder_shell_run", "succeeded");
+    assert_eq!(intent(&r), "Read source");
+    r.input_params = Some(vec![ToolInputParam {
+        key: "Description".into(),
+        value: "Inspect icon   and packaging\nconfiguration".into(),
+        truncated: false,
+    }]);
+    assert_eq!(intent(&r), "Inspect icon and packaging configuration");
+    assert_eq!(kind("cognition_coder_shell_run"), "Shell");
+    assert_eq!(kind("cognition_coder_read_batch"), "Read batch");
+    r.input_params = None;
+    r.input_summary = None;
+    assert_eq!(intent(&r), "Coder shell run");
+}
+#[test]
+fn only_a_failure_offers_a_filter() {
+    assert!(filters(&[run("1", "shell_run", "succeeded")]).is_empty());
+    let runs = vec![
+        run("1", "coder_shell_run", "succeeded"),
+        run("2", "coder_shell_run", "failed"),
+        run("3", "coder_read_batch", "succeeded"),
+    ];
+    let labels: Vec<_> = filters(&runs).into_iter().map(|(_, l)| l).collect();
+    assert_eq!(labels, ["All", "Failed"]);
+    let mut world = World::new();
+    let s = history(runs, 1);
+    launch(&mut world, &s);
+    let failed = world
+        .entities_with::<FilterTarget>()
+        .into_iter()
+        .find(|&e| world.get::<FilterTarget>(e).unwrap().0 == Filter::Failed)
+        .unwrap();
+    assert!(click(&mut world, failed));
+    let rows = world.entities_with::<RunToggle>();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(world.get::<RunToggle>(rows[0]).unwrap().0, "2");
+}
+#[test]
+fn kind_trails_a_call_only_when_the_round_mixes_kinds() {
+    let mut world = World::new();
+    let s = history(
+        vec![
+            run("1", "coder_shell_run", "succeeded"),
+            run("2", "coder_shell_run", "succeeded"),
+        ],
+        1,
+    );
+    launch(&mut world, &s);
+    for row in world.entities_with::<RunToggle>() {
+        let name = world.get::<Semantics>(row).unwrap().name.clone().unwrap();
+        assert!(!name.contains("Shell"), "{name}");
+    }
+    let mut world = World::new();
+    let s = history(
+        vec![
+            run("1", "coder_shell_run", "succeeded"),
+            run("2", "coder_read_batch", "succeeded"),
+        ],
+        1,
+    );
+    launch(&mut world, &s);
+    let names: Vec<_> = world
+        .entities_with::<RunToggle>()
+        .into_iter()
+        .map(|e| world.get::<Semantics>(e).unwrap().name.clone().unwrap())
+        .collect();
+    assert!(names.iter().any(|n| n.ends_with(", Shell")), "{names:?}");
+    assert!(
+        names.iter().any(|n| n.ends_with(", Read batch")),
+        "{names:?}"
+    );
+}
+#[test]
+fn long_results_preview_then_show_all_and_copy_the_whole_result() {
+    let mut r = run("r1", "read", "succeeded");
+    r.output_summary = Some("x".repeat(RESULT_PREVIEW + 50));
+    let mut world = World::new();
+    let s = history(vec![r], 1);
+    launch(&mut world, &s);
+    toggle(&mut world, "r1");
+    assert_eq!(world_max(&world), RESULT_PREVIEW + 1);
+    let copy = world.entities_with::<CopyText>()[0];
+    assert_eq!(
+        world.get::<CopyText>(copy).unwrap().0.len(),
+        RESULT_PREVIEW + 50
+    );
+    let more = world.entities_with::<FullToggle>()[0];
+    assert!(click(&mut world, more));
+    assert_eq!(world_max(&world), RESULT_PREVIEW + 50);
+}
+fn world_max(world: &World) -> usize {
+    world
+        .query::<MarkdownView>()
+        .iter()
+        .map(|(_, v)| {
+            v.source().chars().filter(|c| *c == 'x').count() + v.source().matches('…').count()
+        })
+        .max()
+        .unwrap_or(0)
 }

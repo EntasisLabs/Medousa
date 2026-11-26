@@ -7,6 +7,7 @@ use rndr_core::*;
 use std::collections::{HashMap, HashSet};
 #[path = "tool_activity.rs"]
 mod tool_activity;
+pub use tool_activity::ToolDock;
 
 #[derive(Clone, PartialEq)]
 struct Part {
@@ -420,10 +421,23 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
     root
 }
 
+/// The transcript scrolls only vertically. Focus scroll-into-view (a summary
+/// focused while a side panel narrows the lane) or a horizontal swipe over a
+/// wide table would otherwise leave it shifted sideways, cut off on the left.
+fn pin_horizontal(world: &mut World, root: Entity) -> bool {
+    match world.get_mut::<Scroll>(root) {
+        Some(scroll) if scroll.offset[0] != 0. => {
+            scroll.offset[0] = 0.;
+            true
+        }
+        _ => false,
+    }
+}
+
 fn record_offset(world: &mut World, root: Entity) -> bool {
     // RNDR calls this after layout. Read actual mounted heights before resolving
     // the stable navigation anchor; offscreen rows retain their last estimate.
-    let mut changed = false;
+    let mut changed = pin_horizontal(world, root);
     if let Some(mut state) = world.remove::<Timeline>(root) {
         let mut y = visual::INSET;
         let mut anchor_y = None;
@@ -486,6 +500,7 @@ fn record_offset(world: &mut World, root: Entity) -> bool {
 /// reconciliation. Only nearby rows mount Markdown, bounding history parse cost.
 pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
     tool_activity::sync_scoped(world, root, snapshot);
+    pin_horizontal(world, root);
     let Some(mut state) = world.remove::<Timeline>(root) else {
         return;
     };

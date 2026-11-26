@@ -504,6 +504,8 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     visual::flat(world, content.root, visual::canvas());
     // Both lanes retain their entities and source documents across thread toggles.
     world.get_mut::<Layout>(content.content).unwrap().axis = Axis::Row;
+    // A round's tool panel docks here, beside the conversation and composer.
+    world.insert(content.content, timeline::ToolDock);
     let main = container(
         world,
         Some(content.content),

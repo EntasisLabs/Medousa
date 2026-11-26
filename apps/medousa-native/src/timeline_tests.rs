@@ -135,7 +135,21 @@ fn typed_tools_are_deduplicated_and_lazy_selectable_receipts() {
     let before = world.entities_with::<MarkdownView>().len();
     let header = children_of(&world, tool)[0];
     assert!(activate(&mut world, header));
-    assert_eq!(world.entities_with::<Modal>().len(), 1);
+    assert!(
+        world.entities_with::<Modal>().is_empty(),
+        "the thread panel docks, not a modal"
+    );
+    let call = world
+        .query::<Semantics>()
+        .iter()
+        .find(|(_, s)| {
+            s.name
+                .as_deref()
+                .is_some_and(|n| n.starts_with("Expand src/main.rs"))
+        })
+        .unwrap()
+        .0;
+    assert!(activate(&mut world, call));
     assert!(world.entities_with::<MarkdownView>().len() > before);
     assert!(
         world

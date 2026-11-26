@@ -497,14 +497,27 @@ fn tool_disclosure_uses_worker_snapshot_and_closes_on_return() {
         .expect("inspector remains open through settled exchange frames")
         .0;
     assert!(app.world().is_alive(inspector));
+    // Calls start collapsed in the thread panel; expand one to read its result.
+    let call = app
+        .world()
+        .query::<Semantics>()
+        .iter()
+        .find(|(_, s)| {
+            s.name
+                .as_deref()
+                .is_some_and(|n| n.starts_with("Expand Code read"))
+        })
+        .expect("the call is listed in the thread panel")
+        .0;
+    activate(&mut app, call);
     assert!(
         app.world()
-            .query::<Label>()
+            .query::<MarkdownView>()
             .iter()
-            .any(|(_, l)| l.text.contains("Pane state is retained"))
+            .any(|(_, v)| v.source().contains("Pane state is retained"))
     );
     let ui = *app.world().resource::<Ui>().unwrap();
-    // The inspector owns input; dismiss it before the relationship header.
+    // Dismiss the panel before the relationship header.
     let close = app
         .world()
         .query::<Semantics>()
