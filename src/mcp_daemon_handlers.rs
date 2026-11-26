@@ -497,7 +497,7 @@ mod tests {
             .entries()
             .collect::<Vec<_>>();
         let policy = policy_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(gateway.len(), 6);
+        assert_eq!(gateway.len(), 9);
         assert!(
             gateway
                 .iter()

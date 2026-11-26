@@ -1465,13 +1465,14 @@ mod tests {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
         // Includes chat stickies and the native-only legacy Forge target repair route.
-        // Pairing still adds 19 routes.
-        assert_eq!(without_pairing.entries().len(), 502);
-        assert_eq!(with_pairing.entries().len(), 521);
+        // Pairing still adds 19 routes. The three connector routes (elicitations
+        // list, elicitation reply, tools probe) sit on both profiles.
+        assert_eq!(without_pairing.entries().len(), 505);
+        assert_eq!(with_pairing.entries().len(), 524);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 521);
+        assert_eq!(rows.len(), 524);
         assert_eq!(rows[0]["path"], "/health");
         for method in ["POST", "DELETE"] {
             assert!(rows.iter().any(|row| {
