@@ -26,6 +26,7 @@
     restartMcpGateway,
     setMcpServerEnabled,
   } from "$lib/utils/mcpGatewayApi";
+  import ConnectorGallery from "$lib/components/skills/ConnectorGallery.svelte";
   import { isTauri } from "$lib/window";
   import { onThisHostPhrase } from "$lib/platformCopy";
   import McpServerToolsPanel from "$lib/components/skills/McpServerToolsPanel.svelte";
@@ -591,6 +592,8 @@
         </div>
       </div>
     </div>
+
+    <ConnectorGallery {mobile} {readOnly} oninstalled={() => void refresh()} />
 
     <div class="mt-8">
       <div class="mcp-server-list-heading flex flex-wrap items-end justify-between gap-3" class:mcp-mobile={mobile}>

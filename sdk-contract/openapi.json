@@ -486,6 +486,10 @@
       "BeginMcpOAuthRequest": {
         "description": "Begin OAuth for one configured remote MCP server.",
         "properties": {
+          "access_type_offline": {
+            "description": "Google refresh tokens: append `access_type=offline` to the authorization URL.",
+            "type": "boolean"
+          },
           "challenge": {
             "type": [
               "string",
@@ -522,6 +526,13 @@
           },
           "server_id": {
             "type": "string"
+          },
+          "server_url": {
+            "description": "When set, authorization can start before the server is saved.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -36534,6 +36545,117 @@
         }
       }
     },
+    "/v1/mcp/elicitations": {
+      "get": {
+        "operationId": "mcp.elicitations.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "MCP_ELICITATIONS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "mcp.elicitations.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.elicitations.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.elicitations.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/mcp/elicitations/{id}": {
+      "post": {
+        "operationId": "mcp.elicitations.by_id.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "MCP_ELICITATIONS_BY_ID_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "mcp.elicitations.by_id.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.elicitations.by_id.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.elicitations.by_id.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/mcp/gateway/status": {
       "get": {
         "operationId": "mcp.gateway.status.get",
@@ -36923,6 +37045,57 @@
           "browser_policy": "native_only",
           "capabilities": [
             "mcp.policy.evaluate"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/mcp/probe": {
+      "post": {
+        "operationId": "mcp.probe.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "MCP_PROBE_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "mcp.probe.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.probe.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.probe.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
           ],
           "credential_scheme": "bearer",
           "feature_profile": "core",

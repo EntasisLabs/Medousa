@@ -67,10 +67,54 @@ pub struct McpServerConfig {
     pub tool_tags: HashMap<String, Vec<String>>,
     /// Tools hidden from discovery and denied at invoke time. A denylist keeps
     /// newly-added server tools enabled until the user explicitly disables one.
+    /// Entries may be exact names or a trailing-`*` prefix (`delete_*`).
     #[serde(default)]
     pub disabled_tools: Vec<String>,
     #[serde(default)]
     pub use_mock: bool,
+    /// Catalog connector that installed this server, when it came from one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connector_id: Option<String>,
+    /// Public OAuth client settings. Client secrets never belong in this file.
+    #[serde(default, skip_serializing_if = "McpServerOAuthConfig::is_empty")]
+    pub oauth: McpServerOAuthConfig,
+    /// Manifest effect pins. They may only raise the inferred class.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tool_effects: HashMap<String, String>,
+}
+
+/// OAuth settings stored next to a server. The client secret stays in the keyring.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct McpServerOAuthConfig {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clients: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_metadata_url: Option<String>,
+    /// Public client id. Never a client secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub offline_access: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub access_type_offline: bool,
+    /// The Google client must be flagged as an AI-agent client in Google Cloud.
+    /// This is a reminder for the operator, not a credential.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub google_agent_client: bool,
+}
+
+impl McpServerOAuthConfig {
+    pub fn is_empty(&self) -> bool {
+        self.clients.is_empty()
+            && self.scopes.is_empty()
+            && self.client_metadata_url.is_none()
+            && self.client_id.is_none()
+            && !self.offline_access
+            && !self.access_type_offline
+            && !self.google_agent_client
+    }
 }
 
 impl McpServerConfig {
@@ -78,8 +122,23 @@ impl McpServerConfig {
         !self
             .disabled_tools
             .iter()
-            .any(|disabled| disabled.eq_ignore_ascii_case(tool_name))
+            .any(|disabled| tool_name_matches_exclusion(disabled, tool_name))
     }
+
+    pub fn is_channel(&self) -> bool {
+        self.transport.trim().eq_ignore_ascii_case("channel")
+    }
+}
+
+pub(crate) fn tool_name_matches_exclusion(pattern: &str, tool_name: &str) -> bool {
+    let pattern = pattern.trim();
+    let tool_name = tool_name.trim();
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        return tool_name
+            .to_ascii_lowercase()
+            .starts_with(&prefix.to_ascii_lowercase());
+    }
+    pattern.eq_ignore_ascii_case(tool_name)
 }
 
 #[derive(Debug, Clone)]
@@ -250,11 +309,11 @@ fn default_transport() -> String {
     "stdio".to_string()
 }
 
-fn default_allowed_lanes() -> Vec<String> {
+pub(crate) fn default_allowed_lanes() -> Vec<String> {
     vec!["interactive".to_string(), "scheduled".to_string()]
 }
 
-fn default_allowed_effects() -> Vec<String> {
+pub(crate) fn default_allowed_effects() -> Vec<String> {
     vec![
         "external_read".to_string(),
         "external_write".to_string(),

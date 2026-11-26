@@ -1,0 +1,43 @@
+schema = "medousa.connector/v1"
+id = "gmail"
+title = "Gmail"
+publisher = "Google"
+version = "1.0.0"
+categories = ["email"]
+source = "https://developers.google.com/workspace/guides/configure-mcp-servers"
+
+[transport]
+kind = "remote"
+url = "https://gmailmcp.googleapis.com/mcp/v1"
+elicitation_fallback_url = "https://gmailmcp.googleapis.com/mcp/v1self"
+
+[auth]
+kind = "oauth"
+# Tried in order. No client id is shipped: Entasis registers an AI-agent
+# Desktop/iOS/Android client, or the user supplies their own (Personal mode).
+clients = ["preregistered", "byo"]
+scopes = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.compose",
+]
+offline_access = true
+access_type_offline = true
+google_agent_client = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[tools.effects]
+send_message = "external_side_effect"
+create_draft = "external_write"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["gmail", "email", "inbox"]
+hosts = ["mail.google.com"]
+
+[platforms]
+desktop = true
+mobile = true

@@ -32,6 +32,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Reviews](guides/reviews.md) | Review Forge changes and PRs, and recover a legacy integration target without bypassing fresh review |
 | [Assistant terminal](guides/assistant-terminal.md) | Run assistant shell commands and understand local credential storage |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
+| [Connectors](guides/connectors.md) | Install a reviewed MCP server, its sign-in, and a usage note |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Run list, schedules, specialists, and Activity |
 | [Phone pairing](guides/phone-pairing.md) | Name paired workshops, refresh stale connections, and add optional portals |
 | [Siri and Shortcuts](guides/siri-and-shortcuts.md) | Continue the selected chat by voice or from an iPhone shortcut |

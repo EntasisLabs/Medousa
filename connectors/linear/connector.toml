@@ -1,0 +1,35 @@
+schema = "medousa.connector/v1"
+id = "linear"
+title = "Linear"
+publisher = "Linear"
+version = "1.0.0"
+categories = ["work-management"]
+source = "https://linear.app/docs/mcp"
+
+[transport]
+kind = "remote"
+url = "https://mcp.linear.app/mcp"
+
+[auth]
+kind = "oauth"
+clients = ["preregistered", "cimd", "dcr", "byo"]
+scopes = []
+offline_access = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[tools.effects]
+create_issue = "external_write"
+delete_issue = "external_side_effect"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["linear", "ticket", "issue"]
+hosts = ["linear.app"]
+
+[platforms]
+desktop = true
+mobile = true

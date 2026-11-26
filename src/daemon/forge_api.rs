@@ -8993,19 +8993,19 @@ fn task_executable_available(executable: &str) -> bool {
     };
     std::env::split_paths(&search_path).any(|directory| {
         let candidate = directory.join(executable);
-        if candidate.is_file() {
-            return true;
-        }
         #[cfg(windows)]
         {
-            return ["exe", "cmd", "bat", "com"].into_iter().any(|extension| {
-                directory
-                    .join(format!("{executable}.{extension}"))
-                    .is_file()
-            });
+            candidate.is_file()
+                || ["exe", "cmd", "bat", "com"].into_iter().any(|extension| {
+                    directory
+                        .join(format!("{executable}.{extension}"))
+                        .is_file()
+                })
         }
         #[cfg(not(windows))]
-        false
+        {
+            candidate.is_file()
+        }
     })
 }
 

@@ -181,18 +181,17 @@ fn command_on_path(command: &str) -> bool {
         }
     }
     dirs.iter().any(|dir| {
-        if dir.join(trimmed).is_file() {
-            return true;
-        }
+        let found = dir.join(trimmed).is_file();
         #[cfg(windows)]
         {
-            if dir.join(format!("{trimmed}.exe")).is_file()
-                || dir.join(format!("{trimmed}.cmd")).is_file()
-            {
+            if found {
                 return true;
             }
+            return dir.join(format!("{trimmed}.exe")).is_file()
+                || dir.join(format!("{trimmed}.cmd")).is_file();
         }
-        false
+        #[cfg(not(windows))]
+        found
     })
 }
 

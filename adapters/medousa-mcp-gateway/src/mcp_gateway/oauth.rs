@@ -68,6 +68,49 @@ impl SecureMcpOAuthBundleStore {
             .map_err(|error| error.to_string())
     }
 
+    pub fn save_setup_secret(
+        &self,
+        server_id: &str,
+        key: &str,
+        value: Option<&str>,
+    ) -> Result<(), String> {
+        let path = self.setup_path(server_id, key)?;
+        if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
+            medousa_secrets::save_daemon_secret(&self.data_dir, &path, value)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        } else {
+            medousa_secrets::delete_daemon_secret(&self.data_dir, &path)
+                .map_err(|error| error.to_string())
+        }
+    }
+
+    pub fn load_setup_secret(&self, server_id: &str, key: &str) -> Result<Option<String>, String> {
+        medousa_secrets::load_daemon_secret(&self.data_dir, &self.setup_path(server_id, key)?)
+            .map(|value| value.map(|value| value.value))
+            .map_err(|error| error.to_string())
+    }
+
+    fn setup_path(
+        &self,
+        server_id: &str,
+        key: &str,
+    ) -> Result<medousa_types::DaemonSecretPath, String> {
+        let key = key.trim();
+        if key.is_empty()
+            || !key
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-')
+        {
+            return Err("setup secret key must be a lowercase slug".to_string());
+        }
+        Ok(DaemonSecretPath::McpSetup {
+            installation_id: self.installation_id.clone(),
+            server_id: McpServerId::parse(server_id).map_err(|error| error.to_string())?,
+            key: key.to_string(),
+        })
+    }
+
     pub fn save_bearer_token(&self, server_id: &str, token: Option<&str>) -> Result<(), String> {
         let path = self.bearer_path(server_id)?;
         if let Some(token) = token.map(str::trim).filter(|value| !value.is_empty()) {
@@ -116,6 +159,8 @@ pub struct McpOAuthBeginRequest {
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
     pub challenge: Option<String>,
+    /// When true, the authorization URL gets `access_type=offline` (Google).
+    pub access_type_offline: bool,
 }
 
 impl std::fmt::Debug for McpOAuthBeginRequest {
@@ -133,6 +178,7 @@ impl std::fmt::Debug for McpOAuthBeginRequest {
                 &self.client_secret.as_ref().map(|_| "<redacted>"),
             )
             .field("challenge", &self.challenge)
+            .field("access_type_offline", &self.access_type_offline)
             .finish()
     }
 }
@@ -201,7 +247,11 @@ impl McpOAuthBroker {
         }
 
         state.start_authorization(authorization).await?;
-        let authorization_url = state.get_authorization_url().await?;
+        let mut authorization_url = state.get_authorization_url().await?;
+        if request.access_type_offline {
+            authorization_url =
+                crate::mcp_gateway::connector::with_access_type_offline(&authorization_url);
+        }
         let login_id = uuid::Uuid::new_v4().to_string();
         let mut pending = self.pending.lock().await;
         pending.retain(|_, login| login.server_id != server_id);

@@ -1,0 +1,31 @@
+schema = "medousa.connector/v1"
+id = "telegram"
+title = "Telegram"
+publisher = "Telegram"
+version = "1.0.0"
+categories = ["chat"]
+source = "https://core.telegram.org/bots"
+
+[transport]
+kind = "channel"
+adapter = "medousa-telegram"
+
+[auth]
+kind = "token"
+
+[[setup]]
+key = "bot_token"
+title = "Bot token from @BotFather"
+sensitive = true
+link = "https://t.me/BotFather"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["telegram"]
+hosts = ["t.me", "telegram.org"]
+
+[platforms]
+desktop = true
+mobile = true

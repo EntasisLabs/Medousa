@@ -1,0 +1,34 @@
+schema = "medousa.connector/v1"
+id = "todoist"
+title = "Todoist"
+publisher = "Todoist"
+version = "1.0.0"
+categories = ["work-management"]
+source = "https://www.todoist.com/"
+
+[transport]
+kind = "remote"
+url = "https://ai.todoist.net/mcp"
+
+[auth]
+kind = "oauth"
+clients = ["preregistered", "cimd", "dcr", "byo"]
+scopes = []
+offline_access = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[tools.effects]
+delete_task = "external_side_effect"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["todoist", "task"]
+hosts = ["todoist.com"]
+
+[platforms]
+desktop = true
+mobile = true

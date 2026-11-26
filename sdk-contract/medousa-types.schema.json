@@ -2235,6 +2235,10 @@
       "server_id"
     ],
     "properties": {
+      "access_type_offline": {
+        "description": "Google refresh tokens: append `access_type=offline` to the authorization URL.",
+        "type": "boolean"
+      },
       "challenge": {
         "type": [
           "string",
@@ -2271,6 +2275,13 @@
       },
       "server_id": {
         "type": "string"
+      },
+      "server_url": {
+        "description": "When set, authorization can start before the server is saved.",
+        "type": [
+          "string",
+          "null"
+        ]
       }
     }
   },

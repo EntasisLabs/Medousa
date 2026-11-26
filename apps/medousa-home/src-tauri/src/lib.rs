@@ -24,6 +24,7 @@ mod browser_report_bridge;
 mod browser_host_mobile;
 mod capabilities;
 mod channel_adapters;
+mod connectors;
 mod code_lsp_transport;
 mod connection_prefs;
 mod daemon;
@@ -255,6 +256,15 @@ fn run_home() {
         {
             use tauri_plugin_deep_link::DeepLinkExt;
             let _ = app.deep_link().register_all();
+        }
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
+            use tauri_plugin_deep_link::DeepLinkExt;
+            app.deep_link().on_open_url(|event| {
+                for url in event.urls() {
+                    crate::oauth_browser::deliver_oauth_redirect(url.as_str());
+                }
+            });
         }
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -558,6 +568,10 @@ fn run_home() {
             mcp_gateway::mcp_oauth_complete,
             mcp_gateway::mcp_oauth_refresh,
             mcp_gateway::mcp_oauth_disconnect,
+            connectors::mcp_connector_catalog,
+            connectors::mcp_connector_install,
+            connectors::mcp_elicitation_pending,
+            connectors::mcp_elicitation_respond,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_host_search,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]

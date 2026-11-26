@@ -2242,6 +2242,20 @@ pub const MANUSCRIPTS_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const MCP_ELICITATIONS_BY_ID_POST: Operation = Operation {
+    id: "mcp.elicitations.by_id.post",
+    method: "POST",
+    path: "/v1/mcp/elicitations/{id}",
+    streaming: false,
+};
+
+pub const MCP_ELICITATIONS_GET: Operation = Operation {
+    id: "mcp.elicitations.get",
+    method: "GET",
+    path: "/v1/mcp/elicitations",
+    streaming: false,
+};
+
 pub const MCP_GATEWAY_STATUS_GET: Operation = Operation {
     id: "mcp.gateway.status.get",
     method: "GET",
@@ -2288,6 +2302,13 @@ pub const MCP_POLICY_EVALUATE_POST: Operation = Operation {
     id: "mcp.policy.evaluate.post",
     method: "POST",
     path: "/v1/mcp/policy/evaluate",
+    streaming: false,
+};
+
+pub const MCP_PROBE_POST: Operation = Operation {
+    id: "mcp.probe.post",
+    method: "POST",
+    path: "/v1/mcp/probe",
     streaming: false,
 };
 
@@ -3976,6 +3997,8 @@ pub static ALL: &[Operation] = &[
     MANUSCRIPTS_CREATE_POST,
     MANUSCRIPTS_GET,
     MANUSCRIPTS_POST,
+    MCP_ELICITATIONS_BY_ID_POST,
+    MCP_ELICITATIONS_GET,
     MCP_GATEWAY_STATUS_GET,
     MCP_OAUTH_BEGIN_POST,
     MCP_OAUTH_BY_SERVER_ID_DELETE,
@@ -3983,6 +4006,7 @@ pub static ALL: &[Operation] = &[
     MCP_OAUTH_COMPLETE_POST,
     MCP_OAUTH_REFRESH_POST,
     MCP_POLICY_EVALUATE_POST,
+    MCP_PROBE_POST,
     MEDIA_BY_MEDIA_ID_GET,
     MEDIA_UPLOAD_POST,
     MESH_ACTIVE_WORK_POST,

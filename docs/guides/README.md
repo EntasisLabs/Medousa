@@ -15,6 +15,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Spotlight conversations](spotlight-conversations.md) | Address a Bot or conversation and send messages without leaving Spotlight |
 | [Reviews](reviews.md) | Browse prepared change sets and review project revisions |
 | [Packages](packages.md) | Add optional computer, coding, model, channel, and MCP capabilities |
+| [Connectors](connectors.md) | Install a reviewed MCP server, its sign-in, and a usage note |
 | [Workshop & Automations](workshop-and-automations.md) | Run list, schedules, specialists, and Activity |
 | [Phone pairing](phone-pairing.md) | Add another computer as an optional portal, including from a browser |
 | [Siri and Shortcuts](siri-and-shortcuts.md) | Continue the selected Medousa chat by voice or from an iPhone shortcut |

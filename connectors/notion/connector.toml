@@ -1,0 +1,34 @@
+schema = "medousa.connector/v1"
+id = "notion"
+title = "Notion"
+publisher = "Notion"
+version = "1.0.0"
+categories = ["docs"]
+source = "https://www.notion.so/help/mcp"
+
+[transport]
+kind = "remote"
+url = "https://mcp.notion.com/mcp"
+
+[auth]
+kind = "oauth"
+clients = ["preregistered", "cimd", "dcr", "byo"]
+scopes = []
+offline_access = true
+
+[tools]
+default_excluded = ["delete_*"]
+
+[tools.effects]
+delete_page = "external_side_effect"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["notion", "wiki"]
+hosts = ["notion.so"]
+
+[platforms]
+desktop = true
+mobile = true

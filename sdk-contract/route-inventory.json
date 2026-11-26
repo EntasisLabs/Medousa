@@ -5307,6 +5307,38 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "mcp.elicitations.get",
+      "path": "/v1/mcp/elicitations",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "mcp.elicitations.by_id.post",
+      "path": "/v1/mcp/elicitations/{id}",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",
@@ -5413,6 +5445,22 @@
       "method": "POST",
       "operation_id": "mcp.policy.evaluate.post",
       "path": "/v1/mcp/policy/evaluate",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "mcp.probe.post",
+      "path": "/v1/mcp/probe",
       "rate_limit_class": "administration",
       "stream_transport": null,
       "streaming": false,

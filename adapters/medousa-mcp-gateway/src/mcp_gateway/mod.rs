@@ -4,6 +4,8 @@ mod auth;
 pub mod catalog;
 pub mod config;
 mod connection_actor;
+pub mod connector;
+pub mod elicitation;
 pub mod local_process;
 pub mod oauth;
 pub mod policy_client;
@@ -41,7 +43,8 @@ use tokio::sync::RwLock;
 use medousa_types::mcp_gateway_api::{
     BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthRequest, CompleteMcpOAuthResponse,
     DisconnectMcpOAuthResponse, McpAdminStatusResponse, McpDiscoverRequest, McpDiscoverResponse,
-    McpGatewayHealthResponse, McpInvokeRequest, McpInvokeResponse, McpOAuthStatusResponse,
+    McpElicitationListResponse, McpElicitationReply, McpGatewayHealthResponse, McpInvokeRequest,
+    McpInvokeResponse, McpOAuthStatusResponse, McpProbeRequest, McpProbeResponse,
     McpServersResponse, RefreshMcpOAuthRequest,
 };
 
@@ -66,6 +69,9 @@ pub fn build_router(state: GatewayState) -> Router {
         .route("/v1/mcp/oauth/begin", post(begin_mcp_oauth))
         .route("/v1/mcp/oauth/complete", post(complete_mcp_oauth))
         .route("/v1/mcp/oauth/refresh", post(refresh_mcp_oauth))
+        .route("/v1/mcp/elicitations", get(list_elicitations))
+        .route("/v1/mcp/elicitations/{id}", post(respond_elicitation))
+        .route("/v1/mcp/probe", post(probe_remote_tools))
         .route("/v1/admin/invokes/disable", post(admin_disable_invokes))
         .route("/v1/admin/invokes/enable", post(admin_enable_invokes))
         .route("/v1/admin/catalog/refresh", post(admin_refresh_catalog))
@@ -231,6 +237,44 @@ async fn disconnect_mcp_oauth(
         .await
         .map(Json)
         .map_err(mcp_oauth_api_error)
+}
+
+async fn list_elicitations(
+    State(_state): State<GatewayState>,
+    headers: HeaderMap,
+) -> Result<Json<McpElicitationListResponse>, (StatusCode, String)> {
+    authorize_gateway(&headers, &_state)?;
+    Ok(Json(McpElicitationListResponse {
+        prompts: elicitation::shared_broker().list().await,
+    }))
+}
+
+async fn respond_elicitation(
+    State(state): State<GatewayState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(reply): Json<McpElicitationReply>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    authorize_gateway(&headers, &state)?;
+    elicitation::shared_broker()
+        .respond(&id, reply)
+        .await
+        .map(|()| Json(serde_json::json!({ "ok": true })))
+        .map_err(|error| (StatusCode::NOT_FOUND, error))
+}
+
+async fn probe_remote_tools(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<McpProbeRequest>,
+) -> Result<Json<McpProbeResponse>, (StatusCode, String)> {
+    authorize_gateway(&headers, &state)?;
+    state
+        .registry
+        .probe_remote_tools(&request.server_id, &request.url)
+        .await
+        .map(|tool_names| Json(McpProbeResponse { tool_names }))
+        .map_err(|error| (StatusCode::BAD_GATEWAY, error))
 }
 
 fn mcp_oauth_api_error(error: McpOAuthError) -> (StatusCode, String) {

@@ -165,10 +165,7 @@ impl VaultLaneRegistry {
         guard.next_epoch = next.saturating_add(1);
         guard.root_epochs.insert(root_id.clone(), next);
         guard.lanes.retain(|key, slot| {
-            if &key.root_id == root_id && !slot.held && !slot.pending_intent && slot.waiters == 0 {
-                return false;
-            }
-            true
+            !(&key.root_id == root_id && !slot.held && !slot.pending_intent && slot.waiters == 0)
         });
         self.cvar.notify_all();
     }

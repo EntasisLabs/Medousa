@@ -1,0 +1,25 @@
+schema = "medousa.connector/v1"
+id = "context7"
+title = "Context7"
+publisher = "Context7"
+version = "1.0.0"
+categories = ["developer"]
+source = "https://github.com/upstash/context7"
+
+[transport]
+kind = "remote"
+url = "https://mcp.context7.com/mcp"
+
+[auth]
+kind = "none"
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["context7", "docs", "library"]
+hosts = ["context7.com"]
+
+[platforms]
+desktop = true
+mobile = true

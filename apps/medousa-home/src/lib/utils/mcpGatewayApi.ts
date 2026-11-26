@@ -7,6 +7,10 @@ import type {
   McpGatewayStatusResult,
   McpGatewayTestResult,
   McpGatewayToolsResult,
+  ConnectorCard,
+  ConnectorInstallRequest,
+  ConnectorInstallResult,
+  McpElicitationPrompt,
   McpOAuthStatus,
   McpServerMutationResult,
   McpServerUpsertRequest,
@@ -202,6 +206,42 @@ export async function fetchMcpOAuthStatus(serverId: string): Promise<McpOAuthSta
 export async function authorizeMcpOAuth(serverId: string): Promise<CompleteMcpOAuthResult> {
   const result = await invoke<CompleteMcpOAuthWire>("mcp_oauth_authorize", { serverId });
   return { connection: normalizeMcpOAuthStatus(result.connection) };
+}
+
+export async function fetchConnectorCatalog(): Promise<ConnectorCard[]> {
+  if (!isTauri()) return [];
+  return invoke<ConnectorCard[]>("mcp_connector_catalog");
+}
+
+export async function installConnector(
+  request: ConnectorInstallRequest,
+): Promise<ConnectorInstallResult> {
+  if (!isTauri()) {
+    return {
+      ok: false,
+      connectorId: request.id,
+      serverId: request.id,
+      toolNames: [],
+      skillImported: false,
+      message: "Unavailable in browser dev mode",
+    };
+  }
+  return invoke<ConnectorInstallResult>("mcp_connector_install", { request });
+}
+
+export async function fetchElicitations(): Promise<McpElicitationPrompt[]> {
+  if (!isTauri()) return [];
+  const result = await invoke<{ prompts: McpElicitationPrompt[] }>("mcp_elicitation_pending");
+  return result.prompts ?? [];
+}
+
+export async function respondElicitation(
+  id: string,
+  action: "accept" | "decline" | "cancel",
+  content?: Record<string, unknown>,
+): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("mcp_elicitation_respond", { id, action, content: content ?? null });
 }
 
 export async function disconnectMcpOAuth(serverId: string): Promise<void> {

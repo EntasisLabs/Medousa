@@ -212,6 +212,9 @@ pub struct McpOAuthStatusResponse {
 pub struct BeginMcpOAuthRequest {
     pub server_id: String,
     pub redirect_uri: String,
+    /// When set, authorization can start before the server is saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_url: Option<String>,
     #[serde(default)]
     pub scopes: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -222,6 +225,9 @@ pub struct BeginMcpOAuthRequest {
     pub client_secret: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub challenge: Option<String>,
+    /// Google refresh tokens: append `access_type=offline` to the authorization URL.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub access_type_offline: bool,
 }
 
 /// Browser handoff produced when an MCP OAuth authorization begins.
@@ -259,6 +265,50 @@ pub struct RefreshMcpOAuthRequest {
 pub struct DisconnectMcpOAuthResponse {
     pub server_id: String,
     pub disconnected: bool,
+}
+
+/// A server-driven confirmation or form, waiting for the user.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct McpElicitationPrompt {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<String>,
+    /// `form` or `url`.
+    pub mode: String,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_schema: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct McpElicitationListResponse {
+    pub prompts: Vec<McpElicitationPrompt>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct McpElicitationReply {
+    /// `accept`, `decline`, or `cancel`.
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct McpProbeRequest {
+    pub server_id: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct McpProbeResponse {
+    pub tool_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

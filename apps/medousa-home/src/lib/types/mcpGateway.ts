@@ -115,6 +115,53 @@ export interface McpGatewayTestResult {
   toolCount: number;
 }
 
+export interface ConnectorSetupField {
+  key: string;
+  title: string;
+  sensitive: boolean;
+  required: boolean;
+  link?: string | null;
+}
+
+export interface ConnectorCard {
+  id: string;
+  title: string;
+  publisher: string;
+  categories: string[];
+  transport: string;
+  authKind: string;
+  desktopOnly: boolean;
+  needsClientId: boolean;
+  googleAgentClient: boolean;
+  elicitationFallbackUrl?: string | null;
+  setup: ConnectorSetupField[];
+}
+
+export interface ConnectorInstallRequest {
+  id: string;
+  setup?: Record<string, string>;
+  clientId?: string | null;
+  clientSecret?: string | null;
+}
+
+export interface ConnectorInstallResult {
+  ok: boolean;
+  connectorId: string;
+  serverId: string;
+  toolNames: string[];
+  skillImported: boolean;
+  message: string;
+}
+
+export interface McpElicitationPrompt {
+  id: string;
+  server_id?: string | null;
+  mode: string;
+  message: string;
+  requested_schema?: unknown;
+  url?: string | null;
+}
+
 export interface McpOAuthStatus {
   serverId: string;
   status: string;

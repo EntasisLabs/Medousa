@@ -1,0 +1,29 @@
+schema = "medousa.connector/v1"
+id = "canva"
+title = "Canva"
+publisher = "Canva"
+version = "1.0.0"
+categories = ["design"]
+source = "https://www.canva.dev/docs/mcp/"
+
+[transport]
+kind = "remote"
+url = "https://mcp.canva.com/mcp"
+
+[auth]
+kind = "oauth"
+clients = ["preregistered", "cimd", "dcr", "byo"]
+scopes = []
+offline_access = true
+
+
+[skill]
+path = "SKILL.md"
+
+[suggest]
+keywords = ["canva", "design"]
+hosts = ["canva.com"]
+
+[platforms]
+desktop = true
+mobile = true

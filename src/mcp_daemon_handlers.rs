@@ -13,9 +13,10 @@ use crate::daemon::route_policy::{
 };
 use crate::mcp_gateway_api::{
     BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthRequest, CompleteMcpOAuthResponse,
-    DisconnectMcpOAuthResponse, McpGatewayHealthResponse, McpOAuthStatusResponse,
-    McpPolicyEvaluateRequest, McpPolicyEvaluateResponse, McpServerSummary, McpServersResponse,
-    RefreshMcpOAuthRequest, resolve_mcp_gateway_url,
+    DisconnectMcpOAuthResponse, McpElicitationListResponse, McpElicitationReply,
+    McpGatewayHealthResponse, McpOAuthStatusResponse, McpPolicyEvaluateRequest,
+    McpPolicyEvaluateResponse, McpProbeRequest, McpProbeResponse, McpServerSummary,
+    McpServersResponse, RefreshMcpOAuthRequest, resolve_mcp_gateway_url,
 };
 use crate::mcp_policy::evaluate_mcp_policy_with_identity;
 use crate::tools::TuiRuntime;
@@ -64,6 +65,22 @@ pub fn gateway_status_surface() -> DeclaredRouter<CapabilityApiState> {
         .route(
             gateway_admin_policy(axum::http::Method::POST, "/v1/mcp/oauth/refresh", 16 * 1024),
             post(refresh_mcp_oauth),
+        )
+        .route(
+            gateway_admin_policy(axum::http::Method::GET, "/v1/mcp/elicitations", 64 * 1024),
+            get(list_mcp_elicitations),
+        )
+        .route(
+            gateway_admin_policy(
+                axum::http::Method::POST,
+                "/v1/mcp/elicitations/{id}",
+                64 * 1024,
+            ),
+            post(respond_mcp_elicitation),
+        )
+        .route(
+            gateway_admin_policy(axum::http::Method::POST, "/v1/mcp/probe", 16 * 1024),
+            post(probe_mcp_tools),
         )
 }
 
@@ -301,6 +318,45 @@ pub async fn refresh_mcp_oauth(
         .map_err(gateway_proxy_error)
 }
 
+pub async fn list_mcp_elicitations(
+    State(state): State<CapabilityApiState>,
+) -> Result<Json<McpElicitationListResponse>, (StatusCode, String)> {
+    state
+        .agent_runtime
+        .mcp_gateway_client
+        .list_elicitations()
+        .await
+        .map(Json)
+        .map_err(gateway_proxy_error)
+}
+
+pub async fn respond_mcp_elicitation(
+    State(state): State<CapabilityApiState>,
+    Path(id): Path<String>,
+    Json(reply): Json<McpElicitationReply>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    state
+        .agent_runtime
+        .mcp_gateway_client
+        .respond_elicitation(&id, reply)
+        .await
+        .map(|()| Json(serde_json::json!({ "ok": true })))
+        .map_err(gateway_proxy_error)
+}
+
+pub async fn probe_mcp_tools(
+    State(state): State<CapabilityApiState>,
+    Json(request): Json<McpProbeRequest>,
+) -> Result<Json<McpProbeResponse>, (StatusCode, String)> {
+    state
+        .agent_runtime
+        .mcp_gateway_client
+        .probe_tools(&request.server_id, &request.url)
+        .await
+        .map(Json)
+        .map_err(gateway_proxy_error)
+}
+
 pub async fn disconnect_mcp_oauth(
     State(state): State<CapabilityApiState>,
     Path(server_id): Path<String>,
@@ -441,7 +497,7 @@ mod tests {
             .entries()
             .collect::<Vec<_>>();
         let policy = policy_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(gateway.len(), 6);
+        assert_eq!(gateway.len(), 9);
         assert!(
             gateway
                 .iter()
