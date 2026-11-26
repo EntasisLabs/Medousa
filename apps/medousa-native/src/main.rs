@@ -1,4 +1,6 @@
 mod approvals;
+mod artifact_preview;
+mod artifacts;
 mod attachments;
 mod auxiliary;
 mod backend;
@@ -37,6 +39,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         medousa_desktop_host::paths::medousa_config_dir().join("native-workspace.json"),
     ));
     workshops::install(app.world_mut());
-    rndr_render::run(app);
+    rndr_render::Session::new(app)
+        .native_host(|_| Box::new(artifact_preview::Host::default()))
+        .run();
     Ok(())
 }

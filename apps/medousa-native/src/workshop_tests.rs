@@ -48,6 +48,7 @@ fn choose(app: &mut App, view: SurfaceId, source: u64) {
         SurfaceId::Calendar => 5,
         SurfaceId::Peers => 6,
         SurfaceId::Settings => 7,
+        SurfaceId::Artifacts => 8,
     };
     assert!(workshops::action(
         app.world_mut(),
@@ -226,4 +227,17 @@ fn vault_and_canvas_destinations_are_view_local_and_epoch_fenced() {
         workshops::binding(app.world(), SurfaceId::Notes).unwrap(),
         notes
     );
+}
+#[test]
+fn artifact_destination_is_independent_rebindable_and_source_chat_stays_with_owner() {
+    let (mut app, _dir, _channels) = boot();
+    choose(&mut app, SurfaceId::Artifacts, 1);
+    let old = workshops::binding(app.world(), SurfaceId::Artifacts).unwrap();
+    assert_eq!(old.authority, "authority-b");
+    let notes = workshops::binding(app.world(), SurfaceId::Notes);
+    choose(&mut app, SurfaceId::Artifacts, 0);
+    let new = workshops::binding(app.world(), SurfaceId::Artifacts).unwrap();
+    assert_eq!(new.authority, "authority-a");
+    assert!(!new.accepts(&old));
+    assert_eq!(workshops::binding(app.world(), SurfaceId::Notes), notes);
 }

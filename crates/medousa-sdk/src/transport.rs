@@ -27,6 +27,23 @@ pub trait Transport: Send + Sync {
         })
     }
 
+    /// Authenticated JSON POST with a hard response-byte limit enforced while
+    /// streaming (including error bodies). Unsupported transports fail closed.
+    fn post_json_bounded<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+        max_bytes: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let _ = (base_url, path, body, max_bytes);
+        Box::pin(async {
+            Err(SdkError::Transport(
+                "transport does not support bounded JSON reads".into(),
+            ))
+        })
+    }
+
     fn get_json<'a>(
         &'a self,
         base_url: &'a str,
@@ -301,6 +318,45 @@ impl Transport for HttpTransport {
                 return Err(SdkError::Http(format!("{status}: {text}")));
             }
             Ok(serde_json::from_str(&text)?)
+        })
+    }
+
+    fn post_json_bounded<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+        max_bytes: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut response = self
+                .client
+                .post(Self::url(base_url, path))
+                .json(&body)
+                .send()
+                .await?;
+            let status = response.status();
+            if response
+                .content_length()
+                .is_some_and(|n| n > max_bytes as u64)
+            {
+                return Err(SdkError::Transport(
+                    "JSON response exceeds size limit".into(),
+                ));
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await? {
+                if bytes.len().saturating_add(chunk.len()) > max_bytes {
+                    return Err(SdkError::Transport(
+                        "JSON response exceeds size limit".into(),
+                    ));
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            if !status.is_success() {
+                return Err(SdkError::Http(format!("JSON request failed: {status}")));
+            }
+            Ok(serde_json::from_slice(&bytes)?)
         })
     }
 

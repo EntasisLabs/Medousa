@@ -21,7 +21,8 @@ const CALENDAR: u64 = 0x5355_0005;
 const PEERS: u64 = 0x5355_0006;
 const CREATE: u64 = 0x5355_0007;
 const SETTINGS: u64 = 0x5355_0008;
-const SURFACE_COUNT: usize = 8;
+const ARTIFACTS: u64 = 0x5355_0009;
+const SURFACE_COUNT: usize = 9;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SurfaceId {
     Chat,
@@ -32,6 +33,7 @@ pub enum SurfaceId {
     Calendar,
     Peers,
     Settings,
+    Artifacts,
 }
 impl SurfaceId {
     pub(crate) fn index(self) -> usize {
@@ -44,6 +46,7 @@ impl SurfaceId {
             Self::Calendar => 5,
             Self::Peers => 6,
             Self::Settings => 7,
+            Self::Artifacts => 8,
         }
     }
 }
@@ -57,6 +60,7 @@ pub(crate) fn rebind(world: &mut World, target: SurfaceId) -> bool {
             SurfaceId::Create => crate::create::can_rebind(world),
             SurfaceId::Reviews => crate::reviews::can_rebind(world),
             SurfaceId::Code => crate::code::can_rebind(world),
+            SurfaceId::Artifacts => crate::artifacts::can_rebind(world),
             _ => false,
         };
     if !safe {
@@ -64,7 +68,11 @@ pub(crate) fn rebind(world: &mut World, target: SurfaceId) -> bool {
     }
     if !matches!(
         target,
-        SurfaceId::Notes | SurfaceId::Create | SurfaceId::Reviews | SurfaceId::Code
+        SurfaceId::Notes
+            | SurfaceId::Create
+            | SurfaceId::Reviews
+            | SurfaceId::Code
+            | SurfaceId::Artifacts
     ) {
         return initial;
     }
@@ -89,6 +97,10 @@ pub(crate) fn rebind(world: &mut World, target: SurfaceId) -> bool {
         SurfaceId::Code => {
             crate::code::mount(world, root);
             crate::code::activate(world);
+        }
+        SurfaceId::Artifacts => {
+            crate::artifacts::mount(world, root);
+            crate::artifacts::activate(world);
         }
         _ => unreachable!(),
     }
@@ -155,6 +167,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         (CALENDAR, Icon::Clock, "Calendar"),
         (PEERS, Icon::MessageCircle, "Peers"),
         (SETTINGS, Icon::Settings, "Settings"),
+        (ARTIFACTS, Icon::Code, "Artifacts"),
     ] {
         let tile = panel(
             world,
@@ -235,7 +248,15 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         },
     );
     let roots = [
-        "Chat", "Notes", "Code", "Create", "Reviews", "Calendar", "Peers", "Settings",
+        "Chat",
+        "Notes",
+        "Code",
+        "Create",
+        "Reviews",
+        "Calendar",
+        "Peers",
+        "Settings",
+        "Artifacts",
     ]
     .map(|name| {
         let entity = panel(
@@ -257,6 +278,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     crate::calendar::mount(world, roots[5]);
     crate::peers::mount(world, roots[6]);
     crate::settings::mount(world, roots[7]);
+    crate::artifacts::mount(world, roots[8]);
     for root in &roots[1..] {
         world.insert(*root, Hidden);
     }
@@ -346,6 +368,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Calendar => !crate::calendar::can_deactivate(world),
         SurfaceId::Peers => !crate::peers::can_deactivate(world),
         SurfaceId::Settings => !crate::settings::can_deactivate(world),
+        SurfaceId::Artifacts => crate::artifacts::composing(world),
     };
     if composing {
         return;
@@ -377,6 +400,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Calendar => crate::calendar::activate(world),
         SurfaceId::Peers => crate::peers::activate(world),
         SurfaceId::Settings => crate::settings::activate(world),
+        SurfaceId::Artifacts => crate::artifacts::activate(world),
     }
     frame_wake(world).wake();
 }
@@ -390,6 +414,7 @@ pub fn action(world: &mut World, intent: &HostIntent) -> bool {
         HostIntent::Command(CALENDAR) => SurfaceId::Calendar,
         HostIntent::Command(PEERS) => SurfaceId::Peers,
         HostIntent::Command(SETTINGS) => SurfaceId::Settings,
+        HostIntent::Command(ARTIFACTS) => SurfaceId::Artifacts,
         _ => return false,
     };
     select(world, target);
@@ -519,6 +544,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4]) -> rndr_render::Raster {
         include_str!("nav_icons/calendar.svg"),
         include_str!("nav_icons/users.svg"),
         include_str!("nav_icons/settings.svg"),
+        include_str!("nav_icons/artifacts.svg"),
     ][index];
     let color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
     let svg = source.replace("currentColor", &color).replace(
@@ -586,8 +612,15 @@ mod tests {
                     w.get::<Semantics>(button.root).unwrap().name.as_deref(),
                     Some(
                         [
-                            "Chat", "Notes", "Code", "Create", "Reviews", "Calendar", "Peers",
-                            "Settings"
+                            "Chat",
+                            "Notes",
+                            "Code",
+                            "Create",
+                            "Reviews",
+                            "Calendar",
+                            "Peers",
+                            "Settings",
+                            "Artifacts"
                         ][i]
                     )
                 );

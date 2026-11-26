@@ -22,7 +22,7 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 
 const VIEW: u64 = 0x5753_4000;
-const VIEWS: [SurfaceId; 8] = [
+const VIEWS: [SurfaceId; 9] = [
     SurfaceId::Chat,
     SurfaceId::Notes,
     SurfaceId::Code,
@@ -31,6 +31,7 @@ const VIEWS: [SurfaceId; 8] = [
     SurfaceId::Calendar,
     SurfaceId::Peers,
     SurfaceId::Settings,
+    SurfaceId::Artifacts,
 ];
 const PAIR: u64 = 0x5753_0002;
 const RELOAD: u64 = 0x5753_0003;
@@ -302,6 +303,7 @@ fn restore(w: &mut World, path: std::path::PathBuf, registry: Result<WorkshopReg
         SurfaceId::Calendar,
         SurfaceId::Peers,
         SurfaceId::Settings,
+        SurfaceId::Artifacts,
     ] {
         if let Some(owner) = prefs.views.get(&format!("{surface:?}")) {
             bindings.insert(surface, Binding::new(owner.clone()));
@@ -994,6 +996,7 @@ fn redraw(w: &mut World) {
             | SurfaceId::Code
             | SurfaceId::Create
             | SurfaceId::Reviews
+            | SurfaceId::Artifacts
     ) || selected.is_none();
     let source = selected
         .as_deref()

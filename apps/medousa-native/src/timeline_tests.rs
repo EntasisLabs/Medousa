@@ -793,3 +793,38 @@ fn copy_appears_for_the_hovered_or_focused_message_only() {
         (1., 0.)
     );
 }
+
+#[test]
+fn html_artifact_cards_are_retained_controls_not_markdown_or_browsers() {
+    let (mut world, root) = fixture();
+    let mut response = item("a", "assistant", "");
+    let artifact: medousa_app_core::contract::UiArtifact = serde_json::from_value(serde_json::json!({
+        "artifactId": "saved-html", "mime": "text/html", "label": "Interactive demo", "presentation": "inline"
+    })).unwrap();
+    response.segments = Some(vec![ChatSegment::Artifact {
+        artifact: artifact.clone(),
+    }]);
+    response.ui_artifacts = Some(vec![artifact]);
+    let history = snapshot(vec![response], 1);
+    sync(&mut world, root, Some(&history));
+    let rows = &world.get::<Timeline>(root).unwrap().rows;
+    let cards = rows[0]
+        .parts
+        .iter()
+        .filter(|p| p.part.html.is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(cards.len(), 1);
+    let card = cards[0].entity;
+    assert!(world.has::<ActivationHandler>(card));
+    assert!(!world.has::<MarkdownView>(card));
+    sync(&mut world, root, Some(&history));
+    assert_eq!(
+        world.get::<Timeline>(root).unwrap().rows[0]
+            .parts
+            .iter()
+            .find(|p| p.part.html.is_some())
+            .unwrap()
+            .entity,
+        card
+    );
+}

@@ -215,6 +215,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Layout, workspace::chrome);
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
     app.add_system(Schedule::Layout, crate::calendar::chrome);
+    app.add_system(Schedule::Layout, crate::artifacts::chrome);
     app.add_system(Schedule::Layout, timeline::chrome);
     app.add_system(Schedule::Layout, visual::document_layouts);
     app.add_system(Schedule::Layout, bound_composer_triggers);
@@ -1400,6 +1401,12 @@ fn update(world: &mut World) {
                 }
                 continue;
             }
+            crate::surfaces::SurfaceId::Artifacts => {
+                if let Some(host) = host {
+                    crate::artifacts::action(world, &host);
+                }
+                continue;
+            }
             crate::surfaces::SurfaceId::Chat => {}
         }
         conversations::focus_entity(world, intent.entity);
@@ -1443,6 +1450,7 @@ fn update(world: &mut World) {
     }
     crate::notes::tick(world);
     crate::code::sync(world);
+    crate::artifacts::sync(world);
     crate::reviews::sync(world);
     crate::calendar::sync(world);
     crate::create::sync(world);

@@ -189,6 +189,27 @@ pub async fn workshop_json_request(
     serde_json::from_str(&response).map_err(|err| err.to_string())
 }
 
+/// JSON request with a streaming response limit on LAN and Iroh, including errors.
+/// Uses the same pinned config, credential refresh and no-mutation-replay policy.
+pub async fn workshop_json_request_bounded(
+    config: &WorkshopTransportConfig,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+    max_bytes: usize,
+) -> Result<serde_json::Value, String> {
+    let payload = match body {
+        Some(body) => RequestPayload::Json(serde_json::to_vec(body).map_err(|e| e.to_string())?),
+        None => RequestPayload::Empty,
+    };
+    let response =
+        workshop_request_limited(config, method, path, payload, false, Some(max_bytes)).await?;
+    if response.trim().is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
+    serde_json::from_str(&response).map_err(|e| e.to_string())
+}
+
 pub async fn workshop_post_multipart<T: DeserializeOwned>(
     config: &WorkshopTransportConfig,
     path: &str,
@@ -361,10 +382,23 @@ async fn workshop_request(
     payload: RequestPayload,
     is_stream: bool,
 ) -> Result<String, String> {
+    workshop_request_limited(config, method, path, payload, is_stream, None).await
+}
+
+async fn workshop_request_limited(
+    config: &WorkshopTransportConfig,
+    method: &str,
+    path: &str,
+    payload: RequestPayload,
+    is_stream: bool,
+    max_bytes: Option<usize>,
+) -> Result<String, String> {
     let effective = crate::pairing_client::ensure_fresh_session(config)
         .await
         .unwrap_or_else(|_| config.clone());
-    let result = workshop_request_once(&effective, method, path, &payload, is_stream).await;
+    let result =
+        workshop_request_once_limited(&effective, method, path, &payload, is_stream, max_bytes)
+            .await;
     if result
         .as_ref()
         .is_err_and(|error| is_unauthorized_error(error))
@@ -372,7 +406,10 @@ async fn workshop_request(
     {
         let refreshed =
             crate::pairing_client::refresh_session_after_unauthorized(&effective).await?;
-        return workshop_request_once(&refreshed, method, path, &payload, is_stream).await;
+        return workshop_request_once_limited(
+            &refreshed, method, path, &payload, is_stream, max_bytes,
+        )
+        .await;
     }
     result
 }
@@ -384,11 +421,29 @@ async fn workshop_request_once(
     payload: &RequestPayload,
     is_stream: bool,
 ) -> Result<String, String> {
+    workshop_request_once_limited(config, method, path, payload, is_stream, None).await
+}
+
+async fn workshop_request_once_limited(
+    config: &WorkshopTransportConfig,
+    method: &str,
+    path: &str,
+    payload: &RequestPayload,
+    is_stream: bool,
+    max_bytes: Option<usize>,
+) -> Result<String, String> {
     let route = pick_route(config).await;
     let headers = auth_headers(config);
     let result = match route {
-        WorkshopRoute::Lan => lan_request(config, method, path, &headers, payload, is_stream).await,
-        WorkshopRoute::Iroh => iroh_request(config, method, path, &headers, payload).await,
+        WorkshopRoute::Lan => {
+            lan_request_limited(
+                config, method, path, &headers, payload, is_stream, max_bytes,
+            )
+            .await
+        }
+        WorkshopRoute::Iroh => {
+            iroh_request_limited(config, method, path, &headers, payload, max_bytes).await
+        }
     };
 
     match result {
@@ -404,12 +459,15 @@ async fn workshop_request_once(
             if method != "GET" {
                 return Err(err);
             }
-            iroh_request(config, method, path, &headers, payload).await
+            iroh_request_limited(config, method, path, &headers, payload, max_bytes).await
         }
         Err(err) if route == WorkshopRoute::Iroh && is_connect_error(&err) => {
             invalidate_workshop_route_cache();
             if method == "GET" && pick_route(config).await == WorkshopRoute::Lan {
-                return lan_request(config, method, path, &headers, payload, is_stream).await;
+                return lan_request_limited(
+                    config, method, path, &headers, payload, is_stream, max_bytes,
+                )
+                .await;
             }
             Err(err)
         }
@@ -488,6 +546,7 @@ async fn lan_get_stream(
     Ok(WorkshopByteStream::Lan(response))
 }
 
+#[cfg(test)]
 async fn lan_request(
     config: &WorkshopTransportConfig,
     method: &str,
@@ -495,6 +554,18 @@ async fn lan_request(
     headers: &reqwest::header::HeaderMap,
     payload: &RequestPayload,
     is_stream: bool,
+) -> Result<String, String> {
+    lan_request_limited(config, method, path, headers, payload, is_stream, None).await
+}
+
+async fn lan_request_limited(
+    config: &WorkshopTransportConfig,
+    method: &str,
+    path: &str,
+    headers: &reqwest::header::HeaderMap,
+    payload: &RequestPayload,
+    is_stream: bool,
+    max_bytes: Option<usize>,
 ) -> Result<String, String> {
     if is_stream {
         return Err("lan_request does not support streaming bodies".to_string());
@@ -545,9 +616,9 @@ async fn lan_request(
         let response = request.send().await.map_err(|err| err.to_string())?;
         let status = response.status();
         let expected_length = response.content_length();
-        let response_bytes = match response.bytes().await {
+        let response_bytes = match read_lan_body(response, max_bytes).await {
             Ok(bytes) => bytes,
-            Err(err) if attempt + 1 < attempts => {
+            Err(err) if attempt + 1 < attempts && !err.contains("exceeds size limit") => {
                 last_body_error = Some(format_response_body_error(
                     method,
                     path,
@@ -596,7 +667,7 @@ fn format_response_body_error(
     path: &str,
     status: reqwest::StatusCode,
     expected_length: Option<u64>,
-    error: &reqwest::Error,
+    error: &impl std::fmt::Display,
 ) -> String {
     let length = expected_length
         .map(|value| format!(", expected {value} bytes"))
@@ -710,12 +781,13 @@ async fn iroh_open_stream(
     Ok(response.body)
 }
 
-async fn iroh_request(
+async fn iroh_request_limited(
     config: &WorkshopTransportConfig,
     method: &str,
     path: &str,
     headers: &reqwest::header::HeaderMap,
     payload: &RequestPayload,
+    max_bytes: Option<usize>,
 ) -> Result<String, String> {
     let ticket = config
         .iroh_ticket
@@ -758,9 +830,35 @@ async fn iroh_request(
         .await
         .map_err(|err| err.to_string())?
     {
-        out.extend_from_slice(&chunk);
+        append_bounded(&mut out, &chunk, max_bytes)?;
     }
     Ok(String::from_utf8_lossy(&out).to_string())
+}
+
+fn append_bounded(out: &mut Vec<u8>, chunk: &[u8], max_bytes: Option<usize>) -> Result<(), String> {
+    if max_bytes.is_some_and(|max| chunk.len() > max.saturating_sub(out.len())) {
+        return Err("Workshop response exceeds size limit".into());
+    }
+    out.extend_from_slice(chunk);
+    Ok(())
+}
+
+async fn read_lan_body(
+    mut response: reqwest::Response,
+    max_bytes: Option<usize>,
+) -> Result<Vec<u8>, String> {
+    if max_bytes.is_some_and(|max| {
+        response
+            .content_length()
+            .is_some_and(|len| len > max as u64)
+    }) {
+        return Err("Workshop response exceeds size limit".into());
+    }
+    let mut out = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        append_bounded(&mut out, &chunk, max_bytes)?;
+    }
+    Ok(out)
 }
 
 fn iroh_header_refs(headers: &reqwest::header::HeaderMap) -> Vec<(String, String)> {
@@ -940,5 +1038,93 @@ mod mutation_tests {
             .is_err()
         );
         server.join().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod bounded_tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    #[test]
+    fn streamed_chunk_accumulator_accepts_exact_limit_and_rejects_before_extending() {
+        // Shared by LAN and the bounded 64-KiB Iroh stream reader.
+        let mut out = Vec::new();
+        append_bounded(&mut out, b"{", Some(2)).unwrap();
+        append_bounded(&mut out, b"}", Some(2)).unwrap();
+        assert_eq!(out, b"{}");
+        assert!(append_bounded(&mut out, b" ", Some(2)).is_err());
+        assert_eq!(out, b"{}");
+        assert!(append_bounded(&mut Vec::new(), b"x", Some(0)).is_err());
+        assert!(append_bounded(&mut Vec::new(), b"", Some(0)).is_ok());
+    }
+
+    async fn bounded_lan_case(wire: &'static [u8], max: usize) -> Result<String, String> {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0; 4096];
+            let n = stream.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..n]).to_ascii_lowercase();
+            assert!(request.starts_with("post /bounded "));
+            assert!(request.contains("authorization: bearer test-token"));
+            // Fragment the HTTP body so neither reader can rely on one buffer.
+            for fragment in wire.chunks(3) {
+                if stream.write_all(fragment).is_err() {
+                    break;
+                }
+            }
+        });
+        let config = WorkshopTransportConfig {
+            lan_base: base,
+            iroh_ticket: None,
+            session_token: Some("test-token".into()),
+            pairing_id: String::new(),
+            session_expires_at: None,
+            phone_id: "phone".into(),
+            workshop_device_id: "device".into(),
+            daemon_public_key: Some("key".into()),
+        };
+        let result = lan_request_limited(
+            &config,
+            "POST",
+            "/bounded",
+            &auth_headers(&config),
+            &RequestPayload::Json(b"{}".to_vec()),
+            false,
+            Some(max),
+        )
+        .await;
+        server.join().unwrap();
+        result
+    }
+
+    #[tokio::test]
+    async fn lan_json_bound_covers_content_length_chunked_and_error_bodies() {
+        assert_eq!(
+            bounded_lan_case(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                2
+            )
+            .await
+            .unwrap(),
+            "{}"
+        );
+        assert!(
+            bounded_lan_case(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\n{} ",
+                2
+            )
+            .await
+            .unwrap_err()
+            .contains("exceeds size limit")
+        );
+        assert_eq!(bounded_lan_case(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n1\r\n{\r\n1\r\n}\r\n0\r\n\r\n", 2).await.unwrap(), "{}");
+        assert!(bounded_lan_case(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\n{}\r\n1\r\n \r\n0\r\n\r\n", 2).await.unwrap_err().contains("exceeds size limit"));
+        assert!(bounded_lan_case(b"HTTP/1.1 500 Error\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n0\r\n\r\n", 2).await.unwrap_err().contains("exceeds size limit"));
     }
 }

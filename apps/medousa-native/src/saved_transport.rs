@@ -22,6 +22,17 @@ fn path(path: &str) -> Result<(), SdkError> {
     }
     Ok(())
 }
+fn pinned_identity(
+    config: &WorkshopTransportConfig,
+    pinned: &WorkshopTransportConfig,
+) -> Result<(), String> {
+    if config.workshop_device_id != pinned.workshop_device_id
+        || config.daemon_public_key != pinned.daemon_public_key
+    {
+        return Err("Saved workshop identity changed; existing items remain pinned".into());
+    }
+    Ok(())
+}
 impl SavedTransport {
     async fn config(&self) -> Result<WorkshopTransportConfig, SdkError> {
         let id = self.1.clone();
@@ -44,11 +55,7 @@ impl SavedTransport {
                     &plan.origin,
                 )
                 .ok_or("Saved workshop credentials unavailable")?;
-            if config.workshop_device_id != pinned.workshop_device_id
-                || config.daemon_public_key != pinned.daemon_public_key
-            {
-                return Err("Saved workshop identity changed; existing items remain pinned".into());
-            }
+            pinned_identity(&config, &pinned)?;
             Ok(config)
         })
         .await
@@ -92,6 +99,26 @@ impl Transport for SavedTransport {
     }
     fn post_json<'a>(&'a self, _: &'a str, p: &'a str, body: Value) -> Json<'a> {
         self.request("POST", p, Some(body))
+    }
+    fn post_json_bounded<'a>(
+        &'a self,
+        _: &'a str,
+        p: &'a str,
+        body: Value,
+        max_bytes: usize,
+    ) -> Json<'a> {
+        Box::pin(async move {
+            path(p)?;
+            host::workshop_json_request_bounded(
+                &self.config().await?,
+                "POST",
+                p,
+                Some(&body),
+                max_bytes,
+            )
+            .await
+            .map_err(error)
+        })
     }
     fn put_json<'a>(&'a self, _: &'a str, p: &'a str, body: Value) -> Json<'a> {
         self.request("PUT", p, Some(body))
@@ -232,5 +259,55 @@ impl Transport for SavedTransport {
                 }
             },
         ))
+    }
+}
+
+#[cfg(test)]
+mod bounded_tests {
+    use super::*;
+
+    fn config() -> WorkshopTransportConfig {
+        WorkshopTransportConfig {
+            lan_base: "http://127.0.0.1:1".into(),
+            iroh_ticket: None,
+            session_token: Some("old-token".into()),
+            pairing_id: "pair".into(),
+            session_expires_at: None,
+            phone_id: "phone".into(),
+            workshop_device_id: "workshop".into(),
+            daemon_public_key: Some("key".into()),
+        }
+    }
+
+    #[test]
+    fn bounded_saved_requests_keep_device_and_key_pinned_but_allow_token_rotation() {
+        let pinned = config();
+        let mut current = config();
+        current.session_token = Some("rotated-token".into());
+        assert!(pinned_identity(&current, &pinned).is_ok());
+        current.workshop_device_id = "other".into();
+        assert!(pinned_identity(&current, &pinned).is_err());
+        current.workshop_device_id = pinned.workshop_device_id.clone();
+        current.daemon_public_key = Some("other".into());
+        assert!(pinned_identity(&current, &pinned).is_err());
+        current.daemon_public_key = None;
+        assert!(pinned_identity(&current, &pinned).is_err());
+    }
+
+    #[tokio::test]
+    async fn bounded_saved_request_rejects_external_paths_before_resolving_credentials() {
+        let transport = SavedTransport(config(), "unused-id".into());
+        for path in [
+            "https://other/v1/runtime/artifact/fetch",
+            "//other/path",
+            "/path#fragment",
+            "/path\\escape",
+        ] {
+            let err = transport
+                .post_json_bounded("", path, Value::Null, 12)
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains("relative API path"));
+        }
     }
 }

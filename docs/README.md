@@ -66,7 +66,7 @@ Assistant runtime: [Batch-stop workers, jobs and follow-ups](engine/agent-tools.
 | [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, revisit images, and inspect terminal-produced files |
 | [Coding runtimes](guides/coding-runtimes.md) | Choose a preferred coder, ordered fallbacks, and follow assigned work |
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
-| [Saved artifacts](guides/artifacts.md) | Find and show earlier HTML artifacts in chat |
+| [Saved artifacts](guides/artifacts.md) | Find and show earlier HTML artifacts in chat; native preview support |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
 | [Delegation approvals](guides/delegation-approvals.md) | Follow in-chat task receipts, the slim work/decision line, workshop activity counts, worker result delivery, and explicit delegation approvals |
 | Full index | [guides/README.md](guides/README.md) |

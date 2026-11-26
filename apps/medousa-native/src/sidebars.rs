@@ -8,7 +8,7 @@ use crate::workspace::{SIDE_MAX, SIDE_MIN, Side, Workspace};
 use rndr_core::*;
 
 /// Destinations with a sidebar, in `Preferences::sides` order.
-const SURFACES: [SurfaceId; 7] = [
+const SURFACES: [SurfaceId; 8] = [
     SurfaceId::Notes,
     SurfaceId::Code,
     SurfaceId::Create,
@@ -16,6 +16,7 @@ const SURFACES: [SurfaceId; 7] = [
     SurfaceId::Calendar,
     SurfaceId::Peers,
     SurfaceId::Settings,
+    SurfaceId::Artifacts,
 ];
 /// Content keeps at least this much room beside a widened sidebar.
 const CONTENT_MIN: f32 = 360.;

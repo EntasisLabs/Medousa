@@ -140,3 +140,16 @@ Connection closure is recorded when discovered during reuse; snapshots do not
 actively probe peers. Tickets, URLs, headers, payloads, and peer-supplied close
 reasons are never recorded. This is an in-memory diagnostic history, not a
 durable work or delivery receipt.
+
+### Bounded JSON responses
+
+`Transport::post_json_bounded(base_url, path, body, max_bytes)` provides an
+object-safe authenticated POST for size-sensitive consumers such as native HTML
+artifact previews. Implementations must reject oversized responses while reading
+(including chunked responses); checking only `Content-Length` or limiting an
+already-parsed value is insufficient. The default implementation returns an
+unsupported-transport error, never falls back to unbounded `post_json`.
+`HttpTransport` uses its existing client/credentials, enforces the declared and
+streamed response limits, and parses JSON only after the bounded read succeeds.
+The limit is on wire JSON bytes; callers must separately admit decoded content
+size and identity. Existing unbounded JSON methods are unchanged.

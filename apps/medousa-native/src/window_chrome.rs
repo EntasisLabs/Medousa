@@ -29,7 +29,7 @@ struct Chrome {
     tabs: Entity,
     fallback: Entity,
     destination: Entity,
-    documents: [Entity; 2],
+    documents: [Entity; 3],
     caption: Entity,
 }
 
@@ -296,6 +296,11 @@ pub(super) fn place_tabs(world: &mut World, strip: TabStripHandle) {
     world.insert(bar, Color::rgba(0., 0., 0., 0.));
     world.insert(bar, ResolvedColor);
 }
+/// Artifacts use the titlebar for their single document toolbar, not a tab row.
+pub(crate) fn artifact_toolbar_host(world: &World) -> Option<Entity> {
+    world.resource::<Chrome>().map(|state| state.documents[2])
+}
+
 /// Keep the strip root in its surface for event identity; only its bar moves.
 /// Standalone editor fixtures without a window host retain the local tab row.
 pub(crate) fn clear_document_tabs(world: &mut World, notes: bool) {
@@ -563,10 +568,10 @@ pub fn polish(world: &mut World) {
     let mut has_document = false;
     for (i, host) in documents.into_iter().enumerate() {
         let selected = active
-            == if i == 0 {
-                crate::surfaces::SurfaceId::Notes
-            } else {
-                crate::surfaces::SurfaceId::Code
+            == match i {
+                0 => crate::surfaces::SurfaceId::Notes,
+                1 => crate::surfaces::SurfaceId::Code,
+                _ => crate::surfaces::SurfaceId::Artifacts,
             };
         let populated = children_of(world, host)
             .iter()
@@ -582,6 +587,7 @@ pub fn polish(world: &mut World) {
     world.get_mut::<Label>(destination).unwrap().text = match active {
         crate::surfaces::SurfaceId::Notes => "Notes",
         crate::surfaces::SurfaceId::Code => "Code",
+        crate::surfaces::SurfaceId::Artifacts => "Artifacts",
         _ => "Medousa",
     }
     .into();

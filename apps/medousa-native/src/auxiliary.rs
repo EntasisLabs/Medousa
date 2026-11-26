@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex, mpsc};
 
 pub enum Command {
     Preview(media_preview::Key),
+    Artifact(crate::artifact_preview::Request),
+    Library(crate::artifacts::Command),
     Context(context::ContextCommand),
     Approval(approvals::ApprovalCommand),
     Attachment(attachments::AttachmentCommand),
@@ -38,6 +40,8 @@ enum Update {
     PeerManagement(crate::peer_management::Update),
     Workshop(crate::ui::workshop_status::Update),
     Preview(media_preview::PreviewUpdate),
+    Artifact(crate::artifact_preview::Update),
+    Library(crate::artifacts::Update),
     Context(context::ContextUpdate),
     Approval(approvals::ApprovalUpdate),
     Attachment(attachments::AttachmentUpdate),
@@ -100,6 +104,8 @@ impl Auxiliary {
                         return;
                     }
                     let result=match command {
+                    Command::Library(c)=>Ok(Update::Library(crate::artifacts::execute(&client,c).await)),
+                    Command::Artifact(c)=> { let _permit=previews.acquire_owned().await.expect("preview semaphore"); Ok(Update::Artifact(crate::artifact_preview::execute(&client,c).await)) },
                     Command::Preview(c)=> { let _permit=previews.acquire_owned().await.expect("preview semaphore"); Ok(Update::Preview(media_preview::execute(&client,c).await)) },
                     Command::PeerManagement(c)=>Ok(Update::PeerManagement(crate::peer_management::execute(&client,c).await)),
                     Command::Peers(c)=>Ok(Update::Peers(crate::peers::execute(&client,c).await)),
@@ -159,6 +165,8 @@ pub fn tick(world: &mut World) {
             Update::Note(u) => crate::notes::apply(world, u),
             Update::Review(u) => crate::reviews::apply(world, u),
             Update::Code(u) => crate::code::apply(world, u),
+            Update::Library(u) => crate::artifacts::apply(world, u),
+            Update::Artifact(u) => crate::artifact_preview::apply(world, u),
             Update::Preview(u) => media_preview::apply(world, u),
             Update::Context(u) => context::apply(world, u),
             Update::Approval(u) => approvals::apply(world, u),
@@ -203,6 +211,8 @@ fn available(world: &World, view: crate::surfaces::SurfaceId) -> bool {
         })
 }
 pub fn dispatch(world: &mut World) {
+    // Preview lifetime is a UI concern, including when every source is offline.
+    crate::artifact_preview::tick(world);
     if world
         .resource::<crate::workshops::Workshops>()
         .is_some_and(|s| s.auxiliaries.is_empty())
@@ -290,6 +300,20 @@ pub fn dispatch(world: &mut World) {
         .map(Command::Code),
     )
     .chain(
+        (if available(world, crate::surfaces::SurfaceId::Artifacts) {
+            crate::artifacts::take_commands(world)
+        } else {
+            vec![]
+        })
+        .into_iter()
+        .map(Command::Library),
+    )
+    .chain(
+        crate::artifact_preview::drain_commands(world)
+            .into_iter()
+            .map(Command::Artifact),
+    )
+    .chain(
         media_preview::drain_commands(world)
             .into_iter()
             .map(Command::Preview),
@@ -329,6 +353,7 @@ pub(crate) fn send(world: &World, mut command: Command) {
     use crate::surfaces::SurfaceId as V;
     if let Some(s) = world.resource::<crate::workshops::Workshops>() {
         let view = match &command {
+            Command::Library(_) => Some(V::Artifacts),
             Command::Note(_) => Some(V::Notes),
             Command::Create(_) => Some(V::Create),
             Command::Code(_) => Some(V::Code),
@@ -346,6 +371,7 @@ pub(crate) fn send(world: &World, mut command: Command) {
         } else {
             let session = match &command {
                 Command::Preview(c) => &c.session,
+                Command::Artifact(c) => &c.session,
                 Command::Attachment(c) => &c.session,
                 Command::Context(c) => &c.session,
                 Command::Approval(c) => &c.session,

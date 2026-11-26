@@ -16,6 +16,7 @@ struct Part {
     details: Option<String>,
     tools: Vec<ToolRunState>,
     images: Vec<(String, String)>,
+    html: Option<(String, String)>,
 }
 pub struct ReadingIdentity {
     pub sender: String,
@@ -749,7 +750,8 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
             Some(mut mounted)
                 if mounted.part.details.is_some() == part.details.is_some()
                     && mounted.part.tools.is_empty() == part.tools.is_empty()
-                    && mounted.part.images == part.images =>
+                    && mounted.part.images == part.images
+                    && mounted.part.html == part.html =>
             {
                 if mounted.part != part {
                     if !part.tools.is_empty() {
@@ -760,7 +762,7 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
                             body.title = part.text.clone();
                             body.dirty = true;
                         }
-                    } else if part.images.is_empty() {
+                    } else if part.images.is_empty() && part.html.is_none() {
                         let view = world.get_mut::<MarkdownView>(mounted.entity).unwrap();
                         if let Some(suffix) = part.text.strip_prefix(view.source()) {
                             view.push_str(suffix);
@@ -776,7 +778,9 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
                 if let Some(old) = other {
                     despawn(world, old.entity);
                 }
-                let entity = if !part.images.is_empty() {
+                let entity = if let Some((id, label)) = &part.html {
+                    crate::artifact_preview::mount(world, body, session, id, label)
+                } else if !part.images.is_empty() {
                     crate::media_preview::gallery(world, body, session, &part.images)
                 } else if !part.tools.is_empty() {
                     tool_activity::mount(world, body, None, &item.id, &part)
@@ -1022,6 +1026,7 @@ fn plain(id: impl Into<String>, text: String) -> Part {
         details: None,
         tools: vec![],
         images: vec![],
+        html: None,
     }
 }
 fn detail(id: impl Into<String>, title: String, text: String) -> Part {
@@ -1031,6 +1036,7 @@ fn detail(id: impl Into<String>, title: String, text: String) -> Part {
         details: Some(text),
         tools: vec![],
         images: vec![],
+        html: None,
     }
 }
 fn tool(run: &ToolRunState) -> Part {
@@ -1040,10 +1046,26 @@ fn tool(run: &ToolRunState) -> Part {
         details: None,
         tools: vec![run.clone()],
         images: vec![],
+        html: None,
     }
 }
 fn tool_parts(run: &ToolRunState, parts: &mut Vec<Part>, images: &mut HashSet<String>) {
     parts.push(tool(run));
+    for reference in run.artifact_refs.iter().flatten().filter(|r| {
+        run.status == "succeeded"
+            && r.role == "output"
+            && crate::artifact_preview::is_html(&r.content_type)
+    }) {
+        if let Some(id) = reference.artifact_id.as_deref() {
+            if images.insert(id.into()) {
+                let label = reference.label.as_deref().unwrap_or("HTML artifact");
+                let mut part = plain(format!("artifact:{id}"), literal(label));
+                part.html = Some((id.into(), label.into()));
+                parts.push(part);
+            }
+        }
+    }
+
     for (id, label) in output_images(run) {
         if images.insert(id.to_owned()) {
             let mut part = plain(format!("artifact:{id}"), literal(label));
@@ -1154,6 +1176,14 @@ fn present_observations(parts: Vec<Part>) -> Vec<Part> {
     result
 }
 fn artifact_part(artifact: &medousa_app_core::contract::UiArtifact) -> Part {
+    if crate::artifact_preview::is_html(&artifact.mime) {
+        let mut part = plain(
+            format!("artifact:{}", artifact.artifact_id),
+            literal(&artifact.label),
+        );
+        part.html = Some((artifact.artifact_id.clone(), artifact.label.clone()));
+        return part;
+    }
     if artifact.mime.starts_with("image/") && artifact.artifact_id.starts_with("art:") {
         let mut part = plain(
             format!("artifact:{}", artifact.artifact_id),
