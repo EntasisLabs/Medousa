@@ -21,6 +21,8 @@ struct Parked {
 }
 struct Deck {
     shell: ShellCore,
+    normal_route: u64,
+    bot_sessions: std::collections::HashSet<String>,
     parked: HashMap<u64, Parked>,
     next: u64,
     workspace_visible: Vec<u64>,
@@ -120,6 +122,8 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> Entity {
     button(world, empty, NEW, "New chat", true);
     world.insert_resource(Deck {
         shell: ShellCore::new("native-local"),
+        normal_route: 0,
+        bot_sessions: Default::default(),
         parked: HashMap::new(),
         next: 1,
         workspace_visible: Vec::new(),
@@ -400,7 +404,7 @@ pub(super) fn focus_entity(world: &mut World, mut entity: Entity) {
 /// Resolve only visible composer cards, never an offscreen retained tab.
 /// Path-only native drops intentionally target the currently focused chat.
 pub(super) fn drop_target(world: &World, point: Option<[f32; 2]>) -> Option<Entity> {
-    if crate::surfaces::effective(world) != crate::surfaces::SurfaceId::Chat {
+    if !matches!(crate::surfaces::effective(world), crate::surfaces::SurfaceId::Chat | crate::surfaces::SurfaceId::Bots) {
         return None;
     }
     let current = world.resource::<Ui>()?;
@@ -469,6 +473,18 @@ pub(super) fn navigate(world: &mut World, action: u64) {
     }
 }
 pub(super) fn open(world: &mut World, session: Option<String>) {
+    if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Bots
+        && !session.as_deref().is_some_and(|s| crate::bots::is_bot_session(world, s))
+    {
+        crate::surfaces::select(world, crate::surfaces::SurfaceId::Chat);
+        if crate::surfaces::active(world) != crate::surfaces::SurfaceId::Chat { return; }
+    }
+    if session.as_deref().is_some_and(|s| crate::bots::is_bot_session(world, s))
+        && crate::surfaces::active(world) != crate::surfaces::SurfaceId::Bots
+    {
+        open_bot(world, session.unwrap());
+        return;
+    }
     if composing(world) {
         return;
     }
@@ -618,7 +634,45 @@ pub(super) fn catalog(
         update(&mut parked.model, owner, &models, &modes, &rows, &cursor);
     }
 }
+pub(super) fn remember_bot_session(world: &mut World, session: String) {
+    world.resource_mut::<Deck>().unwrap().bot_sessions.insert(session.clone());
+    let tabs: Vec<_> = snapshot(world).layout.tabs.iter().filter_map(|tab| match tab {
+        ShellTab::Chat { id, session_id, .. } if session_id == &session => Some(id.clone()),
+        _ => None,
+    }).collect();
+    for tab_id in tabs { command(world, ShellCommand::CloseTab { tab_id }); }
+}
+pub(super) fn known_bot_session(world: &World, session: &str) -> bool {
+    world.resource::<Deck>().is_some_and(|d| d.bot_sessions.contains(session))
+}
+fn model_is_bot(world: &World, m: &Model) -> bool {
+    m.chat.session().or(m.requested_session.as_deref())
+        .is_some_and(|s| crate::bots::is_bot_session(world, s))
+}
+pub(super) fn open_bot(world: &mut World, session: String) {
+    if composing(world) { return; }
+    let normal = (!model_is_bot(world, world.resource::<Model>().unwrap())).then(|| current(world));
+    crate::surfaces::select(world, crate::surfaces::SurfaceId::Bots);
+    if crate::surfaces::active(world) != crate::surfaces::SurfaceId::Bots { return; }
+    let deck = world.resource_mut::<Deck>().unwrap();
+    if let Some(route) = normal { deck.normal_route = route; }
+    deck.bot_sessions.insert(session.clone());
+    open(world, Some(session));
+}
+pub(super) fn activate_normal(world: &mut World) {
+    let Some(deck) = world.resource::<Deck>() else { return; };
+    if model_is_bot(world, world.resource::<Model>().unwrap()) {
+        let route = deck.normal_route;
+        let root = world.resource::<Ui>().unwrap().content;
+        world.insert(root, Hidden);
+        focus(world, route);
+        if model_is_bot(world, world.resource::<Model>().unwrap()) {
+            open(world, None);
+        }
+    }
+}
 fn register(world: &mut World) {
+    if model_is_bot(world, world.resource::<Model>().unwrap()) { return; }
     if world
         .resource::<Deck>()
         .unwrap()
@@ -974,6 +1028,25 @@ fn release(world: &mut World, route: u64) {
 }
 pub(super) fn sync_all(world: &mut World) {
     release_closed(world);
+    if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat
+        && model_is_bot(world, world.resource::<Model>().unwrap())
+    {
+        let session = world.resource::<Model>().unwrap().chat.session()
+            .or(world.resource::<Model>().unwrap().requested_session.as_deref()).unwrap().to_owned();
+        open_bot(world, session);
+    }
+    if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Bots {
+        sync(world);
+        chrome::begin_tabs(world);
+        chrome::pane_commands(world, false, false);
+        let root = world.resource::<Ui>().unwrap().content;
+        let others: Vec<_> = world.resource::<Deck>().unwrap().parked.values().map(|p| p.ui.content).collect();
+        for entity in others { world.insert(entity, Hidden); }
+        let host = crate::surfaces::root(world, crate::surfaces::SurfaceId::Bots).unwrap();
+        set_parent(world, root, host);
+        world.remove::<Hidden>(root);
+        return;
+    }
     if current(world) == 0
         && world.resource::<Model>().unwrap().chat.session().is_some()
         && snapshot(world).layout.tabs.is_empty()
@@ -1188,6 +1261,17 @@ pub(super) fn sync_all(world: &mut World) {
             .groups
             .iter()
             .position(|g| g.active_tab_id.as_deref() == Some(&id(r)));
+        let bot = if r == current(world) {
+            model_is_bot(world, world.resource::<Model>().unwrap())
+        } else {
+            model_is_bot(world, &world.resource::<Deck>().unwrap().parked[&r].model)
+        };
+        if bot {
+            let host = crate::surfaces::root(world, crate::surfaces::SurfaceId::Bots).unwrap();
+            set_parent(world, root, host);
+            world.insert(root, Hidden);
+            continue;
+        }
         let visible = group.is_some_and(|i| two || i == active_group)
             || (r == current(world)
                 && world.resource::<Model>().unwrap().chat.session().is_none()
@@ -1257,6 +1341,39 @@ mod tests {
             .unwrap()
             .text()
             .to_string()
+    }
+    #[test]
+    fn bot_chat_is_separate_and_restores_normal_session_and_drafts() {
+        use crate::surfaces::{self, SurfaceId};
+        let mut app = fixture();
+        let normal = loaded(&mut app, "ordinary");
+        text(app.world_mut(), "normal draft");
+        let normal_root = app.world().resource::<Ui>().unwrap().content;
+        let before = snapshot(app.world());
+        open_bot(app.world_mut(), "bot-primary".into());
+        let bot_route = current(app.world());
+        reply(app.world_mut(), Reply { generation: bot_route, update: Update::History("bot-primary".into(), "a".into(), vec![], None) });
+        text(app.world_mut(), "bot draft");
+        for _ in 0..6 { app.update(); }
+        let bot_root = app.world().resource::<Ui>().unwrap().content;
+        let host = surfaces::root(app.world(), SurfaceId::Bots).unwrap();
+        assert_eq!(surfaces::active(app.world()), SurfaceId::Bots);
+        assert!(surfaces::descendant(app.world(), bot_root, host));
+        assert!(!app.world().has::<Hidden>(bot_root));
+        assert!(app.world().has::<Hidden>(surfaces::root(app.world(), SurfaceId::Chat).unwrap()));
+        assert_eq!(snapshot(app.world()).layout.tabs, before.layout.tabs);
+        surfaces::select(app.world_mut(), SurfaceId::Chat);
+        for _ in 0..6 { app.update(); }
+        assert_eq!(current(app.world()), normal);
+        assert_eq!(draft(app.world()), "normal draft");
+        assert_eq!(app.world().resource::<Ui>().unwrap().content, normal_root);
+        assert!(app.world().has::<Hidden>(bot_root));
+        open_bot(app.world_mut(), "bot-primary".into());
+        for _ in 0..6 { app.update(); }
+        assert_eq!(current(app.world()), bot_route);
+        assert_eq!(draft(app.world()), "bot draft");
+        assert_eq!(app.world().resource::<Ui>().unwrap().content, bot_root);
+        assert_eq!(snapshot(app.world()).layout.tabs, before.layout.tabs);
     }
     #[test]
     fn workspace_catalog_and_focus_keep_canonical_drafts_and_entities() {

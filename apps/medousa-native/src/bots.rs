@@ -461,7 +461,7 @@ fn render(w: &mut World, s: &mut State) {
         );
         rndr_ui::inputs::Tooltip::attach(w, e, &bot.display_name).unwrap();
         // Accent is a restrained selected wash, never a solid avatar box.
-        let selected = crate::surfaces::active(w) == SurfaceId::Chat
+        let selected = crate::surfaces::active(w) == SurfaceId::Bots
             && bot.primary_session_id.as_ref().is_some_and(|session| {
                 Some(crate::routing::qualify(
                     s.binding.as_ref().map_or("", |b| b.authority.as_str()),
@@ -863,6 +863,14 @@ fn nav_destinations(s: &State) -> Vec<(String, bool)> {
         })
         .unwrap_or_default()
 }
+pub(crate) fn is_bot_session(w: &World, session: &str) -> bool {
+    if crate::ui::is_known_bot_session(w, session) { return true; }
+    w.resource::<Slot>().and_then(|slot| slot.0.as_ref()).is_some_and(|s| {
+        s.bots.iter().any(|b| b.primary_session_id.as_ref().is_some_and(|id| {
+            crate::routing::qualify(s.binding.as_ref().map_or("", |b| b.authority.as_str()), id) == session
+        }))
+    })
+}
 pub(crate) fn has_active_identity(w: &World) -> bool {
     let Some(s) = w.resource::<Slot>().and_then(|slot| slot.0.as_ref()) else {
         return false;
@@ -1202,6 +1210,9 @@ pub fn apply(w: &mut World, u: api::Update) {
                 s.notice = e;
             }
             Ok(api::Outcome::Listed(bots)) => {
+                for session in bots.iter().filter_map(|b| b.primary_session_id.as_ref()) {
+                    crate::ui::remember_bot_session(w, crate::routing::qualify(&u.binding.authority, session));
+                }
                 s.bots = bots.into_iter().filter(|b| !b.archived).collect();
                 s.notice.clear();
             }
@@ -1264,7 +1275,7 @@ pub fn apply(w: &mut World, u: api::Update) {
                 s.open = false;
                 s.draft = None;
                 s.notice.clear();
-                crate::ui::open_conversation(w, handle);
+                crate::ui::open_bot_conversation(w, handle);
             }
         }
         s.dirty = true;
@@ -1335,6 +1346,66 @@ mod tests {
             render(w, s);
         });
         app
+    }
+    #[test]
+    fn navigation_editor_keeps_approved_overlay_and_does_not_navigate() {
+        let mut app = fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let _channels = crate::workshops::install_fixture(
+            app.world_mut(),
+            dir.path().join("sources.json"),
+            &[("a", "Workshop A")],
+        );
+        let w = app.world_mut();
+        let session = crate::ui::active_chat_session(w);
+        let chat = crate::surfaces::root(w, SurfaceId::Chat).unwrap();
+        let view = crate::surfaces::root(w, SurfaceId::Bots).unwrap();
+        action(w, &HostIntent::Command(PLUS));
+        sync(w);
+        assert_eq!(crate::surfaces::active(w), SurfaceId::Chat);
+        assert!(!w.has::<Hidden>(chat));
+        assert!(w.has::<Hidden>(view));
+        let s = w.resource::<Slot>().unwrap().0.as_ref().unwrap();
+        assert!(!crate::surfaces::descendant(w, s.root, view));
+        assert!(w.has::<Absolute>(s.root));
+        assert!(w.has::<Layer>(s.root));
+        assert_eq!(w.get::<Layout>(s.root).unwrap().width, Size::Px(368.));
+        action(w, &HostIntent::Command(CLOSE));
+        sync(w);
+        assert_eq!(crate::surfaces::active(w), SurfaceId::Chat);
+        assert!(!w.has::<Hidden>(chat));
+        assert!(w.has::<Hidden>(view));
+        assert_eq!(crate::ui::active_chat_session(w), session);
+    }
+    #[test]
+    fn navigation_editor_leaves_selected_destination_unchanged() {
+        let mut app = fixture();
+        let dir = tempfile::tempdir().unwrap();
+        let _channels = crate::workshops::install_fixture(
+            app.world_mut(),
+            dir.path().join("sources.json"),
+            &[("a", "Workshop A")],
+        );
+        let w = app.world_mut();
+        crate::surfaces::select(w, SurfaceId::Notes);
+        action(w, &HostIntent::Command(PLUS));
+        action(w, &HostIntent::Command(NEW));
+        sync(w);
+        let field = w.resource::<Slot>().unwrap().0.as_ref().unwrap().fields[0];
+        w.get_mut::<Label>(field).unwrap().text = "My unsaved companion".into();
+        w.resource_mut::<Focus>().unwrap().entity = Some(field);
+        assert_eq!(crate::surfaces::active(w), SurfaceId::Notes);
+        sync(w);
+        let s = w.resource::<Slot>().unwrap().0.as_ref().unwrap();
+        assert!(s.open);
+        assert!(s.draft.is_some());
+        action(w, &HostIntent::Command(CLOSE));
+        assert_eq!(crate::surfaces::active(w), SurfaceId::Notes);
+        // Opening and closing the settled editor never changes destinations.
+        crate::surfaces::select(w, SurfaceId::Notes);
+        action(w, &HostIntent::Command(PLUS));
+        action(w, &HostIntent::Command(CLOSE));
+        assert_eq!(crate::surfaces::active(w), SurfaceId::Notes);
     }
     #[test]
     fn stale_bot_and_nav_results_do_not_cross_authorities() {

@@ -24,7 +24,9 @@ const SETTINGS: u64 = 0x5355_0008;
 const ARTIFACTS: u64 = 0x5355_0009;
 const TERMINAL: u64 = 0x5355_000a;
 const WORKSPACE: u64 = 0x5355_000b;
+// Bot conversations have a retained view, but no extra rail destination.
 const SURFACE_COUNT: usize = 11;
+const VIEW_COUNT: usize = 12;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SurfaceId {
     Chat,
@@ -38,6 +40,7 @@ pub enum SurfaceId {
     Artifacts,
     Terminal,
     Workspace,
+    Bots,
 }
 impl SurfaceId {
     pub(crate) fn index(self) -> usize {
@@ -53,6 +56,7 @@ impl SurfaceId {
             Self::Artifacts => 8,
             Self::Terminal => 9,
             Self::Workspace => 10,
+            Self::Bots => 11,
         }
     }
 }
@@ -122,13 +126,13 @@ pub(crate) fn rebind(world: &mut World, target: SurfaceId) -> bool {
 }
 struct SurfaceHost {
     active: SurfaceId,
-    roots: [Entity; SURFACE_COUNT],
+    roots: [Entity; VIEW_COUNT],
     rail: Entity,
     tiles: [Entity; SURFACE_COUNT],
     buttons: [controls::ControlHandle; SURFACE_COUNT],
     icons: [Entity; SURFACE_COUNT],
     icon_keys: [Option<(u32, [u8; 4], bool)>; SURFACE_COUNT],
-    focus: [Option<Entity>; SURFACE_COUNT],
+    focus: [Option<Entity>; VIEW_COUNT],
 }
 fn panel(world: &mut World, parent: Entity, layout: Layout) -> Entity {
     let entity = world.spawn((layout,));
@@ -291,6 +295,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         "Artifacts",
         "Terminal",
         "Workspace",
+        "Bots",
     ]
     .map(|name| {
         let entity = panel(
@@ -326,7 +331,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         buttons: buttons.try_into().ok().expect("one button per surface"),
         icons: icons.try_into().ok().expect("one icon per surface"),
         icon_keys: [None; SURFACE_COUNT],
-        focus: [None; SURFACE_COUNT],
+        focus: [None; VIEW_COUNT],
     });
     roots[0]
 }
@@ -472,7 +477,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         return;
     }
     let composing = match host.active {
-        SurfaceId::Chat => {
+        SurfaceId::Chat | SurfaceId::Bots => {
             let doc = world.resource::<crate::ui::Model>().unwrap().document_id();
             world
                 .resource::<editing::SourceDocuments>()
@@ -513,7 +518,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
     });
     world.resource_mut::<Focus>().unwrap().entity = focus;
     match target {
-        SurfaceId::Chat => {}
+        SurfaceId::Chat => crate::ui::activate_normal_chat(world),
         SurfaceId::Notes => crate::notes::activate(world),
         SurfaceId::Code => crate::code::activate(world),
         SurfaceId::Create => crate::create::activate(world),
@@ -524,6 +529,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Artifacts => crate::artifacts::activate(world),
         SurfaceId::Terminal => crate::terminal::activate(world),
         SurfaceId::Workspace => crate::multiplexer::activate(world),
+        SurfaceId::Bots => {}
     }
     frame_wake(world).wake();
 }

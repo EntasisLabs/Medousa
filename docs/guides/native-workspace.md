@@ -27,7 +27,7 @@ send shortcuts do not send a message while another workspace is active.
 ## Customize navigation and pin bots
 
 Press **+** on the navigation rail to open **Customize navigation**. Toggle
-supported app destinations, and use the up-arrow controls to change their order.
+supported app destinations, and use the up/down controls to change their order.
 The rail keeps the existing destination layout, with **+** above Settings.
 The shared destinations use the daemon's active environment preset; native-only
 Create, Reviews, and Terminal entries use explicitly native rail metadata in that
@@ -45,6 +45,11 @@ creates an identity manuscript for those instructions and opens the bot's chat.
 This is a multi-step daemon operation: a failure may leave a manuscript behind;
 the error identifies it for recovery, and the app does not silently retry or
 pretend it rolled back the operation.
+
+A bot's primary conversation opens in its own retained view, separate from normal
+chat-session history and tabs. Selecting **Chat** restores the previous normal
+conversation; reopening a bot retains its conversation and unsent draft. Bot
+avatars still open the same daemon-backed primary session, never a duplicate.
 
 In a bot's primary chat, its avatar/name and **Customize** control distinguish it
 from an ordinary conversation. The right-hand editor changes its name,

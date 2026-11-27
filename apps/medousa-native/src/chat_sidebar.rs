@@ -533,8 +533,9 @@ pub(super) fn render(
     }
     let revision = s.revision;
     let today = Local::now().date_naive();
+    let bot_sessions: Vec<_> = rows.iter().filter(|(id, _)| crate::bots::is_bot_session(world, id)).map(|(id, _)| id.as_str()).collect();
     let key = format!(
-        "{rows:?}{selected:?}{today}{revision}{authority:?}{}",
+        "{rows:?}{selected:?}{today}{revision}{authority:?}{bot_sessions:?}{}",
         world.resource::<Model>().unwrap().search_query
     );
     if world.resource::<Model>().unwrap().sidebar_key == key {
@@ -548,6 +549,7 @@ pub(super) fn render(
             rows.iter()
                 .enumerate()
                 .filter_map(|(i, (id, _))| {
+                    if bot_sessions.contains(&id.as_str()) { return None; }
                     let group = if authority
                         .as_ref()
                         .and_then(|a| s.pins.get(a))
@@ -805,6 +807,31 @@ mod tests {
             assert!(menu.item(w, id).is_some(), "{id:x}");
         }
         assert!(menu.item(w, ROW_OPEN).is_none(), "already open");
+    }
+    #[test]
+    fn bot_sessions_are_excluded_from_history_search_and_pins_without_reindexing() {
+        let mut app = fixture();
+        hydrate(&mut app, "today", "authority-a");
+        crate::ui::remember_bot_session(app.world_mut(), "today".into());
+        app.update();
+        assert!(!visible(app.world(), row(app.world(), 0, 0)));
+        set_pin(app.world_mut(), "today", true);
+        app.update();
+        let w = app.world();
+        assert!(w.resource::<State>().unwrap().sections.iter().flatten().all(|section| {
+            children_of(w, *section).into_iter().all(|entity| {
+                rndr_ui::identity(w, entity) != Some(UiId(SESSION)) || !visible(w, entity)
+            })
+        }));
+        app.world_mut().resource_mut::<Model>().unwrap().search_query = "bot".into();
+        app.update();
+        let w = app.world();
+        assert!(w.resource::<State>().unwrap().sections.iter().flatten().all(|section| {
+            children_of(w, *section).into_iter().all(|entity| {
+                rndr_ui::identity(w, entity) != Some(UiId(SESSION)) || !visible(w, entity)
+            })
+        }));
+        assert_eq!(w.resource::<Model>().unwrap().sessions[0].0, "today");
     }
     #[test]
     fn pins_are_a_separate_scoped_destination_and_do_not_navigate_or_send() {

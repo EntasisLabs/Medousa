@@ -1362,7 +1362,7 @@ fn update(world: &mut World) {
     crate::terminal::tick(world);
     refresh_idle_chat(world);
     crate::surfaces::remember_focus(world);
-    let chat_active = crate::surfaces::effective(world) == crate::surfaces::SurfaceId::Chat;
+    let chat_active = matches!(crate::surfaces::effective(world), crate::surfaces::SurfaceId::Chat | crate::surfaces::SurfaceId::Bots);
     if chat_active {
         conversations::focus_from_input(world);
     }
@@ -1500,7 +1500,7 @@ fn update(world: &mut World) {
                 continue;
             }
             crate::surfaces::SurfaceId::Workspace => continue,
-            crate::surfaces::SurfaceId::Chat => {}
+            crate::surfaces::SurfaceId::Chat | crate::surfaces::SurfaceId::Bots => {}
         }
         conversations::focus_entity(world, intent.entity);
         if approvals::action(world, &intent) || attachments::action(world, &intent) {
@@ -1547,7 +1547,7 @@ fn update(world: &mut World) {
     // up on return instead of reconciling all chat controls on every Code keystroke.
     if matches!(
         crate::surfaces::active(world),
-        crate::surfaces::SurfaceId::Chat | crate::surfaces::SurfaceId::Workspace
+        crate::surfaces::SurfaceId::Chat | crate::surfaces::SurfaceId::Bots | crate::surfaces::SurfaceId::Workspace
     ) {
         conversations::sync_all(world);
     }
@@ -2630,7 +2630,11 @@ fn sync(world: &mut World) {
             world.insert(entity, Hidden);
         }
     }
-    let width = workspace::sync(world, sidebar, details);
+    let width = if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Bots {
+        crate::surfaces::chat_width(world)
+    } else {
+        workspace::sync(world, sidebar, details)
+    };
     let width = world
         .get::<Rect>(ui.exchange.main)
         .map(|r| width.min(r.w))
@@ -4032,10 +4036,28 @@ pub(crate) fn set_models(world: &mut World, models: Vec<(String, String)>) {
     world.resource_mut::<Model>().unwrap().models = models;
 }
 
-/// Shows conversation `session` in Chat, as from another surface.
+/// Shows a conversation in its owning view, without duplicating chat state.
 pub(crate) fn open_conversation(world: &mut World, session: String) {
-    crate::surfaces::select(world, crate::surfaces::SurfaceId::Chat);
-    conversations::open(world, Some(session));
+    if crate::bots::is_bot_session(world, &session) {
+        open_bot_conversation(world, session);
+    } else {
+        crate::surfaces::select(world, crate::surfaces::SurfaceId::Chat);
+        if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat {
+            conversations::open(world, Some(session));
+        }
+    }
+}
+pub(crate) fn open_bot_conversation(world: &mut World, session: String) {
+    conversations::open_bot(world, session);
+}
+pub(crate) fn remember_bot_session(world: &mut World, session: String) {
+    conversations::remember_bot_session(world, session);
+}
+pub(crate) fn is_known_bot_session(world: &World, session: &str) -> bool {
+    conversations::known_bot_session(world, session)
+}
+pub(crate) fn activate_normal_chat(world: &mut World) {
+    conversations::activate_normal(world);
 }
 
 pub fn external_admitted(world: &mut World, session: &str) {
