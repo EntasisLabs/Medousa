@@ -1347,6 +1347,19 @@ pub struct WorkspaceItem {
     pub entity: Entity,
     pub dirty: bool,
 }
+/// Files of already-listed projects for the Workspace picker: (work, project, path).
+pub fn workspace_catalog(w: &World) -> Vec<(String, String, String)> {
+    let Some(c) = w.resource::<Code>() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for p in &c.projects {
+        for path in c.files.get(&p.id).into_iter().flatten() {
+            out.push((p.id.clone(), p.title.clone(), path.clone()));
+        }
+    }
+    out
+}
 pub fn workspace_items(w: &World) -> Vec<WorkspaceItem> {
     let Some(c) = w.resource::<Code>() else {
         return Vec::new();

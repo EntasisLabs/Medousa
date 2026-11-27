@@ -17,8 +17,14 @@ const TAB_CLOSE: f32 = 12.;
 const TAB_CLOSE_BOX: f32 = 16.;
 /// RNDR's narrowest tab, below which the strip scrolls.
 const TAB_MIN: f32 = 96.;
-struct BandStrip(TabStripHandle);
+pub(crate) struct BandStrip(pub(crate) TabStripHandle);
 impl Component for BandStrip {}
+/// A pane tree that runs to the window's top edge and seats its own headers
+/// in the titlebar row, as the navigation sidebars do. Where it is shown, the
+/// band shrinks to the traffic lights and sidebar toggle so it never covers
+/// those headers.
+pub(crate) struct RisesIntoTitlebar;
+impl Component for RisesIntoTitlebar {}
 struct Chrome {
     band: Entity,
     side: Entity,
@@ -319,6 +325,17 @@ pub(crate) fn document_tabs(world: &mut World, strip: TabStripHandle, notes: boo
 pub(crate) fn terminal_tabs(world: &mut World, strip: TabStripHandle) {
     place_document_tabs(world, strip, 3);
 }
+/// The shrunken band's last layout while a rising pane tree is shown: what
+/// that tree's top-left header must leave clear.
+pub(crate) fn titlebar_overlay(world: &World) -> Option<Rect> {
+    let chrome = world.resource::<Chrome>()?;
+    // Only the traffic-light reservation remains over a rising tree.
+    world
+        .get::<Layout>(chrome.band)
+        .filter(|l| l.width == Size::Hug)
+        .and(world.get::<Rect>(chrome.leading).copied())
+        .filter(|r| r.w > 0.)
+}
 pub(crate) fn clear_terminal_tabs(world: &mut World) {
     if let Some(host) = world.resource::<Chrome>().map(|s| s.documents[3]) {
         for bar in children_of(world, host) {
@@ -482,7 +499,7 @@ fn header(world: &World, pane: Entity) -> Option<Entity> {
     }
     None
 }
-fn inset_panes(world: &mut World) {
+fn inset_panes(world: &mut World, rising: bool) {
     let Some(body) = world.resource::<Chrome>().map(|c| c.body) else {
         return;
     };
@@ -490,6 +507,9 @@ fn inset_panes(world: &mut World) {
     let mut stack = children_of(world, body);
     while let Some(entity) = stack.pop() {
         if world.has::<Splitter>(entity) || world.get::<Layout>(entity).is_none() {
+            continue;
+        }
+        if rising && world.has::<RisesIntoTitlebar>(entity) {
             continue;
         }
         if let Some(wrap) = world.get::<TitlebarWrap>(entity).map(|w| w.pane) {
@@ -571,19 +591,32 @@ pub fn polish(world: &mut World) {
     // header rises into the titlebar row beside them.
     let edge = navigation_edge(world);
     let band = world.resource::<Chrome>().unwrap().band;
+    // Drawn caption buttons sit at the band's far end, so only a band without
+    // them can shrink away from a rising pane tree.
+    let rising = crate::surfaces::active(world) == crate::surfaces::SurfaceId::Workspace
+        && !frame.draws_controls;
+    let right = (!rising).then_some(0.);
     if let Some(pin) = world.get_mut::<Absolute>(band) {
         if pin.left != Some(edge) {
             pin.left = Some(edge);
         }
+        if pin.right != right {
+            pin.right = right;
+        }
+    }
+    let width = if rising { Size::Hug } else { Size::Fill };
+    if world.get::<Layout>(band).is_some_and(|l| l.width != width) {
+        world.get_mut::<Layout>(band).unwrap().width = width;
     }
     world.get_mut::<Layout>(leading).unwrap().width = Size::Px((native - edge).max(0.));
-    inset_panes(world);
+    inset_panes(world, rising);
     show(world, caption, frame.draws_controls);
     let active = crate::surfaces::active(world);
     show(world, chat, active == crate::surfaces::SurfaceId::Chat);
     let side = world.resource::<Chrome>().unwrap().side;
     let toggle = active != crate::surfaces::SurfaceId::Chat && crate::sidebars::available(world);
-    show(world, side, toggle);
+    // A rising pane tree carries its own toggle in its top-left header.
+    show(world, side, toggle && !rising);
     let documents = world.resource::<Chrome>().unwrap().documents;
     let mut has_document = false;
     for (i, host) in documents.into_iter().enumerate() {
@@ -603,7 +636,10 @@ pub fn polish(world: &mut World) {
     show(
         world,
         destination,
-        active != crate::surfaces::SurfaceId::Chat && !has_document,
+        // Workspace names itself in its sidebar; the row stays for the window.
+        active != crate::surfaces::SurfaceId::Chat
+            && active != crate::surfaces::SurfaceId::Workspace
+            && !has_document,
     );
     world.get_mut::<Label>(destination).unwrap().text = match active {
         crate::surfaces::SurfaceId::Notes => "Notes",
@@ -614,11 +650,14 @@ pub fn polish(world: &mut World) {
         _ => "Medousa",
     }
     .into();
-    let bars: Vec<_> = [tabs, documents[0], documents[1], documents[3]]
+    let mut bars: Vec<_> = [tabs, documents[0], documents[1], documents[3]]
         .into_iter()
         .flat_map(|host| children_of(world, host))
         .collect();
-    for bar in bars {
+    if active == crate::surfaces::SurfaceId::Workspace {
+        bars.extend(crate::multiplexer::tab_bars(world));
+    }
+    for bar in bars.clone() {
         let Some(strip) = world.get::<BandStrip>(bar).map(|s| s.0) else {
             continue;
         };
@@ -641,10 +680,7 @@ pub fn polish(world: &mut World) {
             show(world, control, overflow);
         }
     }
-    let mut stack: Vec<_> = [tabs, documents[0], documents[1], documents[3]]
-        .into_iter()
-        .flat_map(|host| children_of(world, host))
-        .collect();
+    let mut stack = bars;
     let focus = world.resource::<Focus>().and_then(|f| f.entity);
     let pointer = world
         .resource::<Input>()

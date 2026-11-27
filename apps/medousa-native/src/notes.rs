@@ -1025,6 +1025,18 @@ pub struct WorkspaceItem {
     pub entity: Entity,
     pub dirty: bool,
 }
+/// Listed vault notes for the Workspace picker: (path, title).
+pub fn workspace_catalog(world: &World) -> Vec<(String, String)> {
+    world
+        .resource::<Notes>()
+        .map(|n| {
+            n.list
+                .iter()
+                .map(|v| (v.path.clone(), v.title.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
 pub fn workspace_items(world: &World) -> Vec<WorkspaceItem> {
     let Some(n) = world.resource::<Notes>() else {
         return Vec::new();

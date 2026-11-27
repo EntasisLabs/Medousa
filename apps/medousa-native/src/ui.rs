@@ -100,6 +100,12 @@ pub struct Model {
     document: DocumentId,
     pending_draft: Option<(DocumentId, rndr_core::editing::Revision)>,
 }
+#[cfg(test)]
+impl Model {
+    pub(crate) fn set_sessions_for_test(&mut self, sessions: Vec<(String, String)>) {
+        self.sessions = sessions;
+    }
+}
 impl Model {
     pub(crate) fn document_id(&self) -> DocumentId {
         self.document
@@ -1067,6 +1073,9 @@ fn quiet_selector(world: &mut World, root: Entity, id: u64, title: &str, enabled
 /// Labeled triggers share the composer's one row with attach, behavior and
 /// send. Bound them by the row each layout so a narrow window ellipsizes
 /// names instead of pushing Send out of the card.
+/// Hidden by [`bound_composer_triggers`] for width alone; restored when room returns.
+struct CompactDropped;
+impl Component for CompactDropped {}
 fn bound_composer_triggers(world: &mut World) {
     let Some(ui) = world.resource::<Ui>().copied() else {
         return;
@@ -1076,10 +1085,11 @@ fn bound_composer_triggers(world: &mut World) {
     };
     let gap = world.get::<Layout>(ui.controls).map_or(0., |l| l.gap);
     // What attach, behavior, stop/send and the gaps between visible controls
-    // leave over; the stretching spacer takes none of it.
+    // leave over; the stretching spacer takes none of it. Triggers this pass
+    // dropped still count, so dropping one never frees the room to restore it.
     let visible = children_of(world, ui.controls)
         .into_iter()
-        .filter(|&e| !world.has::<Hidden>(e))
+        .filter(|&e| !world.has::<Hidden>(e) || world.has::<CompactDropped>(e))
         .collect::<Vec<_>>();
     let fixed: f32 = visible
         .iter()
@@ -1118,7 +1128,35 @@ fn bound_composer_triggers(world: &mut World) {
             engine.measure(&text, &style, &[], f32::INFINITY).width + CHROME
         })
         .collect::<Vec<_>>();
-    let total: f32 = natural.iter().sum();
+    // A narrow pane drops whole triggers before shrinking names to "M…":
+    // the agent chip first (rarely changed per message), then mode. The
+    // model and send always stay.
+    let runtime = triggers.iter().position(|&e| {
+        world
+            .get::<Semantics>(e)
+            .is_some_and(|s| s.name.as_deref() == Some("Choose runtime"))
+    });
+    let mode = triggers.iter().position(|&e| e == ui.mode);
+    let mut total: f32 = natural.iter().sum();
+    let mut dropped = vec![];
+    for i in [runtime, mode].into_iter().flatten() {
+        // Mild crowding still ellipsizes; only real squeeze drops a trigger.
+        if total > available * 1.25 && triggers.len() - dropped.len() > 1 {
+            total -= natural[i];
+            dropped.push(i);
+        }
+    }
+    for (i, &e) in triggers.iter().enumerate() {
+        if dropped.contains(&i) {
+            if !world.has::<CompactDropped>(e) {
+                world.insert(e, CompactDropped);
+                world.insert(e, Hidden);
+            }
+        } else if world.has::<CompactDropped>(e) {
+            world.remove::<CompactDropped>(e);
+            world.remove::<Hidden>(e);
+        }
+    }
     // Everything fits: no trigger is capped. Otherwise each gives up space in
     // proportion to its size, so one long name doesn't starve the others.
     for (&e, &width) in triggers.iter().zip(&natural) {

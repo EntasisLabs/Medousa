@@ -610,3 +610,241 @@ fn mixed_chat_and_terminal_dark_light_narrow_visual_acceptance() {
         .unwrap();
     }
 }
+
+#[test]
+#[ignore = "Empty pane launcher Parley/GPU offscreen acceptance"]
+fn empty_pane_launcher_visual_acceptance() {
+    use std::sync::Arc;
+    let mut app = fixture();
+    let a = chat(&mut app, "launcher-chat", "");
+    enter(&mut app);
+    command(&mut app, Action::Open(a.resource.clone()));
+    command(&mut app, Action::Split(Edge::Right));
+    let first = app
+        .world()
+        .resource::<State>()
+        .unwrap()
+        .model
+        .active_desktop;
+    command(&mut app, Action::NewDesktop);
+    command(&mut app, Action::Desktop(first));
+    let d = app.world().resource::<State>().unwrap().model.active();
+    assert_eq!(d.groups.len(), 2);
+    assert!(d.groups.iter().any(|g| g.tabs.is_empty()));
+    app.world_mut()
+        .insert_resource(Arc::new(rndr_render::ParleyText::new()) as Arc<dyn TextEngine>);
+    app.world_mut()
+        .insert_resource(rndr_ui::InteractionMotion::snap());
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    let (width, height) = (1400u32, 900u32);
+    app.world_mut()
+        .insert_resource(Viewport::new(width as f32, height as f32));
+    publish_system_appearance(
+        app.world_mut(),
+        SystemAppearance {
+            dark: Some(true),
+            ..Default::default()
+        },
+    );
+    for _ in 0..10 {
+        app.update();
+    }
+    let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+        exporter
+            .render_frame(Some(world), frame, width, height, 1.)
+            .unwrap()
+    });
+    image::save_buffer(
+        "verification/native-workspace-empty-pane.png",
+        &image.rgba,
+        image.width,
+        image.height,
+        image::ColorType::Rgba8,
+    )
+    .unwrap();
+    crate::sidebars::toggle(app.world_mut());
+    for _ in 0..8 {
+        app.update();
+    }
+    let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+        exporter
+            .render_frame(Some(world), frame, width, height, 1.)
+            .unwrap()
+    });
+    image::save_buffer(
+        "verification/native-workspace-collapsed.png",
+        &image.rgba,
+        image.width,
+        image.height,
+        image::ColorType::Rgba8,
+    )
+    .unwrap();
+    crate::sidebars::toggle(app.world_mut());
+    picker::open(app.world_mut(), None);
+    for _ in 0..12 {
+        app.update();
+    }
+    let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+        exporter
+            .render_frame(Some(world), frame, width, height, 1.)
+            .unwrap()
+    });
+    image::save_buffer(
+        "verification/native-workspace-picker.png",
+        &image.rgba,
+        image.width,
+        image.height,
+        image::ColorType::Rgba8,
+    )
+    .unwrap();
+}
+
+#[test]
+fn picker_opens_a_known_chat_in_the_focused_pane_without_leaving_workspace() {
+    let mut app = fixture();
+    let dir = tempfile::tempdir().unwrap();
+    let _channels = crate::workshops::install_fixture(
+        app.world_mut(),
+        dir.path().join("sources.json"),
+        &[("fixture-owner", "Synthetic workshop")],
+    );
+    let session = crate::routing::SessionKey::new("fixture-owner", "picked-chat").handle();
+    app.world_mut()
+        .resource_mut::<ui::Model>()
+        .unwrap()
+        .set_sessions_for_test(vec![(session.clone(), "Picked conversation".into())]);
+    enter(&mut app);
+    let titles: Vec<_> = picker::ids(app.world(), Some(SurfaceId::Chat))
+        .into_iter()
+        .map(|(t, _)| t)
+        .collect();
+    assert_eq!(titles.first().map(String::as_str), Some("New chat"));
+    assert!(
+        titles.iter().any(|t| t == "Picked conversation"),
+        "{titles:?}"
+    );
+    assert_eq!(titles.last().map(String::as_str), Some("Browse all chats…"));
+    // A kind filter keeps other kinds out.
+    assert!(!titles.iter().any(|t| t == "New shell"));
+    let pick = picker::ids(app.world(), Some(SurfaceId::Chat))
+        .into_iter()
+        .find(|(t, _)| t == "Picked conversation")
+        .unwrap()
+        .1;
+    picker::place(app.world_mut(), pick);
+    app.update();
+    assert_eq!(surfaces::active(app.world()), SurfaceId::Workspace);
+    let s = app.world().resource::<State>().unwrap();
+    let d = s.model.active();
+    let tab = d.group(d.focused_group).unwrap().active().unwrap();
+    assert_eq!(
+        tab.resource,
+        Resource::Chat {
+            session_id: session,
+            workshop_id: "fixture-owner".into()
+        }
+    );
+    assert_eq!(tab.title, "Picked conversation");
+}
+
+#[test]
+fn desktops_live_in_the_sidebar_with_inline_rename() {
+    let mut app = fixture();
+    enter(&mut app);
+    command(&mut app, Action::NewDesktop);
+    let (first, second) = {
+        let m = &app.world().resource::<State>().unwrap().model;
+        (m.desktops[0].id, m.desktops[1].id)
+    };
+    command(&mut app, Action::Desktop(first));
+    let row = app
+        .world()
+        .resource::<State>()
+        .unwrap()
+        .chrome
+        .as_ref()
+        .unwrap()
+        .name_row;
+    assert!(app.world().has::<Hidden>(row));
+    command(&mut app, Action::StartRename);
+    assert!(!app.world().has::<Hidden>(row));
+    let name = app
+        .world()
+        .resource::<State>()
+        .unwrap()
+        .chrome
+        .as_ref()
+        .unwrap()
+        .name;
+    app.world_mut().get_mut::<Label>(name).unwrap().text = "Research".into();
+    command(&mut app, Action::Rename);
+    assert!(app.world().has::<Hidden>(row));
+    command(&mut app, Action::Delete(second));
+    let m = &app.world().resource::<State>().unwrap().model;
+    assert_eq!(m.desktops.len(), 1);
+    assert_eq!(m.active().name, "Research");
+}
+
+#[test]
+fn pane_headers_rise_into_the_titlebar_and_the_band_steps_aside() {
+    let mut app = fixture();
+    let a = chat(&mut app, "rising-chat", "");
+    enter(&mut app);
+    command(&mut app, Action::Open(a.resource.clone()));
+    command(&mut app, Action::Split(Edge::Right));
+    for _ in 0..6 {
+        app.update();
+    }
+    let w = app.world();
+    // With the sidebar open nothing of the band remains over the panes.
+    let overlay = crate::ui::chrome::titlebar_overlay(w);
+    let headers: Vec<_> = w
+        .resource::<State>()
+        .unwrap()
+        .chrome
+        .as_ref()
+        .unwrap()
+        .groups
+        .iter()
+        .map(|g| g.header)
+        .collect();
+    assert_eq!(headers.len(), 2);
+    for header in headers {
+        let r = *w.get::<Rect>(header).unwrap();
+        assert!(r.y + r.h <= crate::ui::chrome::HEIGHT, "{r:?}");
+        assert!(w.has::<WindowDrag>(header));
+        // Content starts clear of the traffic lights and sidebar toggle.
+        let left = w.get::<Padding>(header).unwrap().left;
+        if let Some(band) = overlay.filter(|b| r.x < b.x + b.w) {
+            assert!(r.x + left >= band.x + band.w, "{r:?} {band:?}");
+        }
+    }
+    // The sidebar toggle lives inside the top-left card, not across its edge.
+    let first = &w
+        .resource::<State>()
+        .unwrap()
+        .chrome
+        .as_ref()
+        .unwrap()
+        .groups[0];
+    let card = *w.get::<Rect>(children_of(w, first.root)[0]).unwrap();
+    let toggle = children_of(w, first.header)
+        .into_iter()
+        .find(|e| {
+            w.get::<Semantics>(*e)
+                .and_then(|s| s.name.as_deref())
+                .is_some_and(|n| n == "Toggle sidebar")
+        })
+        .expect("toggle in the first header");
+    let t = *w.get::<Rect>(toggle).unwrap();
+    assert!(
+        t.x >= card.x && t.x + t.w <= card.x + card.w,
+        "{t:?} {card:?}"
+    );
+    surfaces::select(app.world_mut(), SurfaceId::Notes);
+    for _ in 0..3 {
+        app.update();
+    }
+    assert!(crate::ui::chrome::titlebar_overlay(app.world()).is_none());
+}

@@ -15,6 +15,8 @@ use rndr_ui::{
     *,
 };
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
+#[path = "multiplexer_picker.rs"]
+mod picker;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Local {
@@ -43,14 +45,17 @@ enum Action {
     NewDesktop,
     Duplicate,
     Rename,
-    Delete,
+    StartRename,
+    CancelRename,
+    Pick(Option<SurfaceId>),
+    ToggleSidebar,
+    Delete(u64),
     SaveTemplate,
     RetrySave,
     ApplyTemplate(u64),
     DeleteTemplate(u64),
     Split(Edge),
     Zoom,
-    Focus(u64),
     CloseGroup(u64),
     Reopen(Resource),
     Content(Resource, &'static str),
@@ -58,11 +63,17 @@ enum Action {
 struct GroupView {
     id: u64,
     root: Entity,
+    /// Owning-workshop caption; yields to the tab in narrow panes.
+    context: Option<Entity>,
+    /// Header row; doubles as the window's drag region up in the titlebar.
+    header: Entity,
     body: Entity,
     strip: Option<TabStripHandle>,
 }
 struct Chrome {
     name: Entity,
+    /// Desktop name field with save/cancel; visible only while renaming.
+    name_row: Entity,
     catalog: Entity,
     body: Entity,
     parking: Entity,
@@ -86,6 +97,9 @@ pub(crate) struct State {
     store: Option<Arc<crate::multiplexer_storage::Store>>,
     queued: Option<serde_json::Value>,
     save_failed: bool,
+    renaming: bool,
+    picker: Option<rndr_ui::palette::PaletteHandle>,
+    picks: Vec<picker::Pick>,
 }
 impl Default for State {
     fn default() -> Self {
@@ -108,6 +122,9 @@ impl Default for State {
             store: None,
             queued: None,
             save_failed: false,
+            renaming: false,
+            picker: None,
+            picks: vec![],
         }
     }
 }
@@ -151,44 +168,6 @@ fn caption(w: &mut World, p: Entity, value: &str) {
     w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
     w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Wrap;
 }
-fn button(w: &mut World, p: Entity, s: &mut State, label: &str, action: Action) {
-    s.next += 1;
-    let id = s.next;
-    let mut props = ButtonProps::new(label, HostIntent::Command(id));
-    props.variant = controls::ButtonVariant::Quiet;
-    let h = controls::Button::mount(w, p, UiId(id), props).unwrap();
-    w.get_mut::<Layout>(h.root).unwrap().width = Size::Fill;
-    if matches!(
-        action,
-        Action::Focus(_) | Action::CloseGroup(_) | Action::Reopen(_) | Action::Content(..)
-    ) {
-        s.group_actions.insert(id, action);
-    } else {
-        s.actions.insert(id, action);
-    }
-}
-fn icon_row(w: &mut World, parent: Entity, s: &mut State, actions: &[(Icon, &str, Action)]) {
-    let row = panel(
-        w,
-        parent,
-        Layout {
-            width: Size::Fill,
-            height: Size::Px(34.),
-            gap: 4.,
-            ..Layout::row()
-        },
-    );
-    for (icon, label, action) in actions {
-        s.next += 1;
-        let id = s.next;
-        crate::native_style::icon_action(w, row, id, *icon, label, true);
-        if matches!(action, Action::Content(..)) {
-            s.group_actions.insert(id, action.clone());
-        } else {
-            s.actions.insert(id, action.clone());
-        }
-    }
-}
 pub fn mount(w: &mut World, parent: Entity) {
     if let Some(layout) = w.get_mut::<Layout>(parent) {
         *layout = Layout {
@@ -227,12 +206,55 @@ pub fn mount(w: &mut World, parent: Entity) {
             ..Default::default()
         },
     ));
-    set_parent(w, name, sidebar);
+    let name_row = panel(
+        w,
+        sidebar,
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(34.),
+            gap: 2.,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        name_row,
+        Align {
+            items: Items::Center,
+            ..Align::default()
+        },
+    );
+    set_parent(w, name, name_row);
+    w.get_mut::<Layout>(name).unwrap().width = Size::Fill;
+    // Shown only while renaming; the desktop list is the everyday view.
+    w.insert(name_row, Hidden);
+    for (id, icon, label) in [
+        (RENAME_DESKTOP, Icon::Check, "Save desktop name"),
+        (CANCEL_RENAME, Icon::X, "Cancel rename"),
+    ] {
+        let h = crate::native_style::icon_action(w, name_row, id, icon, label, true);
+        let layout = w.get_mut::<Layout>(h.root).unwrap();
+        layout.width = Size::Px(28.);
+        layout.height = Size::Px(28.);
+    }
+    // One entry point for opening or creating anything in the focused pane.
+    let mut props = ButtonProps::new("Open or create…", HostIntent::Command(OPEN_PICKER));
+    props.variant = controls::ButtonVariant::Secondary;
+    let h = controls::Button::mount(w, sidebar, UiId(OPEN_PICKER), props).unwrap();
+    *w.get_mut::<Layout>(h.root).unwrap() = Layout {
+        width: Size::Fill,
+        height: Size::Px(crate::native_style::ACTION_SIZE),
+        ..Layout::row()
+    };
     let catalog = column(w, sidebar);
-    w.get_mut::<Layout>(catalog).unwrap().gap = 6.;
+    w.get_mut::<Layout>(catalog).unwrap().gap = 2.;
     w.insert(catalog, Scroll::default());
     let body = column(w, parent);
-    crate::native_style::flat(w, body, crate::native_style::canvas());
+    // Panes are inset cards on the chrome plane, so gutters read as frame.
+    crate::native_style::flat(w, body, crate::native_style::navigation());
+    w.insert(body, ResolvedColor);
+    // Pane headers sit in the titlebar row, as Rex's do.
+    w.insert(body, crate::ui::chrome::RisesIntoTitlebar);
+    w.get_mut::<Layout>(body).unwrap().padding = GUTTER / 2.;
     let parking = column(w, parent);
     w.insert(parking, Hidden);
     let mut s = w
@@ -240,8 +262,10 @@ pub fn mount(w: &mut World, parent: Entity) {
         .map(std::mem::take)
         .unwrap_or_default();
     w.get_mut::<Label>(name).unwrap().text = s.model.active().name.clone();
+    s.picker = Some(picker::mount(w, parent));
     s.chrome = Some(Chrome {
         name,
+        name_row,
         catalog,
         body,
         parking,
@@ -390,6 +414,17 @@ fn surface(r: &Resource) -> SurfaceId {
         Resource::Create { .. } => SurfaceId::Create,
         Resource::Review { .. } => SurfaceId::Reviews,
     }
+}
+/// Pane header bars, polished with the titlebar's tab chips.
+pub(crate) fn tab_bars(w: &World) -> Vec<Entity> {
+    let Some(c) = w.resource::<State>().and_then(|s| s.chrome.as_ref()) else {
+        return vec![];
+    };
+    c.groups
+        .iter()
+        .filter_map(|g| g.strip)
+        .filter_map(|h| w.get::<Parent>(h.scroll).map(|p| p.entity))
+        .collect()
 }
 pub fn focused_surface(w: &World) -> Option<SurfaceId> {
     let s = w.resource::<State>()?;
@@ -540,6 +575,7 @@ pub fn input(w: &mut World) {
     if crate::surfaces::active(w) != SurfaceId::Workspace {
         return;
     }
+    picker::update(w);
     if let Some(e) = w
         .resource::<Input>()
         .filter(|i| i.pointer.pressed)
@@ -685,13 +721,25 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
     else {
         return false;
     };
+    run(w, a);
+    true
+}
+fn run(w: &mut World, a: Action) {
     if !can_deactivate(w) {
-        return true;
+        return;
     }
     match a {
         Action::Browse(surface) => {
             crate::surfaces::select(w, surface);
-            return true;
+            return;
+        }
+        Action::Pick(kind) => {
+            picker::open(w, kind);
+            return;
+        }
+        Action::ToggleSidebar => {
+            crate::sidebars::toggle(w);
+            return;
         }
         Action::NewChat => {
             crate::ui::conversations::workspace_new(w);
@@ -790,8 +838,19 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
                     .model
                     .duplicate_desktop(desktop, format!("{} copy", s.model.active().name))
                     .map(|_| ()),
-                Action::Rename => s.model.rename_desktop(desktop, name),
-                Action::Delete => s.model.delete_desktop(desktop),
+                Action::Rename => {
+                    s.renaming = false;
+                    s.model.rename_desktop(desktop, name)
+                }
+                Action::StartRename => {
+                    s.renaming = true;
+                    Ok(())
+                }
+                Action::CancelRename => {
+                    s.renaming = false;
+                    Ok(())
+                }
+                Action::Delete(id) => s.model.delete_desktop(id),
                 Action::SaveTemplate => s.model.save_template(name).map(|_| ()),
                 Action::RetrySave => {
                     s.save_failed = false;
@@ -803,7 +862,6 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
                 Action::DeleteTemplate(id) => s.model.delete_template(id),
                 Action::Split(edge) => s.model.split_group(group, edge).map(|_| ()),
                 Action::Zoom => s.model.toggle_zoom(group),
-                Action::Focus(id) => s.model.focus_group(id),
                 Action::CloseGroup(id) => s.model.remove_empty_group(id),
                 _ => Ok(()),
             };
@@ -823,7 +881,6 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
         s.catalog_key.clear();
     }
     sync(w);
-    true
 }
 fn restore_active(w: &mut World) {
     let missing: Vec<_> = w
@@ -898,97 +955,306 @@ fn clear(w: &mut World, p: Entity) {
 }
 fn render_catalog(w: &mut World, s: &mut State) {
     let c = s.chrome.as_ref().unwrap();
-    let catalog = c.catalog;
+    let (catalog, name_row, name) = (c.catalog, c.name_row, c.name);
     clear(w, catalog);
     s.actions.clear();
-    caption(w, catalog, "VIRTUAL DESKTOPS");
+    s.actions.insert(RENAME_DESKTOP, Action::Rename);
+    s.actions.insert(CANCEL_RENAME, Action::CancelRename);
+    s.actions.insert(OPEN_PICKER, Action::Pick(None));
+    if s.renaming {
+        if w.has::<Hidden>(name_row) {
+            w.remove::<Hidden>(name_row);
+            w.get_mut::<Label>(name).unwrap().text = s.model.active().name.clone();
+            if let Some(f) = w.resource_mut::<Focus>() {
+                f.entity = Some(name);
+            }
+        }
+    } else {
+        w.insert(name_row, Hidden);
+    }
+    heading_row(
+        w,
+        s,
+        catalog,
+        "Desktops",
+        Some((Icon::Plus, "New desktop", Action::NewDesktop)),
+    );
+    let several = s.model.desktops.len() > 1;
     for d in s.model.desktops.clone() {
-        let label = if d.id == s.model.active_desktop {
-            format!("● {}", d.name)
-        } else {
-            d.name
-        };
-        button(w, catalog, s, &label, Action::Desktop(d.id));
-    }
-    icon_row(
-        w,
-        catalog,
-        s,
-        &[
-            (Icon::Plus, "New desktop", Action::NewDesktop),
-            (Icon::Pencil, "Rename desktop", Action::Rename),
+        let active = d.id == s.model.active_desktop;
+        let row = panel(
+            w,
+            catalog,
+            Layout {
+                width: Size::Fill,
+                gap: 2.,
+                ..Layout::row()
+            },
+        );
+        w.insert(
+            row,
+            Align {
+                items: Items::Center,
+                ..Align::default()
+            },
+        );
+        s.next += 1;
+        let id = s.next;
+        let h = controls::NavigationRow::mount(
+            w,
+            row,
+            UiId(id),
+            ButtonProps::new(&d.name, HostIntent::Command(id)),
+            controls::NavigationMeta {
+                selected: active,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        row_layout(w, h);
+        s.actions.insert(id, Action::Desktop(d.id));
+        if !active {
+            continue;
+        }
+        let mut tools = vec![
+            (Icon::Pencil, "Rename desktop", Action::StartRename),
             (Icon::Copy, "Duplicate desktop", Action::Duplicate),
-            (Icon::Trash, "Delete desktop", Action::Delete),
-        ],
-    );
-    caption(w, catalog, "ARRANGE");
-    icon_row(
-        w,
-        catalog,
-        s,
-        &[
-            (Icon::Code, "Split right", Action::Split(Edge::Right)),
-            (Icon::Code, "Split down", Action::Split(Edge::Bottom)),
-            (Icon::Maximize2, "Zoom / restore pane", Action::Zoom),
-        ],
-    );
-    caption(w, catalog, "NEW / OPEN EXISTING");
-    button(w, catalog, s, "New chat", Action::NewChat);
-    button(w, catalog, s, "New shell", Action::NewShell);
-    for (label, surface) in [
-        ("Browse chats", SurfaceId::Chat),
-        ("Browse notes", SurfaceId::Notes),
-        ("Browse code", SurfaceId::Code),
-        ("Browse reviews", SurfaceId::Reviews),
-        ("Browse Create", SurfaceId::Create),
-        ("Browse shells", SurfaceId::Terminal),
+        ];
+        if several {
+            tools.push((Icon::Trash, "Delete desktop", Action::Delete(d.id)));
+        }
+        for (icon, label, action) in tools {
+            s.next += 1;
+            let id = s.next;
+            let h = crate::native_style::icon_action(w, row, id, icon, label, true);
+            let layout = w.get_mut::<Layout>(h.root).unwrap();
+            layout.width = Size::Px(24.);
+            layout.height = Size::Px(24.);
+            s.actions.insert(id, action);
+        }
+    }
+    // What this window holds, by kind; the trailing word says where it is.
+    let d = s.model.active();
+    let focused = d
+        .group(d.focused_group)
+        .and_then(|g| g.active())
+        .map(|t| t.resource.clone());
+    let shown: Vec<_> = d
+        .groups
+        .iter()
+        .filter_map(|g| g.active())
+        .map(|t| t.resource.clone())
+        .collect();
+    let tabbed: Vec<_> = d
+        .groups
+        .iter()
+        .flat_map(|g| &g.tabs)
+        .map(|t| t.resource.clone())
+        .collect();
+    for (heading, kind) in [
+        ("Chats", SurfaceId::Chat),
+        ("Shells", SurfaceId::Terminal),
+        ("Notes", SurfaceId::Notes),
+        ("Code", SurfaceId::Code),
+        ("Create", SurfaceId::Create),
+        ("Reviews", SurfaceId::Reviews),
     ] {
-        button(w, catalog, s, label, Action::Browse(surface));
+        let items: Vec<_> = s
+            .items
+            .iter()
+            .filter(|i| surface(&i.resource) == kind)
+            .cloned()
+            .collect();
+        if items.is_empty() {
+            continue;
+        }
+        heading_row(w, s, catalog, heading, None);
+        for item in items {
+            let secondary = if shown.contains(&item.resource) {
+                Some("Shown".into())
+            } else if tabbed.contains(&item.resource) {
+                Some("Tab".into())
+            } else {
+                None
+            };
+            s.next += 1;
+            let id = s.next;
+            let h = controls::NavigationRow::mount(
+                w,
+                catalog,
+                UiId(id),
+                ButtonProps::new(picker::display_title(&item), HostIntent::Command(id)),
+                controls::NavigationMeta {
+                    selected: focused.as_ref() == Some(&item.resource),
+                    secondary,
+                    dirty: item.dirty,
+                },
+            )
+            .unwrap();
+            row_layout(w, h);
+            s.actions.insert(id, Action::Open(item.resource));
+        }
     }
-    for item in s.items.clone() {
-        button(
+    heading_row(
+        w,
+        s,
+        catalog,
+        "Layouts",
+        Some((
+            Icon::Plus,
+            "Save arrangement as layout",
+            Action::SaveTemplate,
+        )),
+    );
+    if s.model.templates.is_empty() {
+        caption(
             w,
             catalog,
-            s,
-            &format!("{} · {}", item.resource.kind(), item.title),
-            Action::Open(item.resource),
+            "Save this arrangement to reuse it on any desktop.",
         );
     }
-    caption(w, catalog, "SAVED LAYOUTS");
-    button(w, catalog, s, "Save arrangement", Action::SaveTemplate);
     for t in s.model.templates.clone() {
-        button(
+        let row = panel(
             w,
             catalog,
-            s,
-            &format!("Apply {}", t.name),
-            Action::ApplyTemplate(t.id),
+            Layout {
+                width: Size::Fill,
+                gap: 2.,
+                ..Layout::row()
+            },
         );
-        button(
+        w.insert(
+            row,
+            Align {
+                items: Items::Center,
+                ..Align::default()
+            },
+        );
+        s.next += 1;
+        let id = s.next;
+        let h = controls::NavigationRow::mount(
             w,
-            catalog,
-            s,
-            &format!("Delete {}", t.name),
-            Action::DeleteTemplate(t.id),
+            row,
+            UiId(id),
+            ButtonProps::new(&t.name, HostIntent::Command(id)),
+            controls::NavigationMeta::default(),
+        )
+        .unwrap();
+        row_layout(w, h);
+        w.insert(
+            h.root,
+            Semantics {
+                name: Some(format!("Apply layout {}", t.name)),
+                ..Default::default()
+            },
         );
+        s.actions.insert(id, Action::ApplyTemplate(t.id));
+        s.next += 1;
+        let id = s.next;
+        let label = format!("Delete layout {}", t.name);
+        let h = crate::native_style::icon_action(w, row, id, Icon::Trash, &label, true);
+        let layout = w.get_mut::<Layout>(h.root).unwrap();
+        layout.width = Size::Px(28.);
+        layout.height = Size::Px(28.);
+        s.actions.insert(id, Action::DeleteTemplate(t.id));
     }
     if !s.notice.is_empty() {
         caption(w, catalog, &s.notice);
     }
     if s.save_failed {
-        button(
-            w,
-            catalog,
-            s,
-            "Retry saving desktop layout",
-            Action::RetrySave,
-        );
+        s.next += 1;
+        let id = s.next;
+        crate::native_style::document_action(w, catalog, id, "Retry saving desktop layout", true);
+        s.actions.insert(id, Action::RetrySave);
     }
     s.catalog_key = catalog_key(s);
 }
+/// Sentence-case group heading, grey rather than caps, with an optional trailing action.
+fn heading_row(
+    w: &mut World,
+    s: &mut State,
+    p: Entity,
+    label: &str,
+    action: Option<(Icon, &str, Action)>,
+) {
+    let row = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(crate::native_style::SECTION_HEIGHT + 8.),
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        row,
+        Align {
+            items: Items::Center,
+            ..Align::default()
+        },
+    );
+    // Space above separates groups; heading and its action share a centre line.
+    w.insert(
+        row,
+        Padding {
+            top: 8.,
+            ..Padding::default()
+        },
+    );
+    let e = text(w, row, label, Typography::Secondary).unwrap();
+    w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+    w.insert(
+        e,
+        Padding {
+            left: 8.,
+            ..Padding::default()
+        },
+    );
+    crate::native_style::section_heading(w, e);
+    if let Some((icon, name, action)) = action {
+        s.next += 1;
+        let id = s.next;
+        let h = crate::native_style::icon_action(w, row, id, icon, name, true);
+        let layout = w.get_mut::<Layout>(h.root).unwrap();
+        layout.width = Size::Px(24.);
+        layout.height = Size::Px(24.);
+        s.actions.insert(id, action);
+    }
+}
+fn row_layout(w: &mut World, h: controls::ControlHandle) {
+    // Selection is the row's fill alone; no accent edge bar.
+    w.insert(h.root, controls::QuietSelection);
+    w.insert(
+        h.root,
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(crate::native_style::ROW_HEIGHT),
+            padding: 0.,
+            ..Layout::column()
+        },
+    );
+    w.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
+    crate::native_style::trailing_meta(w, h);
+}
+const RENAME_DESKTOP: u64 = 0x4d57_0003;
+const CANCEL_RENAME: u64 = 0x4d57_0004;
+const OPEN_PICKER: u64 = 0x4d57_0005;
 fn catalog_key(s: &State) -> String {
+    let d = s.model.active();
+    let placement: Vec<_> = d
+        .groups
+        .iter()
+        .map(|g| {
+            (
+                g.id,
+                g.active_tab,
+                g.tabs.iter().map(|t| t.id).collect::<Vec<_>>(),
+            )
+        })
+        .collect();
     format!(
-        "{}|{}|{:?}|{}",
+        "{:?}|{}|{}|{:?}|{}",
+        (d.focused_group, placement, s.renaming),
         serde_json::json!({"active":s.model.active_desktop,"desktops":s.model.desktops.iter().map(|d|serde_json::json!([d.id,d.name])).collect::<Vec<_>>(),"templates":s.model.templates.iter().map(|t|serde_json::json!([t.id,t.name])).collect::<Vec<_>>()}),
         s.notice,
         s.items
@@ -1013,6 +1279,9 @@ fn build(w: &mut World, s: &mut State, parent: Entity, node: &SplitNode, path: V
             };
             props.min_leading = 80.;
             props.min_trailing = 80.;
+            // Gutters are the chrome plane; only the rounded cards are content.
+            props.leading_fill = rndr_ui::split::PaneFill::Transparent;
+            props.trailing_fill = rndr_ui::split::PaneFill::Transparent;
             let h = SplitSash::mount(w, parent, UiId(0x4d58_0000 + s.next), props, *ratio).unwrap();
             s.next += 1;
             s.chrome.as_mut().unwrap().splits.push((path.clone(), h));
@@ -1027,20 +1296,87 @@ fn build(w: &mut World, s: &mut State, parent: Entity, node: &SplitNode, path: V
             let Some(g) = s.model.active().group(*id).cloned() else {
                 return;
             };
+            let d = s.model.active();
+            let several = d.groups.len() > 1;
+            let mixed = {
+                let mut owners: Vec<&str> = d
+                    .groups
+                    .iter()
+                    .flat_map(|g| &g.tabs)
+                    .map(|t| resource_owner(&t.resource))
+                    .collect();
+                owners.sort_unstable();
+                owners.dedup();
+                owners.len() > 1
+            };
+            // Only the pane you're in carries controls; the rest stay quiet.
+            let controls_here = !several || d.focused_group == *id;
+            let zoomed = d.zoomed_group == Some(*id);
+            // Outer frame supplies half the gutter; the workspace body the rest.
             let root = column(w, parent);
+            w.get_mut::<Layout>(root).unwrap().padding = GUTTER / 2.;
+            let card = column(w, root);
+            pane_card(w, card);
+            let header = panel(
+                w,
+                card,
+                Layout {
+                    width: Size::Fill,
+                    height: Size::Px(HEADER),
+                    gap: 2.,
+                    ..Layout::row()
+                },
+            );
+            w.insert(
+                header,
+                Align {
+                    items: Items::Center,
+                    ..Align::default()
+                },
+            );
+            w.insert(
+                header,
+                Padding {
+                    left: 4.,
+                    right: 4.,
+                    top: 0.,
+                    bottom: 0.,
+                },
+            );
+            w.insert(header, WindowDrag);
+            // The top-left pane holds the sidebar toggle, inside its own tile.
+            if path.iter().all(|second| !second) && crate::sidebars::available(w) {
+                s.next += 1;
+                let id = s.next;
+                let h = crate::native_style::icon_action(
+                    w,
+                    header,
+                    id,
+                    Icon::PanelLeft,
+                    "Toggle sidebar",
+                    true,
+                );
+                let layout = w.get_mut::<Layout>(h.root).unwrap();
+                layout.width = Size::Px(HEADER - 8.);
+                layout.height = Size::Px(HEADER - 8.);
+                s.group_actions.insert(id, Action::ToggleSidebar);
+            }
+            crate::native_style::rule(w, card);
+            let mut actions = vec![];
+            let mut context = None;
             let body;
             let strip;
             if g.tabs.is_empty() {
-                caption(
-                    w,
-                    root,
-                    "Open an existing resource from the sidebar, or create a chat or shell.",
+                let title = text(w, header, "Empty pane", Typography::Secondary).unwrap();
+                w.get_mut::<Layout>(title).unwrap().width = Size::Fill;
+                w.insert(
+                    title,
+                    Padding {
+                        left: 8.,
+                        ..Padding::default()
+                    },
                 );
-                button(w, root, s, "Focus this group", Action::Focus(*id));
-                if s.model.active().groups.len() > 1 {
-                    button(w, root, s, "Close empty group", Action::CloseGroup(*id));
-                }
-                body = column(w, root);
+                body = launcher(w, s, card);
                 w.insert(
                     root,
                     rndr_ui::drag::DropTarget {
@@ -1067,26 +1403,66 @@ fn build(w: &mut World, s: &mut State, parent: Entity, node: &SplitNode, path: V
                             .iter()
                             .find(|i| i.resource == t.resource)
                             .is_some_and(|i| i.dirty);
-                        TabSpec::new(t.id, &t.title).dirty(dirty)
+                        TabSpec::new(t.id, &t.title)
+                            .icon(kind_icon(&t.resource))
+                            .dirty(dirty)
                     })
                     .collect();
                 let h = TabStrip::mount(
                     w,
-                    root,
+                    card,
                     UiId(*id + 0x4d58_0000),
-                    TabStripProps::new("Workspace tabs")
-                        .active(s.model.active().focused_group == *id),
+                    TabStripProps::new("Workspace tabs").active(d.focused_group == *id),
                     &specs,
                     TabId(g.active_tab.unwrap()),
                 )
                 .unwrap();
+                // The strip's bar becomes the pane header, styled like the
+                // titlebar's tabs; its body and drop targets are unchanged.
+                let bar = w.get::<Parent>(h.scroll).unwrap().entity;
+                set_parent(w, bar, header);
+                *w.get_mut::<Layout>(bar).unwrap() = Layout {
+                    width: Size::Fill,
+                    height: Size::Fill,
+                    gap: 4.,
+                    ..Layout::row()
+                };
+                w.insert(bar, crate::ui::chrome::BandStrip(h));
                 body = h.panel(w, TabId(g.active_tab.unwrap())).unwrap();
                 strip = Some(h);
                 if let Some(tab) = g.active() {
-                    if matches!(tab.resource, Resource::Note { .. } | Resource::Code { .. })
-                        && s.items.iter().any(|i| i.resource == tab.resource)
+                    // Where a pane runs only matters once panes run in different places.
+                    if mixed {
+                        let label = owner_label(w, &tab.resource);
+                        let label = text(w, header, &label, Typography::Caption).unwrap();
+                        context = Some(label);
+                        w.get_mut::<Label>(label).unwrap().overflow = TextOverflow::Ellipsis;
+                        w.get_mut::<Layout>(label).unwrap().width = Size::Hug;
+                        w.insert(
+                            label,
+                            UiStyle {
+                                foreground: Some(crate::native_style::secondary().into()),
+                                ..Default::default()
+                            },
+                        );
+                        w.insert(
+                            label,
+                            Padding {
+                                left: 6.,
+                                right: 6.,
+                                ..Padding::default()
+                            },
+                        );
+                    }
+                    if matches!(tab.resource, Resource::Terminal { .. }) {
+                        // The inset shares the emulator's fill: one surface, not a box in a card.
+                        w.get_mut::<Layout>(body).unwrap().padding = 8.;
+                        w.insert(body, rndr_core::tokens::MONO_SURFACE);
+                    }
+                    let open = s.items.iter().any(|i| i.resource == tab.resource);
+                    if open && matches!(tab.resource, Resource::Note { .. } | Resource::Code { .. })
                     {
-                        let mut actions = vec![
+                        actions.extend([
                             (
                                 Icon::Save,
                                 "Save",
@@ -1097,7 +1473,7 @@ fn build(w: &mut World, s: &mut State, parent: Entity, node: &SplitNode, path: V
                                 "Find",
                                 Action::Content(tab.resource.clone(), "find"),
                             ),
-                        ];
+                        ]);
                         if matches!(tab.resource, Resource::Note { .. }) {
                             actions.extend([
                                 (
@@ -1117,32 +1493,251 @@ fn build(w: &mut World, s: &mut State, parent: Entity, node: &SplitNode, path: V
                                 ),
                             ]);
                         }
-                        icon_row(w, body, s, &actions);
                     }
-                    if !s.items.iter().any(|i| i.resource == tab.resource) {
-                        caption(
-                            w,
-                            body,
-                            "This resource is not open in this window. Its owning workshop and identity are preserved.",
+                    if !open {
+                        let note = column(w, body);
+                        w.insert(
+                            note,
+                            Align {
+                                items: Items::Center,
+                                justify: Justify::Center,
+                            },
                         );
-                        button(
+                        w.get_mut::<Layout>(note).unwrap().gap = 12.;
+                        w.get_mut::<Layout>(note).unwrap().padding = 16.;
+                        let hint = text(
                             w,
-                            body,
+                            note,
+                            "This resource is not open in this window. Its owning workshop and identity are preserved.",
+                            Typography::Secondary,
+                        )
+                        .unwrap();
+                        let label = w.get_mut::<Label>(hint).unwrap();
+                        label.overflow = TextOverflow::Wrap;
+                        w.get_mut::<Layout>(hint).unwrap().width = Size::Fill;
+                        launcher_button(
+                            w,
                             s,
+                            note,
                             "Open resource",
                             Action::Reopen(tab.resource.clone()),
                         );
                     }
                 }
             }
+            if !controls_here {
+                actions.clear();
+            } else {
+                actions.insert(
+                    0,
+                    (
+                        Icon::Plus,
+                        "Open or create in this pane",
+                        Action::Pick(None),
+                    ),
+                );
+            }
+            if controls_here {
+                actions.push((Icon::PanelLeft, "Split right", Action::Split(Edge::Right)));
+                actions.push((Icon::PanelLeft, "Split down", Action::Split(Edge::Bottom)));
+                if several || zoomed {
+                    actions.push(if zoomed {
+                        (Icon::Minimize2, "Restore pane", Action::Zoom)
+                    } else {
+                        (Icon::Maximize2, "Zoom pane", Action::Zoom)
+                    });
+                }
+                if g.tabs.is_empty() && several {
+                    actions.push((Icon::X, "Close pane", Action::CloseGroup(*id)));
+                }
+            }
+            for (icon, label, action) in actions {
+                s.next += 1;
+                let id = s.next;
+                let h = crate::native_style::icon_action(w, header, id, icon, label, true);
+                let layout = w.get_mut::<Layout>(h.root).unwrap();
+                layout.width = Size::Px(HEADER - 8.);
+                layout.height = Size::Px(HEADER - 8.);
+                if label == "Split down" {
+                    // PanelLeft turned a quarter: the divider runs across.
+                    w.insert(
+                        h.label,
+                        Transform {
+                            rotate: std::f32::consts::FRAC_PI_2,
+                            ..Transform::IDENTITY
+                        },
+                    );
+                }
+                s.group_actions.insert(id, action);
+            }
             s.chrome.as_mut().unwrap().groups.push(GroupView {
                 id: *id,
                 root,
+                context,
+                header,
                 body,
                 strip,
             });
         }
     }
+}
+const GUTTER: f32 = 8.;
+const HEADER: f32 = 36.;
+/// Below this pane width the workshop caption yields to the tab title.
+const NARROW: f32 = 440.;
+const CARD_RADIUS: f32 = 10.;
+/// Inset content plane, as Rex's panes: rounded, one quiet hairline. Focus
+/// shows through the header's controls and selected tab, not the outline.
+fn pane_card(w: &mut World, card: Entity) {
+    crate::native_style::plane(w, card, crate::native_style::canvas());
+    w.insert(card, Radius(CARD_RADIUS));
+    w.insert(card, ClipRounded::radius(CARD_RADIUS));
+    let token = Token::SubtleStroke;
+    let color = crate::native_style::color(w, token);
+    w.insert(card, Border { color, width: 1. });
+    w.insert(card, crate::native_style::SemanticBorder(token));
+}
+fn kind_icon(r: &Resource) -> Icon {
+    match r {
+        Resource::Chat { .. } => Icon::MessageCircle,
+        Resource::Terminal { .. } => Icon::Terminal,
+        Resource::Note { .. } => Icon::Book,
+        Resource::Code { .. } => Icon::FileCode,
+        Resource::Create { .. } => Icon::PenTool,
+        Resource::Review { .. } => Icon::CheckCheck,
+    }
+}
+fn resource_owner(r: &Resource) -> &str {
+    match r {
+        Resource::Chat { workshop_id, .. }
+        | Resource::Terminal { workshop_id, .. }
+        | Resource::Note { workshop_id, .. }
+        | Resource::Code { workshop_id, .. }
+        | Resource::Create { workshop_id, .. }
+        | Resource::Review { workshop_id, .. } => workshop_id,
+    }
+}
+/// Where the pane runs, as Rex's host label: the owning workshop's name.
+fn owner_label(w: &World, r: &Resource) -> String {
+    crate::workshops::source_label(w, resource_owner(r))
+}
+/// An empty pane is a place to start, not a dead end.
+fn launcher(w: &mut World, s: &mut State, card: Entity) -> Entity {
+    let body = column(w, card);
+    w.insert(
+        body,
+        Align {
+            items: Items::Center,
+            justify: Justify::Center,
+        },
+    );
+    let layout = w.get_mut::<Layout>(body).unwrap();
+    layout.gap = 12.;
+    layout.padding = 16.;
+    let title = text(w, body, "Start something here", Typography::Emphasis).unwrap();
+    w.get_mut::<Label>(title).unwrap().overflow = TextOverflow::Ellipsis;
+    w.get_mut::<Layout>(title).unwrap().width = Size::Hug;
+    let hint = text(
+        w,
+        body,
+        "Open or create anything here, or drag a tab in.",
+        Typography::Secondary,
+    )
+    .unwrap();
+    w.get_mut::<Label>(hint).unwrap().overflow = TextOverflow::Wrap;
+    // Two rows of three: fits a narrow split pane without wrapping support.
+    for kinds in picker::KINDS.chunks(3) {
+        let row = panel(
+            w,
+            body,
+            Layout {
+                gap: 8.,
+                ..Layout::row()
+            },
+        );
+        for (kind, group, icon, _, _) in kinds {
+            launcher_tile(
+                w,
+                s,
+                row,
+                *icon,
+                &tile_label(group),
+                Action::Pick(Some(*kind)),
+            );
+        }
+    }
+    s.next += 1;
+    let id = s.next;
+    let h = crate::native_style::document_action(w, body, id, "Search everything", true);
+    w.insert(h.root, AlignSelf(Items::Center));
+    s.group_actions.insert(id, Action::Pick(None));
+    body
+}
+/// "Chats" → "Chat": tiles name one thing to start, groups name many.
+fn tile_label(group: &str) -> String {
+    group.strip_suffix('s').unwrap_or(group).to_owned()
+}
+/// Icon over a caption; opens the picker on that kind.
+fn launcher_tile(w: &mut World, s: &mut State, p: Entity, icon: Icon, label: &str, action: Action) {
+    let tile = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Px(72.),
+            gap: 4.,
+            ..Layout::column()
+        },
+    );
+    w.insert(
+        tile,
+        Align {
+            items: Items::Center,
+            ..Align::default()
+        },
+    );
+    s.next += 1;
+    let id = s.next;
+    let mut props = ButtonProps::new(label, HostIntent::Command(id));
+    props.variant = controls::ButtonVariant::Secondary;
+    let h = controls::IconButton::icon(w, tile, UiId(id), icon, label, props).unwrap();
+    w.insert(h.label, LabelBox::CONTENT);
+    *w.get_mut::<Layout>(h.root).unwrap() = Layout {
+        width: Size::Px(44.),
+        height: Size::Px(44.),
+        ..Layout::row()
+    };
+    w.insert(h.root, Radius(10.));
+    let caption = text(w, tile, label, Typography::Caption).unwrap();
+    w.insert(
+        caption,
+        UiStyle {
+            foreground: Some(crate::native_style::secondary().into()),
+            ..Default::default()
+        },
+    );
+    s.group_actions.insert(id, action);
+}
+/// Pane-owned actions outlive catalog re-renders; topology rebuilds replace them.
+fn launcher_button(w: &mut World, s: &mut State, p: Entity, label: &str, action: Action) {
+    s.next += 1;
+    let id = s.next;
+    let mut props = ButtonProps::new(label, HostIntent::Command(id));
+    props.variant = controls::ButtonVariant::Secondary;
+    let h = controls::Button::mount(w, p, UiId(id), props).unwrap();
+    *w.get_mut::<Layout>(h.root).unwrap() = Layout {
+        height: Size::Px(crate::native_style::ACTION_SIZE),
+        ..Layout::row()
+    };
+    w.insert(
+        h.root,
+        crate::native_style::FitLabel {
+            label: h.label,
+            extra: 12.,
+            min: 72.,
+            max: 220.,
+        },
+    );
+    s.group_actions.insert(id, action);
 }
 pub fn sync(w: &mut World) {
     if crate::surfaces::active(w) != SurfaceId::Workspace {
@@ -1236,6 +1831,29 @@ pub fn sync(w: &mut World) {
         };
         build(w, &mut s, body, &tree, vec![]);
         s.rendered = render_key;
+    }
+    let overlay = crate::ui::chrome::titlebar_overlay(w);
+    for g in &s.chrome.as_ref().unwrap().groups {
+        // Clear the traffic lights and sidebar toggle where they overlap.
+        let left = match (overlay, w.get::<Rect>(g.header).copied()) {
+            (Some(band), Some(r)) if r.y < band.y + band.h && r.x < band.x + band.w => {
+                band.x + band.w - r.x + 4.
+            }
+            _ => 4.,
+        };
+        if w.get::<Padding>(g.header).is_some_and(|p| p.left != left) {
+            w.get_mut::<Padding>(g.header).unwrap().left = left;
+        }
+        if let Some(label) = g.context {
+            let narrow = w.get::<Rect>(g.root).is_some_and(|r| r.w < NARROW);
+            if narrow != w.has::<Hidden>(label) {
+                if narrow {
+                    w.insert(label, Hidden);
+                } else {
+                    w.remove::<Hidden>(label);
+                }
+            }
+        }
     }
     let mut visible = vec![];
     let groups: Vec<_> = s

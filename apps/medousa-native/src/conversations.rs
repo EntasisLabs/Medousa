@@ -146,6 +146,13 @@ pub(crate) struct WorkspaceChat {
     pub title: String,
     pub entity: Entity,
 }
+/// Known conversations, newest first, for the Workspace picker: (session, title).
+pub(crate) fn workspace_catalog(world: &World) -> Vec<(String, String)> {
+    world
+        .resource::<Model>()
+        .map(|m| m.sessions.clone())
+        .unwrap_or_default()
+}
 pub(crate) fn workspace_items(world: &World) -> Vec<WorkspaceChat> {
     let Some(deck) = world.resource::<Deck>() else {
         return Vec::new();
