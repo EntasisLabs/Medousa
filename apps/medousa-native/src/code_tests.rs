@@ -1377,7 +1377,7 @@ fn overflow_menu_offers_secondary_commands_and_routes_picks() {
 }
 
 #[test]
-#[ignore = "Synthetic terminal dock GPU acceptance; no daemon or live shells"]
+#[ignore = "Synthetic first-class terminal GPU acceptance; no daemon or live shells"]
 fn terminal_visual_acceptance() {
     let mut app = crate::ui::app();
     app.update();
@@ -1418,6 +1418,7 @@ fn terminal_visual_acceptance() {
         "// Workshop-owned interactive terminal\nuse rndr_core::*;\n\nfn main() {\n    // The workshop owns the shell and working directory.\n    // This device renders the authenticated PTY stream.\n}\n",
         "d1",
     );
+    crate::surfaces::select(w, crate::surfaces::SurfaceId::Terminal);
     let terminal = crate::terminal::tests::preview(w, "one");
     let mut exporter = rndr_render::Exporter::new().unwrap();
     std::fs::create_dir_all("verification").unwrap();

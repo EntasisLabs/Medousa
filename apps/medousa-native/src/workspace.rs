@@ -28,7 +28,7 @@ pub const SIDE_DEFAULT: f32 = 288.;
 pub const SIDE_MIN: f32 = 200.;
 pub const SIDE_MAX: f32 = 480.;
 /// Sidebars of the non-chat destinations, by surface name.
-pub const SIDE_NAMES: [&str; 8] = [
+pub const SIDE_NAMES: [&str; 9] = [
     "notes",
     "code",
     "create",
@@ -37,6 +37,7 @@ pub const SIDE_NAMES: [&str; 8] = [
     "peers",
     "settings",
     "artifacts",
+    "terminal",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -46,7 +47,7 @@ pub struct Preferences {
     pub sidebar_open: bool,
     pub details_open: bool,
     /// Non-chat destinations, in [`SIDE_NAMES`] order.
-    pub sides: [Side; 8],
+    pub sides: [Side; 9],
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -55,7 +56,7 @@ impl Default for Preferences {
             chat_ratio: 0.68,
             sidebar_open: true,
             details_open: false,
-            sides: [Side::default(); 8],
+            sides: [Side::default(); 9],
         }
     }
 }
@@ -376,6 +377,18 @@ pub fn error(world: &World) -> Option<String> {
 mod tests {
     use super::*;
     #[test]
+    fn pre_terminal_layout_keeps_existing_sidebar_preferences() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("layout.json");
+        std::fs::write(&path, r#"{"version":1,"sidebars":{"code":{"open":false,"width":350},"artifacts":{"open":false,"width":330}}}"#).unwrap();
+        let p = Preferences::read(&path);
+        assert!(!p.sides[1].open);
+        assert_eq!(p.sides[1].width, 350.);
+        assert!(!p.sides[7].open);
+        assert_eq!(p.sides[7].width, 330.);
+        assert_eq!(p.sides[8], Side::default());
+    }
+    #[test]
     fn preferences_roundtrip_and_invalid_values_fall_back() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("native/layout.json");
@@ -385,12 +398,16 @@ mod tests {
             sidebar_open: false,
             details_open: true,
             sides: {
-                let mut sides = [Side::default(); 8];
+                let mut sides = [Side::default(); 9];
                 sides[0] = Side {
                     open: false,
                     width: 340.,
                 };
                 sides[6].width = 220.;
+                sides[8] = Side {
+                    open: false,
+                    width: 310.,
+                };
                 sides
             },
         };

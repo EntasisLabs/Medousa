@@ -1319,6 +1319,7 @@ fn update(world: &mut World) {
         apply_reply(world, reply);
     }
     crate::navigation::tick(world);
+    crate::terminal::tick(world);
     refresh_idle_chat(world);
     crate::surfaces::remember_focus(world);
     let chat_active = crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat;
@@ -1443,6 +1444,12 @@ fn update(world: &mut World) {
             crate::surfaces::SurfaceId::Artifacts => {
                 if let Some(host) = host {
                     crate::artifacts::action(world, &host);
+                }
+                continue;
+            }
+            crate::surfaces::SurfaceId::Terminal => {
+                if let Some(host) = host {
+                    crate::terminal::action(world, &host);
                 }
                 continue;
             }

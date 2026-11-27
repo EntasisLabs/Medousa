@@ -22,7 +22,7 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 
 const VIEW: u64 = 0x5753_4000;
-const VIEWS: [SurfaceId; 9] = [
+const VIEWS: [SurfaceId; 10] = [
     SurfaceId::Chat,
     SurfaceId::Notes,
     SurfaceId::Code,
@@ -32,6 +32,7 @@ const VIEWS: [SurfaceId; 9] = [
     SurfaceId::Peers,
     SurfaceId::Settings,
     SurfaceId::Artifacts,
+    SurfaceId::Terminal,
 ];
 const PAIR: u64 = 0x5753_0002;
 const RELOAD: u64 = 0x5753_0003;
@@ -306,6 +307,7 @@ fn restore(w: &mut World, path: std::path::PathBuf, registry: Result<WorkshopReg
         SurfaceId::Peers,
         SurfaceId::Settings,
         SurfaceId::Artifacts,
+        SurfaceId::Terminal,
     ] {
         if let Some(owner) = prefs.views.get(&format!("{surface:?}")) {
             bindings.insert(surface, Binding::new(owner.clone()));
@@ -653,7 +655,7 @@ pub(crate) fn navigate_binding(w: &mut World, surface: SurfaceId, owner: &str) -
         .entry(surface)
         .and_modify(|b| b.select(owner.to_owned()))
         .or_insert_with(|| Binding::new(owner.to_owned()));
-    if surface == SurfaceId::Code {
+    if surface == SurfaceId::Terminal {
         bind_terminal(w, owner);
     }
     true
@@ -870,7 +872,9 @@ pub fn tick(w: &mut World) {
                 }
                 s.aliases.insert(id.clone(), owner.clone());
                 seed_defaults(w);
-                if !duplicate && binding(w, SurfaceId::Code).is_some_and(|b| b.authority == owner) {
+                if !duplicate
+                    && binding(w, SurfaceId::Terminal).is_some_and(|b| b.authority == owner)
+                {
                     bind_terminal(w, &owner);
                 }
                 persist(w);
@@ -1026,7 +1030,7 @@ pub(crate) fn action(w: &mut World, event: &HostIntent) -> bool {
             } else {
                 note(w,"Save/discard pending edits and close active terminals before changing this view's source.".into());
             }
-            if surface == SurfaceId::Code
+            if surface == SurfaceId::Terminal
                 && binding(w, surface) != previous
                 && let Some(binding) = binding(w, surface)
             {
@@ -1061,6 +1065,7 @@ fn redraw(w: &mut World) {
             | SurfaceId::Create
             | SurfaceId::Reviews
             | SurfaceId::Artifacts
+            | SurfaceId::Terminal
     ) || selected.is_none();
     let source = selected
         .as_deref()

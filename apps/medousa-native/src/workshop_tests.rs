@@ -49,6 +49,7 @@ fn choose(app: &mut App, view: SurfaceId, source: u64) {
         SurfaceId::Peers => 6,
         SurfaceId::Settings => 7,
         SurfaceId::Artifacts => 8,
+        SurfaceId::Terminal => 9,
     };
     assert!(workshops::action(
         app.world_mut(),
@@ -261,4 +262,29 @@ fn saved_settings_defaults_reach_next_chat_without_restart() {
         ("preferred".into(), "saved".into())
     );
     assert_eq!(m.depth, 2);
+}
+
+#[test]
+fn terminal_destination_has_independent_workshop_and_binding_epoch() {
+    let (mut app, _dir, _channels) = boot();
+    let code = workshops::binding(app.world(), SurfaceId::Code);
+    choose(&mut app, SurfaceId::Terminal, 1);
+    let old = workshops::binding(app.world(), SurfaceId::Terminal).unwrap();
+    assert_eq!(old.authority, "authority-b");
+    assert_eq!(workshops::binding(app.world(), SurfaceId::Code), code);
+    choose(&mut app, SurfaceId::Code, 1);
+    assert_eq!(
+        workshops::binding(app.world(), SurfaceId::Terminal),
+        Some(old.clone())
+    );
+    choose(&mut app, SurfaceId::Terminal, 0);
+    let new = workshops::binding(app.world(), SurfaceId::Terminal).unwrap();
+    assert_eq!(new.authority, "authority-a");
+    assert!(!new.accepts(&old));
+    assert_eq!(
+        workshops::binding(app.world(), SurfaceId::Code)
+            .unwrap()
+            .authority,
+        "authority-b"
+    );
 }

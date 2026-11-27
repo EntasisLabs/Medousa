@@ -314,36 +314,45 @@ automatically. This is task output, not an interactive terminal emulator.
 
 ### Interactive terminal
 
-Select an undertaking in **Code**, then choose **Terminal** to open the resizable
-dock below the editor. This attaches to that undertaking's existing human shell,
-or creates one in its workshop workspace if none is running. The header shows the
-working folder; its tooltip includes the session identity and full status.
-The shell runs on the **workshop**, never in a substitute folder on the app device.
-Opening it does not take a Forge editing lease or attach your keyboard to an
-agent/task process.
+Open **Terminal** from the navigation rail for a dedicated workspace with a
+collapsible, resizable session sidebar and terminal tabs. The sidebar discovers
+active human shells on the owning workshop; agent, task and SSH processes are
+not offered as interactive shells. **Active sessions** contains running shells only.
+**Open undertakings** excludes completed, discarded and failed work. Choose an
+existing session to open it in a tab. The sidebar's top **+** creates a shell
+without an undertaking, in the daemon's configured shell root. Each open
+undertaking has its own **+** to create a shell in that checkout. All shell
+actions live in the sidebar as icons with tooltips, including refresh, reconnect
+and detach for the selected tab. Tabs and active sessions use friendly numbered
+names such as **Shell 1** and **Shell 2**, retained through reconnects and detach /
+reattach while this Terminal view remains mounted. Raw session IDs are available
+in tooltips instead of the visible names; these labels are not persisted across
+app restarts.
+Opening Terminal does not itself start a process. The **Terminal** action in Code
+opens this same destination for the selected undertaking.
+
+Multiple shells can remain attached at once, including several for the same
+undertaking. Switching tabs retains terminal screens and connections. Closing a
+tab **detaches only**: it does not terminate the workshop shell, which can be
+rediscovered in the sidebar. Switching to another view also leaves sessions
+running. The shell runs on the **workshop**, never in a substitute folder on the
+app device, and opening it does not take a Forge editing lease.
 
 The native terminal supports ANSI/full-screen programs, keyboard navigation,
 Ctrl-C, selection/copy, and bracketed paste through its terminal emulator.
-**Hide** collapses the dock without ending the shell. Switching undertakings keeps
-separate terminal screens and connections; it discovers an existing human shell
-for the new undertaking but does not silently create one. Use **New shell** there
-to create one explicitly. **New shell** also starts a fresh shell after an exit;
-it does not terminate previous workshop sessions.
-
 **Reconnect** reattaches the same known shell after a disconnect. Pending input is
 discarded, never replayed. If a write fails its delivery may be unconfirmed: inspect
 the shell before retyping. Failed shell creation is not automatically retried;
-reopening first discovers sessions so an unconfirmed start is not duplicated.
+refresh sessions before trying again so an unconfirmed start is not duplicated.
 
-This initial native bridge supports the configured **local workshop** only and
-uses authenticated WebSocket headers, not URL tokens. Expanded terminal tabs,
-pop-outs, terminal search, clickable file paths, and remote workshop routing are
-not part of this dock yet. Task run history remains separate from interactive
-shells. Shells have normal workshop filesystem permissions, independently of
-editor save leases; review commands before executing them.
-
-These native workflows do not add project creation, workspace-edit refactors,
-rich-text note editing, or hosted pull-request review.
+Terminal has its own workshop source binding. Close attached tabs before changing
+that source; changing Code's source does not redirect existing terminals. The
+native bridge currently supports **local workshop** connections only and uses
+authenticated WebSocket headers, not URL tokens. Remote workshop routing,
+pop-outs, terminal search and clickable file paths are not implemented. Task run
+history remains separate from interactive shells. Shells have normal workshop
+filesystem permissions, independently of editor save leases; review commands
+before executing them.
 
 ### Interactive build performance
 

@@ -22,7 +22,8 @@ const PEERS: u64 = 0x5355_0006;
 const CREATE: u64 = 0x5355_0007;
 const SETTINGS: u64 = 0x5355_0008;
 const ARTIFACTS: u64 = 0x5355_0009;
-const SURFACE_COUNT: usize = 9;
+const TERMINAL: u64 = 0x5355_000a;
+const SURFACE_COUNT: usize = 10;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SurfaceId {
     Chat,
@@ -34,6 +35,7 @@ pub enum SurfaceId {
     Peers,
     Settings,
     Artifacts,
+    Terminal,
 }
 impl SurfaceId {
     pub(crate) fn index(self) -> usize {
@@ -47,6 +49,7 @@ impl SurfaceId {
             Self::Peers => 6,
             Self::Settings => 7,
             Self::Artifacts => 8,
+            Self::Terminal => 9,
         }
     }
 }
@@ -61,6 +64,7 @@ pub(crate) fn rebind(world: &mut World, target: SurfaceId) -> bool {
             SurfaceId::Reviews => crate::reviews::can_rebind(world),
             SurfaceId::Code => crate::code::can_rebind(world),
             SurfaceId::Artifacts => crate::artifacts::can_rebind(world),
+            SurfaceId::Terminal => crate::terminal::can_rebind(world),
             _ => false,
         };
     if !safe {
@@ -73,6 +77,7 @@ pub(crate) fn rebind(world: &mut World, target: SurfaceId) -> bool {
             | SurfaceId::Reviews
             | SurfaceId::Code
             | SurfaceId::Artifacts
+            | SurfaceId::Terminal
     ) {
         return initial;
     }
@@ -101,6 +106,10 @@ pub(crate) fn rebind(world: &mut World, target: SurfaceId) -> bool {
         SurfaceId::Artifacts => {
             crate::artifacts::mount(world, root);
             crate::artifacts::activate(world);
+        }
+        SurfaceId::Terminal => {
+            crate::terminal::mount_view(world, root);
+            crate::terminal::activate(world);
         }
         _ => unreachable!(),
     }
@@ -168,6 +177,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         (PEERS, Icon::MessageCircle, "Peers"),
         (SETTINGS, Icon::Settings, "Settings"),
         (ARTIFACTS, Icon::Code, "Artifacts"),
+        (TERMINAL, Icon::Code, "Terminal"),
     ] {
         let tile = panel(
             world,
@@ -237,6 +247,18 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         tiles.push(tile);
         buttons.push(handle);
     }
+    // Keep the Terminal next to Code without changing stable surface indices.
+    if let Some(children) = world.get_mut::<Children>(rail) {
+        let terminal = tiles[SurfaceId::Terminal.index()];
+        children.list.retain(|e| *e != terminal);
+        let after_code = children
+            .list
+            .iter()
+            .position(|e| *e == tiles[SurfaceId::Code.index()])
+            .unwrap()
+            + 1;
+        children.list.insert(after_code, terminal);
+    }
     // Do not imply unavailable destinations or settings with dead controls.
     let content = panel(
         world,
@@ -257,6 +279,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         "Peers",
         "Settings",
         "Artifacts",
+        "Terminal",
     ]
     .map(|name| {
         let entity = panel(
@@ -279,6 +302,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     crate::peers::mount(world, roots[6]);
     crate::settings::mount(world, roots[7]);
     crate::artifacts::mount(world, roots[8]);
+    crate::terminal::mount_view(world, roots[9]);
     for root in &roots[1..] {
         world.insert(*root, Hidden);
     }
@@ -369,6 +393,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Peers => !crate::peers::can_deactivate(world),
         SurfaceId::Settings => !crate::settings::can_deactivate(world),
         SurfaceId::Artifacts => crate::artifacts::composing(world),
+        SurfaceId::Terminal => false,
     };
     if composing {
         return;
@@ -401,6 +426,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Peers => crate::peers::activate(world),
         SurfaceId::Settings => crate::settings::activate(world),
         SurfaceId::Artifacts => crate::artifacts::activate(world),
+        SurfaceId::Terminal => crate::terminal::activate(world),
     }
     frame_wake(world).wake();
 }
@@ -415,6 +441,7 @@ pub fn action(world: &mut World, intent: &HostIntent) -> bool {
         HostIntent::Command(PEERS) => SurfaceId::Peers,
         HostIntent::Command(SETTINGS) => SurfaceId::Settings,
         HostIntent::Command(ARTIFACTS) => SurfaceId::Artifacts,
+        HostIntent::Command(TERMINAL) => SurfaceId::Terminal,
         _ => return false,
     };
     select(world, target);
@@ -550,6 +577,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4], filled: bool) -> rndr_render
             include_str!("nav_icons/users-filled.svg"),
             include_str!("nav_icons/settings-filled.svg"),
             include_str!("nav_icons/artifacts-filled.svg"),
+            include_str!("nav_icons/terminal-filled.svg"),
         ][index]
     } else {
         [
@@ -562,6 +590,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4], filled: bool) -> rndr_render
             include_str!("nav_icons/users.svg"),
             include_str!("nav_icons/settings.svg"),
             include_str!("nav_icons/artifacts.svg"),
+            include_str!("nav_icons/terminal.svg"),
         ][index]
     };
     let color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
@@ -621,6 +650,7 @@ mod tests {
                 SurfaceId::Peers,
                 SurfaceId::Settings,
                 SurfaceId::Artifacts,
+                SurfaceId::Terminal,
             ] {
                 select(app.world_mut(), surface);
                 for _ in 0..3 {
@@ -673,7 +703,7 @@ mod tests {
     #[test]
     #[ignore = "Solid/outline companion atlas visual acceptance"]
     fn solid_nav_atlas_visual_acceptance() {
-        let mut atlas = image::RgbaImage::from_pixel(648, 160, image::Rgba([28, 30, 35, 255]));
+        let mut atlas = image::RgbaImage::from_pixel(720, 160, image::Rgba([28, 30, 35, 255]));
         for i in 0..SURFACE_COUNT {
             for (row, filled) in [false, true].into_iter().enumerate() {
                 let color = if filled {
@@ -734,7 +764,8 @@ mod tests {
                             "Calendar",
                             "Peers",
                             "Settings",
-                            "Artifacts"
+                            "Artifacts",
+                            "Terminal"
                         ][i]
                     )
                 );

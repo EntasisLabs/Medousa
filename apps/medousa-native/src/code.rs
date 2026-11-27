@@ -627,8 +627,7 @@ pub fn mount(w: &mut World, parent: Entity) {
     w.insert(panel, Hidden);
     w.insert(panel, Scroll::default());
     let find_tools = column(w, content, Size::Fill, Size::Hug);
-    let editor_dock = crate::terminal::mount(w, content);
-    let editors = column(w, editor_dock, Size::Fill, Size::Fill);
+    let editors = column(w, content, Size::Fill, Size::Fill);
     // Editor status lives with the editor rather than in a window-wide bar,
     // and only while a file is open.
     let status_line = text(w, content, "", Typography::Caption).unwrap();
@@ -679,7 +678,7 @@ pub fn activate(w: &mut World) {
     }
 }
 pub(crate) fn can_rebind(w: &mut World) -> bool {
-    if !can_deactivate(w) || !crate::terminal::can_rebind(w) {
+    if !can_deactivate(w) {
         return false;
     }
     let Some(mut c) = w.resource_mut::<Code>().map(std::mem::take) else {
@@ -1163,7 +1162,7 @@ fn render(w: &mut World, c: &mut Code) {
         );
         w.get_mut::<Layout>(status).unwrap().width = Size::Hug;
     }
-    crate::terminal::toolbar(w, header, c.selected.is_some());
+    visual::document_action(w, header, 0x5445_0001, "Terminal", c.selected.is_some());
     let commands = workbench::commands(c);
     let mut overflow = Vec::new();
     let has_editor = c.key().is_some_and(|k| c.views.contains_key(&k));
@@ -1507,8 +1506,6 @@ pub fn sync(w: &mut World) {
     for update in deferred {
         apply(w, update);
     }
-    let selected = w.resource::<Code>().and_then(|c| c.selected.clone());
-    crate::terminal::sync(w, selected);
 }
 /// `Ln 12, Col 4 · Rust` for the open file; hidden with no file open.
 fn sync_status_line(w: &mut World, c: &Code) {
@@ -1767,7 +1764,23 @@ pub(crate) fn open_location(w: &mut World, work: &str, path: &str, line: Option<
 }
 
 pub fn action(w: &mut World, host: &HostIntent) -> bool {
-    if crate::terminal::action(w, host) {
+    if *host == HostIntent::Command(0x5445_0001) {
+        let selected = w.resource::<Code>().and_then(|c| c.selected.clone());
+        if let Some(work) = selected {
+            let owner = crate::workshops::binding(w, crate::surfaces::SurfaceId::Code);
+            if owner.is_none_or(|b| {
+                crate::workshops::navigate_binding(
+                    w,
+                    crate::surfaces::SurfaceId::Terminal,
+                    &b.authority,
+                )
+            }) {
+                crate::surfaces::select(w, crate::surfaces::SurfaceId::Terminal);
+                if crate::surfaces::active(w) == crate::surfaces::SurfaceId::Terminal {
+                    crate::terminal::open_work(w, work);
+                }
+            }
+        }
         return true;
     }
     let HostIntent::Command(id) = host else {

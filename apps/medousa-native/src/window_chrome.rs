@@ -29,7 +29,7 @@ struct Chrome {
     tabs: Entity,
     fallback: Entity,
     destination: Entity,
-    documents: [Entity; 3],
+    documents: [Entity; 4],
     caption: Entity,
 }
 
@@ -314,10 +314,30 @@ pub(crate) fn clear_document_tabs(world: &mut World, notes: bool) {
 }
 
 pub(crate) fn document_tabs(world: &mut World, strip: TabStripHandle, notes: bool) {
+    place_document_tabs(world, strip, if notes { 0 } else { 1 });
+}
+pub(crate) fn terminal_tabs(world: &mut World, strip: TabStripHandle) {
+    place_document_tabs(world, strip, 3);
+}
+pub(crate) fn clear_terminal_tabs(world: &mut World) {
+    if let Some(host) = world.resource::<Chrome>().map(|s| s.documents[3]) {
+        for bar in children_of(world, host) {
+            world.insert(bar, Hidden);
+        }
+    }
+}
+pub(crate) fn reset_terminal_tabs(world: &mut World) {
+    if let Some(host) = world.resource::<Chrome>().map(|s| s.documents[3]) {
+        for bar in children_of(world, host) {
+            despawn(world, bar);
+        }
+    }
+}
+fn place_document_tabs(world: &mut World, strip: TabStripHandle, index: usize) {
     let Some(state) = world.resource::<Chrome>() else {
         return;
     };
-    let host = state.documents[if notes { 0 } else { 1 }];
+    let host = state.documents[index];
     let bar = world.get::<Parent>(strip.scroll).unwrap().entity;
     set_parent(world, bar, host);
     world.remove::<Hidden>(bar);
@@ -571,7 +591,8 @@ pub fn polish(world: &mut World) {
             == match i {
                 0 => crate::surfaces::SurfaceId::Notes,
                 1 => crate::surfaces::SurfaceId::Code,
-                _ => crate::surfaces::SurfaceId::Artifacts,
+                2 => crate::surfaces::SurfaceId::Artifacts,
+                _ => crate::surfaces::SurfaceId::Terminal,
             };
         let populated = children_of(world, host)
             .iter()
@@ -588,10 +609,11 @@ pub fn polish(world: &mut World) {
         crate::surfaces::SurfaceId::Notes => "Notes",
         crate::surfaces::SurfaceId::Code => "Code",
         crate::surfaces::SurfaceId::Artifacts => "Artifacts",
+        crate::surfaces::SurfaceId::Terminal => "Terminal",
         _ => "Medousa",
     }
     .into();
-    let bars: Vec<_> = [tabs, documents[0], documents[1]]
+    let bars: Vec<_> = [tabs, documents[0], documents[1], documents[3]]
         .into_iter()
         .flat_map(|host| children_of(world, host))
         .collect();
@@ -618,7 +640,7 @@ pub fn polish(world: &mut World) {
             show(world, control, overflow);
         }
     }
-    let mut stack: Vec<_> = [tabs, documents[0], documents[1]]
+    let mut stack: Vec<_> = [tabs, documents[0], documents[1], documents[3]]
         .into_iter()
         .flat_map(|host| children_of(world, host))
         .collect();

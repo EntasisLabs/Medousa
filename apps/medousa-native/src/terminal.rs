@@ -8,7 +8,9 @@ use rndr_core::*;
 use rndr_ui::{
     Typography, UiId,
     controls::HostIntent,
-    split::{SplitSash, SplitSashHandle, SplitSashProps},
+    tabs::{
+        TabId, TabSpec, TabStrip, TabStripEvent, TabStripEventKind, TabStripHandle, TabStripProps,
+    },
     text,
 };
 use serde_json::{Value, json};
@@ -27,11 +29,16 @@ use tokio_tungstenite::{
     },
 };
 
-const TOGGLE: u64 = 0x5445_0001;
+const REFRESH: u64 = 0x5445_0001;
 const RECONNECT: u64 = 0x5445_0002;
 const NEW: u64 = 0x5445_0003;
-const HIDE: u64 = 0x5445_0004;
-const SPLIT: u64 = 0x5445_0005;
+const CLOSE: u64 = 0x5445_0004;
+const STRIP: u64 = 0x5445_0005;
+const GENERAL: u64 = 0x5445_0006;
+fn next() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0x5446_0000);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
 
 #[derive(Clone)]
 struct Wake;
@@ -41,6 +48,8 @@ enum Frame {
     Resize(u16, u16),
 }
 struct Open {
+    tab: u64,
+    // Empty means a daemon-root shell, never an implicit Forge undertaking.
     work: String,
     generation: u64,
     session: Option<String>,
@@ -55,24 +64,57 @@ enum Fact {
     Connected { session: String, cwd: String },
     Output(Vec<u8>),
     End(String),
+    Catalog(Result<(Vec<Value>, Vec<Value>), String>),
 }
 struct Update {
+    tab: u64,
     work: String,
     generation: u64,
     fact: Fact,
 }
 struct Service {
     tx: mpsc::Sender<Open>,
+    discover: Option<mpsc::Sender<u64>>,
     rx: Mutex<mpsc::Receiver<Update>>,
     _wake: Feed<Wake>,
 }
 
 /// Matches only human workspace shells, never Forge/task/SSH sessions.
 fn human(v: &Value, work: &str) -> bool {
-    v["root_kind"].as_str() == Some("workspace")
-        && v["work_id"].as_str() == Some(work)
-        && v["argv"].as_array().is_some_and(|a| a.is_empty())
+    (if work.is_empty() {
+        v["root_kind"].as_str() == Some("scripts") && v["work_id"].is_null()
+    } else {
+        v["root_kind"].as_str() == Some("workspace") && v["work_id"].as_str() == Some(work)
+    }) && v["argv"].as_array().is_some_and(|a| a.is_empty())
         && v["session_id"].as_str().is_some_and(|s| !s.is_empty())
+}
+fn active_human(v: &Value) -> bool {
+    human(v, v["work_id"].as_str().unwrap_or_default()) && v["exited"].as_bool() == Some(false)
+}
+fn open_project(v: &Value) -> bool {
+    v["id"].as_str().is_some_and(|id| !id.is_empty())
+        && matches!(
+            v["state"].as_str(),
+            Some(
+                "draft"
+                    | "provisioning"
+                    | "ready"
+                    | "executing"
+                    | "sealing"
+                    | "awaiting_review"
+                    | "applying_decision"
+            )
+        )
+}
+fn creation(work: &str) -> (&'static str, Value) {
+    if work.is_empty() {
+        ("/v1/sessions/shell", json!({"cols":80,"rows":24}))
+    } else {
+        (
+            "/v1/sessions/workspace-shell",
+            json!({"work_id":work,"cols":80,"rows":24}),
+        )
+    }
 }
 fn choose(list: &Value, work: &str, bound: Option<&str>) -> Result<Option<Value>, String> {
     let sessions = list["sessions"]
@@ -130,6 +172,7 @@ pub fn start(
     data_dir: std::path::PathBuf,
 ) {
     let (tx, mut opens) = mpsc::channel::<Open>(8);
+    let (discover, mut discoveries) = mpsc::channel::<u64>(1);
     let (updates, rx) = mpsc::channel::<Update>(64);
     let (wake, sender) = feed::open(w, FeedConfig::latest());
     std::thread::spawn(move || {
@@ -138,6 +181,25 @@ pub fn start(
             .build()
             .expect("terminal runtime");
         runtime.block_on(async move {
+            let catalog_client = client.clone();
+            let catalog_updates = updates.clone();
+            let catalog_sender = sender.clone();
+            tokio::spawn(async move {
+                while let Some(generation) = discoveries.recv().await {
+                    let fact = Fact::Catalog(discover_catalog(&catalog_client).await);
+                    let _ = publish(
+                        &catalog_updates,
+                        &catalog_sender,
+                        Update {
+                            tab: 0,
+                            work: String::new(),
+                            generation,
+                            fact,
+                        },
+                    )
+                    .await;
+                }
+            });
             while let Some(open) = opens.recv().await {
                 let client = client.clone();
                 let origin = origin.clone();
@@ -146,12 +208,14 @@ pub fn start(
                 let sender = sender.clone();
                 tokio::spawn(async move {
                     let work = open.work.clone();
+                    let tab = open.tab;
                     let generation = open.generation;
                     let result = attach(&client, &origin, &data_dir, open, &updates, &sender).await;
                     let _ = publish(
                         &updates,
                         &sender,
                         Update {
+                            tab,
                             work,
                             generation,
                             fact: Fact::End(result.err().unwrap_or_else(|| {
@@ -165,10 +229,12 @@ pub fn start(
         });
     });
     w.insert_resource(Service {
+        discover: Some(discover),
         tx,
         rx: Mutex::new(rx),
         _wake: wake,
     });
+    activate(w);
 }
 async fn publish(
     tx: &mpsc::Sender<Update>,
@@ -190,14 +256,33 @@ async fn attach(
     wake: &feed::Sender<Wake>,
 ) -> Result<(), String> {
     medousa_desktop_host::connection::local_url(origin)?;
+    if !matches!(
+        open.cancelled.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ) {
+        return Ok(());
+    }
     let list: Value = client.http().get("/v1/sessions/shell").await.map_err(
         |_| "Could not discover workshop shells. Check Connection and session host availability.",
     )?;
-    let session=match if open.fresh {None} else {choose(&list,&open.work,open.session.as_deref())?} {
-        Some(v)=>v,
-        None if open.create=>client.http().post::<_,Value>("/v1/sessions/workspace-shell",&json!({"work_id":open.work,"cols":80,"rows":24})).await.map_err(|_|"Shell creation not confirmed. Reconnect to discover it; creation is never automatically retried.")?,
-        None=>return Err("No running human shell found. Use New shell explicitly.".into()),
+    let session = match if open.fresh {
+        None
+    } else {
+        choose(&list, &open.work, open.session.as_deref())?
+    } {
+        Some(v) => v,
+        None if open.create => {
+            let (route, body) = creation(&open.work);
+            client.http().post::<_,Value>(route,&body).await.map_err(|_|"Shell creation not confirmed. Refresh sessions to discover it; creation is never automatically retried.")?
+        }
+        None => return Err("No running human shell found. Use New shell explicitly.".into()),
     };
+    if !matches!(
+        open.cancelled.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ) {
+        return Ok(());
+    }
     if !human(&session, &open.work) {
         return Err("Workshop returned a different shell authority".into());
     }
@@ -215,6 +300,7 @@ async fn attach(
         tx,
         wake,
         Update {
+            tab: open.tab,
             work: open.work.clone(),
             generation: open.generation,
             fact: Fact::Bound {
@@ -246,6 +332,7 @@ async fn attach(
         tx,
         wake,
         Update {
+            tab: open.tab,
             work: open.work.clone(),
             generation: open.generation,
             fact: Fact::Connected {
@@ -284,7 +371,7 @@ where
                     _=>return Err("Disconnected — reconnect explicitly. Input is not replayed.".into()),
                 };
                 if let Fact::End(message)=fact {return Err(message);}
-                publish(tx,wake,Update{work:open.work.clone(),generation:open.generation,fact}).await?;
+                publish(tx,wake,Update{tab:open.tab,work:open.work.clone(),generation:open.generation,fact}).await?;
 
             }
         }
@@ -312,8 +399,61 @@ fn decode_text(text: &str) -> Result<Option<Fact>, String> {
     })
 }
 
+async fn discover_catalog(client: &MedousaClient) -> Result<(Vec<Value>, Vec<Value>), String> {
+    let list: Value = client
+        .http()
+        .get("/v1/sessions/shell")
+        .await
+        .map_err(|_| "Could not discover workshop shells")?;
+    let mut sessions: Vec<Value> = list["sessions"]
+        .as_array()
+        .ok_or("Malformed workshop session list")?
+        .iter()
+        .filter(|s| active_human(s))
+        .cloned()
+        .collect();
+    sessions.sort_by_key(|s| s["session_id"].as_str().unwrap_or_default().to_owned());
+    let mut projects = Vec::new();
+    let mut cursor: Option<String> = None;
+    let mut seen = std::collections::HashSet::new();
+    loop {
+        let mut query = vec![("limit", "256".to_owned())];
+        if let Some(c) = cursor.take() {
+            query.push(("cursor", c));
+        }
+        let value: Value = client
+            .http()
+            .get_query("/v1/forge/items", &query)
+            .await
+            .map_err(|_| "Could not discover undertakings")?;
+        let items = value
+            .as_array()
+            .or_else(|| value["items"].as_array())
+            .ok_or("Malformed undertaking list")?;
+        projects.extend(
+            items
+                .iter()
+                .filter(|p| p["id"].as_str().is_some_and(|s| !s.is_empty()))
+                .cloned(),
+        );
+        if value["truncated"].as_bool() != Some(true) {
+            break;
+        }
+        let c = value["next_cursor"]
+            .as_str()
+            .ok_or("Missing undertaking cursor")?
+            .to_owned();
+        if !seen.insert(c.clone()) || seen.len() > 64 {
+            return Err("Undertaking discovery pagination limit".into());
+        }
+        cursor = Some(c);
+    }
+    Ok((projects, sessions))
+}
 struct Pane {
     entity: Entity,
+    name: String,
+    work: String,
     generation: u64,
     session: Option<String>,
     cwd: String,
@@ -324,80 +464,94 @@ struct Pane {
     size: Option<(u16, u16)>,
 }
 #[derive(Default)]
-struct DockState(Option<Dock>);
-struct Dock {
-    parent: Entity,
-    split: SplitSashHandle,
+struct ViewState(Option<View>);
+struct View {
+    sidebar: Entity,
     header: Entity,
+    tabs: Entity,
     body: Entity,
-    panes: HashMap<String, Pane>,
-    selected: Option<String>,
-    visible: bool,
-    ratio: f64,
+    empty: Entity,
+    strip: Option<TabStripHandle>,
+    panes: HashMap<u64, Pane>,
+    order: Vec<u64>,
+    selected: Option<u64>,
+    work: Option<String>,
+    projects: Vec<Value>,
+    sessions: Vec<Value>,
+    names: HashMap<String, String>,
+    next_shell: usize,
+    actions: HashMap<u64, Action>,
+    discovery: Option<u64>,
+    catalog_dirty: bool,
+    status: String,
     redraw: bool,
 }
-fn props(visible: bool) -> SplitSashProps {
-    let mut p = SplitSashProps::new("Terminal dock height");
-    p.axis = Axis::Column;
-    p.enabled = visible;
-    p.min_leading = 100.;
-    p.min_trailing = if visible { 120. } else { 0. };
-    p.default_ratio = 0.65;
-    p
+#[derive(Clone)]
+enum Action {
+    NewWork(String),
+    Attach(String, String),
 }
-pub fn mount(w: &mut World, parent: Entity) -> Entity {
-    let split =
-        SplitSash::mount(w, parent, UiId(SPLIT), props(false), 1.).expect("terminal dock split");
-    for entity in [split.leading, split.trailing] {
-        w.insert(
-            entity,
-            rndr_ui::UiStyle {
-                background: Some(visual::canvas().into()),
-                ..Default::default()
-            },
-        );
-    }
-    let header = w.spawn((
-        Layout {
-            width: Size::Fill,
-            height: Size::Hug,
-            gap: 4.,
-            padding: 4.,
-            ..Layout::row()
-        },
-        Wrap::default(),
-    ));
-    set_parent(w, header, split.trailing);
-    w.insert(
-        header,
-        rndr_ui::UiStyle {
-            background: Some(visual::canvas().into()),
-            ..Default::default()
-        },
-    );
-    let body = w.spawn((Layout {
+fn column(w: &mut World, parent: Entity) -> Entity {
+    let e = w.spawn((Layout {
         width: Size::Fill,
         height: Size::Fill,
         ..Layout::column()
     },));
-    set_parent(w, body, split.trailing);
-    w.insert(split.trailing, Hidden);
-    w.insert(split.sash, Hidden);
-    w.insert_resource(DockState(Some(Dock {
-        parent,
-        split,
-        header,
+    set_parent(w, e, parent);
+    e
+}
+pub fn mount_view(w: &mut World, parent: Entity) {
+    crate::ui::chrome::reset_terminal_tabs(w);
+    let row = w.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Fill,
+        ..Layout::row()
+    },));
+    set_parent(w, row, parent);
+    let sidebar = column(w, row);
+    w.get_mut::<Layout>(sidebar).unwrap().width = Size::Px(250.);
+    w.insert(sidebar, Scroll::default());
+    visual::navigation_frame(w, sidebar);
+    w.get_mut::<Layout>(sidebar).unwrap().padding = 12.;
+    w.get_mut::<Layout>(sidebar).unwrap().gap = 8.;
+    w.insert(sidebar, visual::SidebarPane);
+    let main = column(w, row);
+    visual::flat(w, main, visual::canvas());
+    let header = column(w, main);
+    w.get_mut::<Layout>(header).unwrap().padding = 12.;
+    w.get_mut::<Layout>(header).unwrap().gap = 6.;
+    w.get_mut::<Layout>(header).unwrap().height = Size::Hug;
+    let tabs = column(w, main);
+    w.get_mut::<Layout>(tabs).unwrap().height = Size::Hug;
+    let body = column(w, main);
+    let empty = text(
+        w,
         body,
+        "Open a shell from the sidebar, or choose an active session.",
+        Typography::Label,
+    )
+    .unwrap();
+    w.insert_resource(ViewState(Some(View {
+        sidebar,
+        header,
+        tabs,
+        body,
+        empty,
+        strip: None,
         panes: HashMap::new(),
+        order: Vec::new(),
         selected: None,
-        visible: false,
-        ratio: 0.65,
+        work: None,
+        projects: Vec::new(),
+        sessions: Vec::new(),
+        names: HashMap::new(),
+        next_shell: 1,
+        actions: HashMap::new(),
+        discovery: None,
+        catalog_dirty: false,
+        status: String::new(),
         redraw: true,
     })));
-    split.leading
-}
-pub fn toolbar(w: &mut World, parent: Entity, enabled: bool) {
-    visual::document_action(w, parent, TOGGLE, "Terminal", enabled);
 }
 pub fn focused(w: &World) -> bool {
     w.resource::<Focus>()
@@ -405,10 +559,10 @@ pub fn focused(w: &World) -> bool {
         .is_some_and(|e| w.has::<rndr_term::Terminal>(e))
 }
 fn unfocus(w: &mut World, e: Entity) {
-    if let Some(f) = w.resource_mut::<Focus>() {
-        if f.entity == Some(e) {
-            f.entity = None;
-        }
+    if let Some(f) = w.resource_mut::<Focus>()
+        && f.entity == Some(e)
+    {
+        f.entity = None;
     }
 }
 fn input_enabled(w: &mut World, e: Entity, enabled: bool) {
@@ -421,51 +575,96 @@ fn input_enabled(w: &mut World, e: Entity, enabled: bool) {
         unfocus(w, e);
     }
 }
-fn connect(w: &mut World, d: &mut Dock, new: bool, initial: bool) {
-    let Some(work) = d.selected.clone() else {
+fn refresh(w: &World, d: &mut View) {
+    if d.discovery.is_some() {
+        return;
+    }
+    let id = next();
+    if w.resource::<Service>()
+        .and_then(|s| s.discover.as_ref())
+        .is_some_and(|tx| tx.try_send(id).is_ok())
+    {
+        d.discovery = Some(id);
+        d.status = "Discovering workshop shells…".into();
+    } else {
+        d.status = "Terminal unavailable for this workshop. Local authenticated workshop connection required.".into();
+    }
+    d.redraw = true;
+}
+pub fn activate(w: &mut World) {
+    if let Some(mut d) = w.resource_mut::<ViewState>().and_then(|s| s.0.take()) {
+        refresh(w, &mut d);
+        w.resource_mut::<ViewState>().unwrap().0 = Some(d);
+    }
+}
+pub fn open_work(w: &mut World, work: String) {
+    if let Some(d) = w.resource_mut::<ViewState>().and_then(|s| s.0.as_mut()) {
+        d.work = Some(work);
+        d.redraw = true;
+    }
+}
+// Retain names across refresh and detach; catalog order is not shell identity.
+fn shell_name(d: &mut View, session: Option<&str>) -> String {
+    if let Some(name) = session.and_then(|id| d.names.get(id)) {
+        return name.clone();
+    }
+    let name = format!("Shell {}", d.next_shell);
+    d.next_shell += 1;
+    if let Some(id) = session {
+        d.names.insert(id.into(), name.clone());
+    }
+    name
+}
+fn add_tab(w: &mut World, d: &mut View, work: String, session: Option<String>) -> u64 {
+    if let Some(existing) = session.as_ref().and_then(|s| {
+        d.panes
+            .iter()
+            .find(|(_, p)| p.work == work && p.session.as_ref() == Some(s))
+            .map(|(id, _)| *id)
+    }) {
+        d.selected = Some(existing);
+        d.redraw = true;
+        return existing;
+    }
+    let name = shell_name(d, session.as_deref());
+    let id = next();
+    let e = column(w, d.body);
+    d.panes.insert(
+        id,
+        Pane {
+            entity: e,
+            name,
+            work,
+            generation: 0,
+            session,
+            cwd: String::new(),
+            status: String::new(),
+            connected: false,
+            frames: None,
+            cancel: None,
+            size: None,
+        },
+    );
+    d.order.push(id);
+    d.selected = Some(id);
+    d.redraw = true;
+    id
+}
+fn connect(w: &mut World, d: &mut View, id: u64, new: bool) {
+    let Some(p) = d.panes.get_mut(&id) else {
         return;
     };
-    if !d.panes.contains_key(&work) {
-        let e = w.spawn((
-            Layout {
-                width: Size::Fill,
-                height: Size::Fill,
-                ..Layout::column()
-            },
-            Semantics {
-                name: Some("Workshop terminal".into()),
-                ..Default::default()
-            },
-        ));
-        set_parent(w, e, d.body);
-        d.panes.insert(
-            work.clone(),
-            Pane {
-                entity: e,
-                generation: 0,
-                session: None,
-                cwd: String::new(),
-                status: String::new(),
-                connected: false,
-                frames: None,
-                cancel: None,
-                size: None,
-            },
-        );
-    }
-    let p = d.panes.get_mut(&work).unwrap();
     if p.frames.is_some() {
         return;
     }
-    p.frames = None;
-    p.cancel = None;
+    if !new && p.session.is_none() {
+        p.status = "Select an active session to attach, or use New shell explicitly.".into();
+        d.redraw = true;
+        return;
+    }
+    p.generation = next();
     p.connected = false;
     p.size = None;
-    p.generation += 1;
-    if new {
-        p.session = None;
-    }
-    // Server replays its scrollback on attach; reset only this emulator, not PTY.
     if let Err(e) = rndr_term::open_terminal(w, p.entity, rndr_term::TerminalOptions::offline()) {
         p.status = e.to_string();
         return;
@@ -474,10 +673,11 @@ fn connect(w: &mut World, d: &mut Dock, new: bool, initial: bool) {
     let (frames, rx) = mpsc::channel(32);
     let (cancel, cancelled) = oneshot::channel();
     let open = Open {
-        work,
+        tab: id,
+        work: p.work.clone(),
         generation: p.generation,
         session: p.session.clone(),
-        create: new || initial,
+        create: new,
         fresh: new,
         frames: rx,
         cancelled,
@@ -493,135 +693,218 @@ fn connect(w: &mut World, d: &mut Dock, new: bool, initial: bool) {
     }
     d.redraw = true;
 }
+fn close(w: &mut World, d: &mut View, id: u64) {
+    if let Some(p) = d.panes.remove(&id) {
+        input_enabled(w, p.entity, false);
+        drop(p.cancel);
+        drop(p.frames);
+        despawn(w, p.entity);
+    }
+    d.order.retain(|i| *i != id);
+    if d.selected == Some(id) {
+        d.selected = d.order.last().copied();
+    }
+    d.redraw = true;
+}
 pub(crate) fn can_rebind(w: &World) -> bool {
-    w.resource::<DockState>()
-        .and_then(|d| d.0.as_ref())
+    w.resource::<ViewState>()
+        .and_then(|s| s.0.as_ref())
         .is_none_or(|d| d.panes.is_empty())
 }
-/// A disconnected source must never retain another daemon's terminal service.
 pub(crate) fn disable(w: &mut World) {
     let (tx, _) = mpsc::channel(1);
     let (_, rx) = mpsc::channel(1);
-    let (wake, _) = feed::open(w, FeedConfig::queue(1));
+    let (wake, _) = feed::open(w, FeedConfig::latest());
     w.insert_resource(Service {
         tx,
+        discover: None,
         rx: Mutex::new(rx),
         _wake: wake,
     });
+    if let Some(d) = w.resource_mut::<ViewState>().and_then(|s| s.0.as_mut()) {
+        d.discovery = None;
+        d.catalog_dirty = false;
+        d.projects.clear();
+        d.sessions.clear();
+        d.work = None;
+        d.status="Terminal unavailable for this workshop. Local authenticated workshop connection required.".into();
+        d.redraw = true;
+    }
+}
+fn new_shell(w: &mut World, d: &mut View, work: String) {
+    if d.panes.len() >= 32 {
+        d.status = "Detach a tab before opening more terminals (32 maximum).".into();
+        d.redraw = true;
+    } else if w.resource::<Service>().is_some_and(|s| !s.tx.is_closed()) {
+        let id = add_tab(w, d, work, None);
+        connect(w, d, id, true);
+    }
 }
 pub fn action(w: &mut World, host: &HostIntent) -> bool {
     let HostIntent::Command(id) = host else {
         return false;
     };
-    if ![TOGGLE, RECONNECT, NEW, HIDE].contains(id) || w.resource::<DockState>().is_none() {
+    let Some(mut d) = w.resource_mut::<ViewState>().and_then(|s| s.0.take()) else {
         return false;
-    }
-    let mut d = w.resource_mut::<DockState>().unwrap().0.take().unwrap();
-    match *id {
-        TOGGLE => {
-            d.visible = !d.visible;
-            if d.visible
-                && d.selected
-                    .as_ref()
-                    .is_some_and(|s| !d.panes.contains_key(s))
-            {
-                connect(w, &mut d, false, true);
-            }
+    };
+    let handled = match *id {
+        REFRESH => {
+            refresh(w, &mut d);
+            true
         }
-        HIDE => d.visible = false,
-        RECONNECT => connect(w, &mut d, false, false),
-        NEW => connect(w, &mut d, true, false),
-        _ => {}
-    }
-    d.redraw = true;
-    w.resource_mut::<DockState>().unwrap().0 = Some(d);
-    true
+        GENERAL => {
+            new_shell(w, &mut d, String::new());
+            true
+        }
+        NEW => {
+            let work = d.work.clone().unwrap_or_default();
+            new_shell(w, &mut d, work);
+            true
+        }
+        RECONNECT => {
+            if let Some(id) = d.selected {
+                connect(w, &mut d, id, false);
+            }
+            true
+        }
+        CLOSE => {
+            if let Some(id) = d.selected {
+                close(w, &mut d, id);
+            }
+            true
+        }
+        _ => match d.actions.get(id).cloned() {
+            Some(Action::NewWork(work)) => {
+                new_shell(w, &mut d, work);
+                true
+            }
+            Some(Action::Attach(work, session)) => {
+                let existing = d
+                    .panes
+                    .values()
+                    .any(|p| p.work == work && p.session.as_deref() == Some(&session));
+                if d.panes.len() >= 32 && !existing {
+                    d.status = "Detach a tab before opening more terminals (32 maximum).".into();
+                    d.redraw = true;
+                } else {
+                    let id = add_tab(w, &mut d, work, Some(session));
+                    connect(w, &mut d, id, false);
+                }
+                true
+            }
+            None => false,
+        },
+    };
+    w.resource_mut::<ViewState>().unwrap().0 = Some(d);
+    handled
 }
-pub fn sync(w: &mut World, selected: Option<String>) {
-    let Some(mut d) = w.resource_mut::<DockState>().and_then(|s| s.0.take()) else {
+pub fn tick(w: &mut World) {
+    let Some(mut d) = w.resource_mut::<ViewState>().and_then(|s| s.0.take()) else {
         return;
     };
-    if d.selected != selected {
-        d.selected = selected;
-        d.redraw = true;
-        if d.visible
-            && d.selected
-                .as_ref()
-                .is_some_and(|s| !d.panes.contains_key(s))
-        {
-            connect(w, &mut d, false, false);
+    let active = crate::surfaces::active(w) == crate::surfaces::SurfaceId::Terminal;
+    if active {
+        for event in events::<TabStripEvent>(w).to_vec() {
+            if !d.strip.is_some_and(|s| s.root == event.strip) {
+                continue;
+            }
+            match event.kind {
+                TabStripEventKind::Activated(TabId(id)) if d.panes.contains_key(&id) => {
+                    d.selected = Some(id);
+                    d.redraw = true;
+                }
+                TabStripEventKind::CloseRequested(TabId(id)) => close(w, &mut d, id),
+                _ => {}
+            }
         }
     }
     let updates = w
         .resource::<Service>()
         .map(|s| {
             let mut rx = s.rx.lock().unwrap();
-            let mut out = Vec::new();
-            for _ in 0..64 {
-                match rx.try_recv() {
-                    Ok(u) => out.push(u),
-                    Err(_) => break,
-                }
-            }
-            out
+            (0..64)
+                .filter_map(|_| rx.try_recv().ok())
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
     for u in updates {
+        if let Fact::Catalog(result) = u.fact {
+            if d.discovery != Some(u.generation) {
+                continue;
+            }
+            d.discovery = None;
+            match result {
+                Ok((projects, sessions)) => {
+                    d.projects = projects;
+                    d.sessions = sessions;
+                    d.status.clear();
+                }
+                Err(e) => d.status = e,
+            }
+            d.redraw = true;
+            continue;
+        }
         let Some(p) = d
             .panes
-            .get_mut(&u.work)
-            .filter(|p| p.generation == u.generation)
+            .get_mut(&u.tab)
+            .filter(|p| p.work == u.work && p.generation == u.generation)
         else {
             continue;
         };
         match u.fact {
             Fact::Bound { session, cwd } => {
+                d.names.insert(session.clone(), p.name.clone());
+                d.catalog_dirty = true;
                 p.session = Some(session);
                 p.cwd = cwd;
             }
             Fact::Connected { session, cwd } => {
+                d.names.insert(session.clone(), p.name.clone());
                 p.session = Some(session);
                 p.cwd = cwd;
                 p.connected = true;
                 p.status = "Connected".into();
-                input_enabled(w, p.entity, true);
             }
             Fact::Output(bytes) => {
                 rndr_term::feed_terminal(w, p.entity, &bytes);
                 continue;
             }
             Fact::End(message) => {
+                d.catalog_dirty = true;
                 p.connected = false;
                 p.frames = None;
                 p.cancel = None;
                 p.status = message;
-                input_enabled(w, p.entity, false);
             }
+            Fact::Catalog(_) => unreachable!(),
         }
         d.redraw = true;
     }
-    let active = crate::surfaces::active(w) == crate::surfaces::SurfaceId::Code;
-    let visible = d.visible && d.selected.is_some();
-    for (work, p) in &mut d.panes {
-        let show = visible && d.selected.as_ref() == Some(work);
+    // An event during an in-flight discovery must trigger a subsequent read,
+    // rather than letting that older snapshot mask a newly created/exited shell.
+    if d.catalog_dirty && d.discovery.is_none() {
+        refresh(w, &mut d);
+        d.catalog_dirty = false;
+    }
+    for (id, p) in &mut d.panes {
+        let show = d.selected == Some(*id);
         if show {
             w.remove::<Hidden>(p.entity);
         } else {
             w.insert(p.entity, Hidden);
-            unfocus(w, p.entity);
         }
-        // Drain emulator-generated replies even when hidden. Never retain input
-        // across a disconnect or reconnect generation.
+        input_enabled(w, p.entity, active && show && p.connected);
+        // Hidden/off-surface input is drained and dropped, never replayed.
         let bytes = rndr_term::take_terminal_bytes(w, p.entity).unwrap_or_default();
-        if p.connected {
-            let size = w.get::<MonoGrid>(p.entity).map(|g| (g.cols, g.rows));
+        if p.connected && active && show {
             let mut failed = false;
-            if show && active && size != p.size {
-                if let (Some((cols, rows)), Some(tx)) = (size, p.frames.as_ref()) {
-                    failed = tx.try_send(Frame::Resize(cols, rows)).is_err();
-                    if !failed {
-                        p.size = size;
-                    }
+            let size = w.get::<MonoGrid>(p.entity).map(|g| (g.cols, g.rows));
+            if size != p.size
+                && let (Some((cols, rows)), Some(tx)) = (size, p.frames.as_ref())
+            {
+                failed = tx.try_send(Frame::Resize(cols, rows)).is_err();
+                if !failed {
+                    p.size = size;
                 }
             }
             if !bytes.is_empty() {
@@ -641,63 +924,198 @@ pub fn sync(w: &mut World, selected: Option<String>) {
                 d.redraw = true;
             }
         }
-        if !active {
-            unfocus(w, p.entity);
-        }
     }
-    for e in [d.split.trailing, d.split.sash] {
-        if visible {
-            w.remove::<Hidden>(e);
-        } else {
-            w.insert(e, Hidden);
-        }
+    if d.panes.is_empty() {
+        w.remove::<Hidden>(d.empty);
+    } else {
+        w.insert(d.empty, Hidden);
     }
-    for event in events::<rndr_ui::split::SplitSashChange>(w) {
-        if visible && event.sash == d.split.sash {
-            d.ratio = event.ratio;
-        }
-    }
-    let ratio = if visible { d.ratio } else { 1. };
-    // Idempotent mount preserves the user's drag ratio between frames.
-    SplitSash::mount(w, d.parent, UiId(SPLIT), props(visible), ratio).expect("terminal dock");
-    // Wrap establishes a paintable node; explicitly own its surface as well
-    // as the split pane so its default fill cannot leak through.
-    w.insert(d.header, visual::color(w, visual::canvas()));
     if d.redraw {
-        for child in children_of(w, d.header) {
-            despawn(w, child);
-        }
-        let p = d.selected.as_ref().and_then(|s| d.panes.get(s));
-        let label = p
-            .map(|p| format!("Terminal · {} · {}", p.cwd, p.status))
-            .unwrap_or_else(|| "Select an undertaking to open a terminal".into());
-        let label = text(w, d.header, &label, Typography::Caption).unwrap();
-        w.get_mut::<Layout>(label).unwrap().width = Size::Fill;
-        rndr_ui::inputs::Tooltip::attach(
-            w,
-            label,
-            &p.map(|p| format!("{}\n{}", p.session.as_deref().unwrap_or(""), p.status))
-                .unwrap_or_else(|| "Workshop-owned human shell".into()),
-        )
-        .unwrap();
-        visual::document_action(
-            w,
-            d.header,
-            RECONNECT,
-            "Reconnect",
-            p.is_some_and(|p| p.frames.is_none()),
-        );
-        visual::document_action(
-            w,
-            d.header,
-            NEW,
-            "New shell",
-            p.is_some_and(|p| p.frames.is_none()),
-        );
-        visual::document_action(w, d.header, HIDE, "Hide", true);
+        render(w, &mut d);
         d.redraw = false;
     }
-    w.resource_mut::<DockState>().unwrap().0 = Some(d);
+    w.resource_mut::<ViewState>().unwrap().0 = Some(d);
+}
+fn sidebar_action(w: &mut World, parent: Entity, id: u64, label: &str, hint: &str) {
+    let h = visual::document_action(w, parent, id, label, true);
+    visual::action_hint(w, h.root, hint);
+    w.remove::<visual::FitLabel>(h.root);
+    w.get_mut::<Layout>(h.root).unwrap().width = Size::Fill;
+}
+fn sidebar_row(w: &mut World, parent: Entity) -> Entity {
+    let row = w.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Hug,
+        gap: 4.,
+        ..Layout::row()
+    },));
+    set_parent(w, row, parent);
+    row
+}
+fn render(w: &mut World, d: &mut View) {
+    for parent in [d.header, d.sidebar] {
+        for child in children_of(w, parent) {
+            despawn(w, child);
+        }
+    }
+    d.actions.clear();
+    let available = w.resource::<Service>().is_some_and(|s| !s.tx.is_closed());
+    let title = sidebar_row(w, d.sidebar);
+    let label = text(w, title, "Terminal", Typography::Label).unwrap();
+    w.get_mut::<Layout>(label).unwrap().width = Size::Fill;
+    visual::icon_action(
+        w,
+        title,
+        GENERAL,
+        Icon::Plus,
+        "New shell without undertaking",
+        available && d.panes.len() < 32,
+    );
+    visual::icon_action(
+        w,
+        title,
+        REFRESH,
+        Icon::RefreshCw,
+        "Refresh sessions",
+        d.discovery.is_none(),
+    );
+    let p = d.selected.and_then(|id| d.panes.get(&id));
+    if let Some(p) = p {
+        let tools = sidebar_row(w, d.sidebar);
+        let label = text(w, tools, "Selected tab", Typography::Caption).unwrap();
+        w.get_mut::<Layout>(label).unwrap().width = Size::Fill;
+        visual::icon_action(
+            w,
+            tools,
+            RECONNECT,
+            Icon::RefreshCw,
+            "Reconnect selected shell",
+            available && p.frames.is_none() && p.session.is_some(),
+        );
+        visual::icon_action(
+            w,
+            tools,
+            CLOSE,
+            Icon::X,
+            "Detach selected tab (keep shell running)",
+            true,
+        );
+    }
+    visual::rule(w, d.sidebar);
+    text(w, d.sidebar, "Active sessions", Typography::Caption).unwrap();
+    let sessions: Vec<_> = d
+        .sessions
+        .iter()
+        .filter(|s| active_human(s))
+        .cloned()
+        .collect();
+    let mut count = 0;
+    for session in &sessions {
+        let Some(shell) = session["session_id"].as_str() else {
+            continue;
+        };
+        let work = session["work_id"].as_str().unwrap_or_default();
+        let title = d
+            .projects
+            .iter()
+            .find(|p| p["id"].as_str() == Some(work))
+            .and_then(|p| p["title"].as_str())
+            .unwrap_or(if work.is_empty() {
+                "Workshop shell"
+            } else {
+                "Undertaking shell"
+            })
+            .to_owned();
+        let label = shell_name(d, Some(shell));
+        let hint = format!("{label} · {title}\nSession: {shell}");
+        let id = next();
+        d.actions
+            .insert(id, Action::Attach(work.into(), shell.into()));
+        sidebar_action(w, d.sidebar, id, &label, &hint);
+        count += 1;
+    }
+    if count == 0 {
+        text(w, d.sidebar, "No active sessions", Typography::Caption).unwrap();
+    }
+    visual::rule(w, d.sidebar);
+    text(w, d.sidebar, "Open undertakings", Typography::Caption).unwrap();
+    let mut count = 0;
+    for project in d.projects.iter().filter(|p| open_project(p)) {
+        let work = project["id"].as_str().unwrap();
+        let title = project["title"].as_str().unwrap_or(work);
+        let row = sidebar_row(w, d.sidebar);
+        let label = text(w, row, title, Typography::Label).unwrap();
+        w.get_mut::<Layout>(label).unwrap().width = Size::Fill;
+        w.get_mut::<Label>(label).unwrap().overflow = TextOverflow::Ellipsis;
+        visual::action_hint(w, label, title);
+        let id = next();
+        d.actions.insert(id, Action::NewWork(work.into()));
+        visual::icon_action(
+            w,
+            row,
+            id,
+            Icon::Plus,
+            &format!("New shell for {title}"),
+            available && d.panes.len() < 32,
+        );
+        count += 1;
+    }
+    if count == 0 {
+        text(w, d.sidebar, "No open undertakings", Typography::Caption).unwrap();
+    }
+    let p = d.selected.and_then(|id| d.panes.get(&id));
+    if let Some(p) = p {
+        text(
+            w,
+            d.header,
+            &format!("{} · {}", p.cwd, p.status),
+            Typography::Caption,
+        )
+        .unwrap();
+    }
+    if !d.status.is_empty() {
+        text(w, d.header, &d.status, Typography::Caption).unwrap();
+    }
+    if let Some(selected) = d.selected {
+        w.remove::<Hidden>(d.tabs);
+        let specs: Vec<_> = d
+            .order
+            .iter()
+            .filter_map(|id| d.panes.get(id).map(|p| TabSpec::new(*id, &p.name)))
+            .collect();
+        let strip = TabStrip::mount(
+            w,
+            d.tabs,
+            UiId(STRIP),
+            TabStripProps::new("Workshop terminals"),
+            &specs,
+            TabId(selected),
+        )
+        .expect("terminal tabs");
+        for id in &d.order {
+            if let Some(p) = d.panes.get(id)
+                && let Some(tab) = strip.tab(w, TabId(*id))
+                && let Some(session) = &p.session
+            {
+                visual::action_hint(w, tab, &format!("{}\nSession: {session}", p.name));
+            }
+        }
+        w.insert(
+            strip.root,
+            Layout {
+                width: Size::Fill,
+                height: Size::Px(36.),
+                ..Layout::column()
+            },
+        );
+        w.insert(strip.body, Hidden);
+        crate::ui::chrome::terminal_tabs(w, strip);
+        d.strip = Some(strip);
+    } else {
+        crate::ui::chrome::clear_terminal_tabs(w);
+        d.strip = None;
+        w.insert(d.tabs, Hidden);
+    }
 }
 
 #[cfg(test)]
