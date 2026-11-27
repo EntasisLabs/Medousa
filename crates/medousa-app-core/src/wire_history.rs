@@ -137,7 +137,7 @@ fn project_wire_entry(
         None
     };
 
-    ChatItem {
+    let mut item = ChatItem {
         id: if !entry_id.is_empty() {
             format!("{session_id}:{entry_id}")
         } else {
@@ -227,7 +227,9 @@ fn project_wire_entry(
         requested_rounds: None,
         error_detail: None,
         live_transcripts: None,
-    }
+    };
+    crate::display::project_worker_completion(&mut item);
+    item
 }
 
 pub fn project_wire_history(

@@ -24,6 +24,24 @@ Switching to Notes, Code, or Reviews keeps chat tabs, split panes, unsent drafts
 background streams in this window. Returning restores the chat workspace. Chat
 send shortcuts do not send a message while another workspace is active.
 
+## Write a message and choose a model
+
+In the main Chat composer, **Enter** sends and **Shift+Enter** inserts a new
+line. **Command+Enter** on macOS (or **Ctrl+Enter** elsewhere) also sends.
+These shortcuts belong to the message editor, not search fields, menus, Notes,
+or Code. Input-method composition keeps Enter for confirming text rather than
+sending the draft.
+
+For Medousa's own runtime, select the model name below the composer, choose a
+**provider**, then choose one of that provider's models. **All providers** goes
+back without changing the active model; only picking a model changes the route.
+The active choices have check marks. Large catalogs scroll inside the menu and
+use **Previous page** / **Next page** beyond the menu's bounded capacity.
+**Search models…** opens the catalog filter; type a model or provider name and
+press Enter (or **Choose provider…**) to browse matching providers and models.
+Clear the filter to see the full catalog again. Escape or clicking outside
+closes the menu without changing the model or draft.
+
 ## Sidebar grouping
 
 Chat history uses the same local-date sections as the Tauri app: **Today**,
@@ -76,6 +94,11 @@ Private rolling reasoning is not copied into this view. Tool evidence may be a
 retained tail rather than a complete execution log; the persisted transcript's
 retention note explains that limit. If only a card preview is available, the view
 says so instead of presenting it as the complete history.
+
+Returned work completions display the agent's reply text, with Markdown intact,
+not the structured JSON delivery envelope. This also applies when reopening saved
+chat history. Copying the reply copies that text; durable work receipts and causal
+links remain unchanged. Ordinary JSON answers are not treated as completions.
 
 A returned worker result is not evidence that Medousa has reviewed, approved or
 applied changes. **Result ready · Awaiting Medousa summary** and **Result recorded**

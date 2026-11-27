@@ -39,7 +39,10 @@ read it in full. The library
 sidebar and **Open source chat** / **Export HTML…** actions remain available.
 Scroll inside the preview to read long artifacts; interactive controls stay in
 that isolated document. Resizing, filtering the list and updating library
-metadata preserve the selected document and its scroll position. **Reload
+metadata preserve the selected document and its scroll position. Hover hints
+and nonmodal popovers cover only their local area; they do not hide or reload
+the whole artifact. Modal dialogs temporarily hide the guest to keep native
+focus and input with the dialog. **Reload
 preview** starts it fresh or retries a failed load. Leaving Artifacts retires the
 preview; returning loads the selected artifact again.
 The source chat opens in its original workshop, even if your other chats use a
@@ -49,7 +52,10 @@ preview both enforce the 2 MiB HTML limit. Preview may be unavailable in your
 build; the document area explains that fallback, and browsing, source-chat
 navigation and HTML export do not require WebKit. Native previews remove the
 legacy Medousa-injected scroll-lock stylesheet, like Tauri; authored layout/CSS,
-the saved artifact and exported bytes are unchanged.
+the saved artifact and exported bytes are unchanged. Native previews also contain
+root-level overscroll at document edges, preventing elastic scrolling beyond the
+document's bounds. Normal document and nested scrolling remain available; this
+presentation rule does not alter the saved or exported HTML.
 
 PNG/PDF export and sharing are not yet available in this native destination.
 
@@ -79,7 +85,46 @@ support**. Builds with preview disabled and unsupported platforms show
 **Preview unavailable**; they do
 not open the HTML in an ordinary browser as a fallback. Preview HTML is limited
 to 2 MiB, loaded using the conversation's authenticated workshop connection.
+The preview renders as the main WebKit document, rather than a scrolling inner
+frame. Its sandbox is enforced by an immutable response policy; the backend
+checks that policy before admitting artifact content and refuses the preview if
+isolation cannot be verified. This avoids the inner-frame rendering path without
+limiting wheel speed or changing the saved HTML.
 Inline scripts, inline styles and data images can work. External networking,
 storage, navigation, forms, popups, downloads and native commands are blocked.
 Artifacts that depend on remote fonts, scripts or other external assets will not
 render the same way as they do in an unrestricted browser.
+
+### Diagnose fast-wheel flashes in a native development build
+
+For a physical-mouse investigation on macOS, the development checkout includes
+an opt-in RNDR artifact probe. It records native wheel delivery and view lifecycle
+metadata without changing scroll speed, guest styling or sandbox policy. It does
+not record document HTML or ordinary typed keys, and needs no global input
+monitoring permission. A wheel callback is **not** evidence that WebKit painted
+the destination; the probe alone does not establish a tile-cache failure.
+
+From the Medousa repository root:
+
+```sh
+scripts/native-artifact-probe.sh build
+# Quit the existing native app normally before starting the diagnostic instance.
+scripts/native-artifact-probe.sh start
+```
+
+Open the affected artifact. Try a short slow-scroll baseline, a fast jump across
+the document, then rapid direction changes. Immediately after a visible flash,
+press **Cmd+Shift+M** with the artifact window focused to mark the approximate
+observation time. The marker follows your reaction, not the exact faulty frame.
+The probe observes but does not consume this shortcut. From another terminal,
+`mark` also requests a marker without moving app focus.
+
+When finished, run `scripts/native-artifact-probe.sh stop` in another terminal.
+Wait for the flushed-summary confirmation before quitting; abrupt process exit
+can lose the buffered tail. This stops logging without quitting the app. Use
+`status` to find the private run directory under `.tmp/artifact-probes/`; a new `start` creates a new
+run. The launch terminal stays attached, with app output in `console.log`.
+Opening an artifact initializes the RNDR JSONL log; an absent log is not a clean
+result. Share the run location and which marked attempts flashed. Collection stops after ten minutes or 20,000 records, whichever comes first;
+use a short, repeatable session. Normal launches do not
+enable it. This is diagnostic instrumentation, **not a rendering fix**.

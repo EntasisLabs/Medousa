@@ -177,7 +177,7 @@ fn project_entry(
         None
     };
 
-    ChatItem {
+    let mut item = ChatItem {
         id: if !entry_id.is_empty() {
             format!("{session_id}:{entry_id}")
         } else {
@@ -260,7 +260,9 @@ fn project_entry(
         requested_rounds: None,
         error_detail: None,
         live_transcripts: None,
-    }
+    };
+    crate::display::project_worker_completion(&mut item);
+    item
 }
 
 /// Map daemon history turns into canonical chat items.

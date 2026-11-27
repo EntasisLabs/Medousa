@@ -442,17 +442,122 @@ pub fn apply(world: &mut World, update: Update) {
     test,
     all(target_os = "macos", feature = "macos-private-webkit-artifacts")
 ))]
-fn inline_occluded(world: &World, bounds: Option<Rect>) -> bool {
-    !world.entities_with::<Modal>().is_empty()
-        || world.entities_with::<AnchoredPopup>().iter().any(|e| {
-            !world.has::<Hidden>(*e)
-                && world.get::<Rect>(*e).is_some_and(|p| {
-                    bounds.is_none_or(|b| {
-                        p.x < b.x + b.w && p.x + p.w > b.x && p.y < b.y + b.h && p.y + p.h > b.y
-                    })
-                })
+/// Native guest views sit above RNDR's painted UI. Layer trusted popup pixels
+/// above the guest with transparency; never hide the whole
+/// document just because a tooltip opened.
+/// Modal surfaces still suspend the guest to preserve input/focus isolation.
+fn inline_occluded(world: &World) -> bool {
+    world
+        .entities_with::<Modal>()
+        .iter()
+        .any(|e| !world.has::<Hidden>(*e))
+}
+
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-private-webkit-artifacts")
+))]
+fn popup_regions(world: &World, bounds: Rect) -> Vec<(Entity, Rect)> {
+    layered_roots(world)
+        .into_iter()
+        .filter(|e| world.has::<AnchoredPopup>(*e))
+        .filter_map(|e| {
+            if world.has::<Hidden>(e) {
+                return None;
+            }
+            let rect = *world.get::<Rect>(e)?;
+            if rect.w <= 0. || rect.h <= 0. {
+                return None;
+            }
+            let mut paint = rect;
+            if let Some(Shadows(shadows)) = world.get::<Shadows>(e) {
+                for shadow in shadows.iter().filter(|s| !s.inset && s.color.a > 0.) {
+                    // Match rndr_paint's outer-shadow support: 3 sigma + 1px.
+                    let pad = shadow.spread + 1.5 * shadow.blur.max(0.) + 1.;
+                    let left = rect.x + shadow.offset[0] - pad;
+                    let top = rect.y + shadow.offset[1] - pad;
+                    let right = rect.x + rect.w + shadow.offset[0] + pad;
+                    let bottom = rect.y + rect.h + shadow.offset[1] + pad;
+                    let x = paint.x.min(left);
+                    let y = paint.y.min(top);
+                    paint = Rect {
+                        x,
+                        y,
+                        w: (paint.x + paint.w).max(right) - x,
+                        h: (paint.y + paint.h).max(bottom) - y,
+                    };
+                }
+            }
+            paint = transformed_rect(world, e, paint);
+            intersect(paint, bounds).map(|rect| (e, rect))
+        })
+        .collect()
+}
+
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-private-webkit-artifacts")
+))]
+fn intersect(a: Rect, b: Rect) -> Option<Rect> {
+    let x = a.x.max(b.x);
+    let y = a.y.max(b.y);
+    let right = (a.x + a.w).min(b.x + b.w);
+    let bottom = (a.y + a.h).min(b.y + b.h);
+    (x.is_finite()
+        && y.is_finite()
+        && right.is_finite()
+        && bottom.is_finite()
+        && right > x
+        && bottom > y)
+        .then_some(Rect {
+            x,
+            y,
+            w: right - x,
+            h: bottom - y,
         })
 }
+#[cfg(any(
+    test,
+    all(target_os = "macos", feature = "macos-private-webkit-artifacts")
+))]
+fn transformed_rect(world: &World, e: Entity, rect: Rect) -> Rect {
+    let Some(transform) = world.get::<Transform>(e) else {
+        return rect;
+    };
+    let origin = world.get::<Rect>(e).copied().unwrap_or(rect);
+    let [a, b, c, d, tx, ty] = transform.matrix(origin);
+    let mut min = [f32::INFINITY; 2];
+    let mut max = [f32::NEG_INFINITY; 2];
+    for [x, y] in [
+        [rect.x, rect.y],
+        [rect.x + rect.w, rect.y],
+        [rect.x, rect.y + rect.h],
+        [rect.x + rect.w, rect.y + rect.h],
+    ] {
+        let p = [a * x + c * y + tx, b * x + d * y + ty];
+        for i in 0..2 {
+            min[i] = min[i].min(p[i]);
+            max[i] = max[i].max(p[i]);
+        }
+    }
+    Rect {
+        x: min[0],
+        y: min[1],
+        w: max[0] - min[0],
+        h: max[1] - min[1],
+    }
+}
+#[cfg(test)]
+fn inline_occlusions(world: &World, bounds: Rect) -> Vec<Rect> {
+    popup_regions(world, bounds)
+        .into_iter()
+        .map(|(_, rect)| rect)
+        .collect()
+}
+
+#[cfg(all(target_os = "macos", feature = "macos-private-webkit-artifacts"))]
+#[path = "artifact_overlays.rs"]
+mod overlays;
 
 /// Never stored in ECS: platform views must stay on the event-loop thread.
 #[cfg(all(target_os = "macos", feature = "macos-private-webkit-artifacts"))]
@@ -460,6 +565,7 @@ fn inline_occluded(world: &World, bounds: Option<Rect>) -> bool {
 pub struct Host {
     nonce: Option<u64>,
     preview: Option<rndr_browser::ArtifactPreview>,
+    overlays: overlays::Cache,
 }
 #[cfg(all(target_os = "macos", feature = "macos-private-webkit-artifacts"))]
 impl rndr_render::NativeHost for Host {
@@ -475,6 +581,7 @@ impl rndr_render::NativeHost for Host {
         let Some(v) = world.resource::<State>().and_then(|s| s.viewer.as_ref()) else {
             self.preview = None;
             self.nonce = None;
+            self.overlays.clear();
             if had_viewer {
                 context.request_redraw();
             }
@@ -488,10 +595,11 @@ impl rndr_render::NativeHost for Host {
             None
         };
         let inline = v.inline;
-        let occluded = inline && inline_occluded(world, bounds);
+        let occluded = inline && inline_occluded(world);
         if self.nonce != Some(nonce) {
             self.preview = None; // retire the previous JS/DOM before replacement
             self.nonce = None;
+            self.overlays.clear();
         }
         let html = v.html.as_deref()?;
         let result = (|| {
@@ -525,6 +633,16 @@ impl rndr_render::NativeHost for Host {
                 rndr_browser::ClientRect::try_new(rect.x, rect.y, rect.w, rect.h)
                     .map_err(rndr_browser::ArtifactError::Rect)?,
             )?;
+            let overlays = self
+                .overlays
+                .sync(
+                    world,
+                    rect,
+                    context.scale_factor as f32,
+                    context.physical_size,
+                )
+                .map_err(|_| rndr_browser::ArtifactError::Overlay("popup rasterization failed"))?;
+            preview.set_overlays(overlays)?;
             if context.visible {
                 preview.show();
             } else {
@@ -558,6 +676,7 @@ impl rndr_render::NativeHost for Host {
     fn detach(&mut self, world: &mut World) {
         self.preview = None;
         self.nonce = None;
+        self.overlays.clear();
         close(world);
     }
 }
@@ -638,15 +757,16 @@ mod tests {
         }
     }
     #[test]
-    fn inline_guest_yields_to_overlapping_popups_and_modals_not_sidebar_popups() {
+    fn inline_guest_clips_overlapping_popups_but_only_modals_suspend_document() {
         let mut world = World::new();
-        let bounds = Some(Rect {
+        let bounds = Rect {
             x: 300.,
             y: 200.,
             w: 400.,
             h: 300.,
-        });
-        assert!(!inline_occluded(&world, bounds));
+        };
+        assert!(!inline_occluded(&world));
+        assert!(inline_occlusions(&world, bounds).is_empty());
         let anchor = world.spawn((Layout::row(),));
         let popup = world.spawn((
             AnchoredPopup {
@@ -661,13 +781,75 @@ mod tests {
                 h: 300.,
             },
         ));
-        assert!(!inline_occluded(&world, bounds));
+        assert!(!inline_occluded(&world));
+        assert!(inline_occlusions(&world, bounds).is_empty());
         world.get_mut::<Rect>(popup).unwrap().x = 350.;
-        assert!(inline_occluded(&world, bounds));
+        assert!(!inline_occluded(&world));
+        assert_eq!(
+            inline_occlusions(&world, bounds),
+            vec![Rect {
+                x: 350.,
+                y: 200.,
+                w: 200.,
+                h: 200.
+            }]
+        );
+        // Passive hover/focus hints use the same local clipping, not hide().
+        world.insert(popup, PassivePopup);
+        assert!(!inline_occluded(&world));
+        assert_eq!(inline_occlusions(&world, bounds).len(), 1);
         world.insert(popup, Hidden);
-        assert!(!inline_occluded(&world, bounds));
-        world.spawn((Modal,));
-        assert!(inline_occluded(&world, bounds));
+        assert!(!inline_occluded(&world));
+        assert!(inline_occlusions(&world, bounds).is_empty());
+        let modal = world.spawn((Modal,));
+        assert!(inline_occluded(&world));
+        world.insert(modal, Hidden);
+        assert!(!inline_occluded(&world));
+    }
+    #[test]
+    fn popup_cutout_tracks_painted_transform_shadow_and_dismissal() {
+        let mut world = World::new();
+        let bounds = Rect {
+            x: 0.,
+            y: 0.,
+            w: 1000.,
+            h: 800.,
+        };
+        let anchor = world.spawn((Layout::row(),));
+        let popup = world.spawn((
+            AnchoredPopup {
+                anchor,
+                max_height: 200.,
+                closed: |_, _| {},
+            },
+            Rect {
+                x: 100.,
+                y: 100.,
+                w: 200.,
+                h: 40.,
+            },
+            PassivePopup,
+            Transform::translate(0., -4.),
+            Shadows(vec![Shadow::drop(2., 8., Color::rgba(0., 0., 0., 0.2))]),
+        ));
+        assert_eq!(
+            inline_occlusions(&world, bounds),
+            vec![Rect {
+                x: 87.,
+                y: 85.,
+                w: 226.,
+                h: 66.
+            }]
+        );
+        assert!(!inline_occluded(&world));
+        world.insert(popup, Hidden);
+        assert!(inline_occlusions(&world, bounds).is_empty());
+        world.remove::<Hidden>(popup);
+        world.get_mut::<Rect>(popup).unwrap().y = 900.;
+        assert!(inline_occlusions(&world, bounds).is_empty());
+        world.get_mut::<Rect>(popup).unwrap().y = 100.;
+        world.get_mut::<Rect>(popup).unwrap().w = 0.;
+        assert!(inline_occlusions(&world, bounds).is_empty());
     }
     #[test]
     fn inline_reparent_retains_document_nonce_and_does_not_steal_focus() {

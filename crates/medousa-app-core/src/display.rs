@@ -6,6 +6,60 @@ use std::sync::OnceLock;
 
 use crate::contract::{ChatItem, ChatItemRole, ChatLane, WorkerReturnFact};
 
+/// Display only the reply in a daemon-authored worker completion envelope.
+/// Call only for an explicitly identified worker synthesis, never arbitrary prose.
+/// Stored transcript bytes and receipt identities remain unchanged.
+fn worker_completion_text(content: &str) -> String {
+    let Ok(serde_json::Value::Object(envelope)) = serde_json::from_str(content) else {
+        return content.to_owned();
+    };
+    let request = envelope
+        .get("request_id")
+        .and_then(serde_json::Value::as_str);
+    if request.is_none_or(|id| id.trim().is_empty()) {
+        return content.to_owned();
+    }
+    let terminal = |key: &str| {
+        envelope
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|state| {
+                matches!(state, "completed" | "failed" | "cancelled" | "interrupted")
+            })
+    };
+    let reply = if terminal("outcome")
+        && envelope
+            .get("worker")
+            .is_some_and(serde_json::Value::is_object)
+    {
+        envelope.get("result")
+    } else if terminal("status") {
+        envelope.get("text")
+    } else {
+        None
+    };
+    reply
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(content)
+        .to_owned()
+}
+
+/// Normalize both compatibility content and segment-backed narrative together.
+/// Tools, artifacts, transcript coordinates and causal identities are untouched.
+pub(crate) fn project_worker_completion(item: &mut ChatItem) {
+    if item.role != ChatItemRole::Assistant
+        || item.answer_state.as_deref() != Some("worker_synthesis")
+    {
+        return;
+    }
+    item.content = worker_completion_text(&item.content);
+    for segment in item.segments.iter_mut().flatten() {
+        if let crate::contract::ChatSegment::Text { markdown, .. } = segment {
+            *markdown = worker_completion_text(markdown);
+        }
+    }
+}
+
 fn startup_text_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {

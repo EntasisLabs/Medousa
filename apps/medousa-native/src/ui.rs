@@ -36,6 +36,8 @@ pub(crate) mod collaboration;
 mod command_palette;
 #[path = "conversations.rs"]
 mod conversations;
+#[path = "model_picker.rs"]
+mod model_picker;
 #[path = "workshop_status.rs"]
 pub(crate) mod workshop_status;
 
@@ -52,9 +54,8 @@ const SEARCH: u64 = 2;
 const RELOAD: u64 = 3;
 const SEND: u64 = 4;
 const STOP: u64 = 5;
+const MODEL_PICKER: u64 = 10;
 const SESSION: u64 = 1000;
-const MODEL_PREV: u64 = 6;
-const MODEL_NEXT: u64 = 7;
 const MORE: u64 = 8;
 const PIN: u64 = 22;
 const UNPIN: u64 = 26;
@@ -76,8 +77,6 @@ pub struct Model {
     search_query: String,
     session_cursor: Option<String>,
     pending_media: Vec<medousa_types::MediaRef>,
-    model_filter: String,
-    model_page: usize,
     drafts: HashMap<String, DocumentId>,
     external_drafts: HashMap<String, (DocumentId, rndr_core::editing::Revision)>,
     approval_refresh: std::time::Instant,
@@ -116,8 +115,6 @@ impl Model {
             search_query: String::new(),
             session_cursor: None,
             pending_media: vec![],
-            model_filter: String::new(),
-            model_page: 0,
             drafts: HashMap::new(),
             external_drafts: HashMap::new(),
             approval_refresh: std::time::Instant::now(),
@@ -163,20 +160,26 @@ struct Ui {
     behavior: Entity,
     model_caption: Entity,
     model_filter: Entity,
-    model_pages: Entity,
 }
 
 pub fn app() -> App {
     let mut app = App::new();
     app.add_plugin(UiPlugin);
+    app.world_mut()
+        .insert_resource(model_picker::State::default());
     app.add_plugin(MarkdownPlugin);
     // Reuse RNDR retained rich Markdown for Notes alongside read-only rendering.
     app.add_plugin(rndr_markdown_ui::MarkdownPlugin);
     app.add_plugin(rndr_term::TerminalPlugin);
-    app.world_mut().resource_mut::<Keymap>().unwrap().bind(
-        KeyBinding::new("chat.send", [Keystroke::named(NamedKey::Enter).primary()])
-            .context("Chat composer"),
-    );
+    for stroke in [
+        Keystroke::named(NamedKey::Enter),
+        Keystroke::named(NamedKey::Enter).primary(),
+    ] {
+        app.world_mut()
+            .resource_mut::<Keymap>()
+            .unwrap()
+            .bind(KeyBinding::new("chat.send", [stroke]).context("Chat composer"));
+    }
     // Tests render the default theme, not whatever this machine has chosen.
     let medousa = crate::theme::resolve(&if cfg!(test) {
         crate::theme::default_id()
@@ -254,6 +257,7 @@ fn button(
         CONVERSATION_MENU => Some("Conversation actions".into()),
         DETAILS => Some("Context and sticky notes".into()),
         RUNTIME => Some("Choose runtime".into()),
+        MODEL_PICKER => Some("Choose provider and model".into()),
         _ => None,
     };
     props.variant = if id == SEND || id == STOP {
@@ -299,8 +303,7 @@ fn button(
                 }
             }
             40 | 41 | NEW | TOGGLE_SEARCH | BEHAVIOR => visual::ACTION_SIZE,
-            MODEL_PREV | MODEL_NEXT => 70.,
-            MODEL_SEARCH => 150.,
+            MODEL_SEARCH | MODEL_PICKER => 150.,
             _ => 90.,
         });
     }
@@ -654,7 +657,6 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
             ..Layout::column()
         },
     );
-    world.insert(composer_parent, Context::new("Chat composer"));
     let doc = world.resource::<Model>().unwrap().document;
     let composer = mount_composer(world, composer_parent, doc);
     let controls = container(
@@ -739,16 +741,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
             max: 160.,
         },
     );
-    let model = SingleSelect::mount(
-        world,
-        model_stack,
-        UiId(10),
-        SelectionProps::new("Model"),
-        &[],
-        None,
-    )
-    .unwrap()
-    .root;
+    let model = button(world, model_stack, MODEL_PICKER, "Choose model  ⌄", true).root;
     let footer = container(
         world,
         Some(composer_shell),
@@ -855,10 +848,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         Placeholder::new("Search models…"),
     ));
     set_parent(world, model_filter, filter_row);
-    button(world, filter_row, MODEL_PREV, "Previous", true);
-    let model_pages = text(world, filter_row, "", Typography::Secondary).unwrap();
-    world.get_mut::<Layout>(model_pages).unwrap().width = Size::Px(50.);
-    button(world, filter_row, MODEL_NEXT, "Next", true);
+    button(world, filter_row, MODEL_PICKER, "Choose provider…", true);
     // Connection and turn state read as one quiet sentence above the card,
     // not as another control row under the writing lane.
     let status = text(world, status_slot, "Connecting…", Typography::Caption).unwrap();
@@ -910,7 +900,6 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         behavior,
         model_caption,
         model_filter,
-        model_pages,
     }
 }
 fn presence_ask() -> &'static str {
@@ -927,7 +916,7 @@ fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> Ed
     let mut props = EditorSurfaceProps::new(document, "Message Medousa");
     props.gutter = false;
     props.scrollbar = true;
-    props.description = "Write a message, then Send. Enter inserts a new line.".into();
+    props.description = "Enter sends your message. Shift+Enter inserts a new line.".into();
     let h = EditorSurface::mount(world, parent, UiId(1), props).expect("live source document");
     world.insert(
         h.editor,
@@ -945,6 +934,7 @@ fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> Ed
     }
     // Core editor paint otherwise supplies its own gray input background.
     world.insert(h.editor, ResolvedColor);
+    world.insert(h.editor, Context::new("Chat composer"));
     // Leave Color to UiStyle's resolver: an authored primitive Color would
     // pin the mount-time appearance and block subsequent theme changes.
     world.insert(h.editor, Placeholder::new("Message Medousa…"));
@@ -1295,6 +1285,7 @@ fn update(world: &mut World) {
     if !chat_active {
         close_popup(world, ui.behavior, false);
     }
+    model_picker::update(world);
     if chat_active
         && world
             .resource::<KeymapFired>()
@@ -1318,9 +1309,6 @@ fn update(world: &mut World) {
         let m = world.resource_mut::<Model>().unwrap();
         if m.chat.busy() || m.loading {
             continue;
-        }
-        if event.control == ui.model && id < m.models.len() {
-            m.selected = Some(id);
         }
         if event.control == ui.depth && id < 3 {
             m.depth = id;
@@ -1437,6 +1425,13 @@ fn update(world: &mut World) {
     {
         action(world, SEARCH);
     }
+    if chat_active
+        && events::<Submitted>(world)
+            .iter()
+            .any(|s| s.entity == ui.model_filter)
+    {
+        model_picker::open(world);
+    }
     if let Some(error) = world
         .resource_mut::<auxiliary::Auxiliary>()
         .and_then(|a| a.error.take())
@@ -1542,14 +1537,7 @@ fn action(world: &mut World, id: u64) {
                 );
             }
         }
-        MODEL_PREV | MODEL_NEXT => {
-            let m = world.resource_mut::<Model>().unwrap();
-            if id == MODEL_NEXT {
-                m.model_page += 1;
-            } else {
-                m.model_page = m.model_page.saturating_sub(1);
-            }
-        }
+        MODEL_PICKER => model_picker::open(world),
         SEARCH => {
             let query = world.get::<Label>(ui.search).unwrap().text.clone();
             world.resource_mut::<Model>().unwrap().search_query = query.trim().to_owned();
@@ -2100,53 +2088,14 @@ fn sync(world: &mut World) {
     attachments::sync(world, ui.attachments, m.chat.session());
     let external = !matches!(runtimes::active(world), runtimes::ActiveRuntime::Native);
     let available = !m.loading && !m.chat.busy() && !runtimes::busy(world);
-    let query = world
-        .get::<Label>(ui.model_filter)
-        .unwrap()
-        .text
-        .to_lowercase();
-    let state = world.resource_mut::<Model>().unwrap();
-    if state.model_filter != query {
-        state.model_filter = query.clone();
-        state.model_page = 0;
-    }
     let selector_key = format!(
-        "{:?}{:?}{:?}{:?}{}{}{}",
-        m.models, m.modes, m.selected, m.mode, m.depth, available, query
+        "{:?}{:?}{:?}{}{}",
+        m.modes, m.selected, m.mode, m.depth, available
     );
-    let selector_key = format!("{selector_key}{}", state.model_page);
+    let state = world.resource_mut::<Model>().unwrap();
     let selectors_changed = state.selectors_key != selector_key;
     state.selectors_key = selector_key;
     if selectors_changed {
-        let state = world.resource_mut::<Model>().unwrap();
-        let (models, pages, page) = model_options(&m.models, m.selected, &query, state.model_page);
-        state.model_page = page;
-        world.get_mut::<Label>(ui.model_pages).unwrap().text = format!("{} / {}", page + 1, pages);
-        button(
-            world,
-            world.get::<Parent>(ui.model_pages).unwrap().entity,
-            MODEL_PREV,
-            "Previous",
-            page > 0,
-        );
-        button(
-            world,
-            world.get::<Parent>(ui.model_pages).unwrap().entity,
-            MODEL_NEXT,
-            "Next",
-            page + 1 < pages,
-        );
-        let mut props = SelectionProps::new("Model");
-        props.enabled = available;
-        SingleSelect::mount(
-            world,
-            world.get::<Parent>(ui.model).unwrap().entity,
-            UiId(10),
-            props,
-            &models,
-            m.selected.map(|i| OptionId(i as u64)),
-        )
-        .unwrap();
         let modes = m
             .modes
             .iter()
@@ -2176,7 +2125,7 @@ fn sync(world: &mut World) {
             Some(OptionId(m.depth as u64)),
         )
         .unwrap();
-        for entity in [ui.model, ui.mode, ui.depth] {
+        for entity in [ui.mode, ui.depth] {
             let mut pending = children_of(world, entity);
             while let Some(child) = pending.pop() {
                 if let Some(label) = world.get_mut::<Label>(child) {
@@ -2211,9 +2160,9 @@ fn sync(world: &mut World) {
     quiet_selector(
         world,
         ui.model,
-        10,
+        MODEL_PICKER,
         &format!("{model_title}  ⌄"),
-        available,
+        available && !external,
         260.,
     );
     let mode_title = m
@@ -2359,44 +2308,10 @@ fn sync(world: &mut World) {
         world.resource::<Model>().unwrap().document,
     );
     world.resource_mut::<Model>().unwrap().chat = m.chat;
+    model_picker::sync(world, available);
     if let Some(error) = workspace::error(world) {
         world.resource_mut::<Model>().unwrap().chat.status = error;
     }
-}
-
-// RNDR's bounded selectors deliberately accept at most 256 entries. Filter and
-// page the full daemon catalog, retaining the active selection on every page.
-fn model_options(
-    models: &[(String, String)],
-    selected: Option<usize>,
-    query: &str,
-    page: usize,
-) -> (Vec<SelectOption>, usize, usize) {
-    let matches = models
-        .iter()
-        .enumerate()
-        .filter(|(_, (p, n))| format!("{p} {n}").to_lowercase().contains(query))
-        .map(|(i, _)| i)
-        .collect::<Vec<_>>();
-    let pages = matches.len().div_ceil(255).max(1);
-    let page = page.min(pages - 1);
-    let mut ids = matches
-        .into_iter()
-        .skip(page * 255)
-        .take(255)
-        .collect::<Vec<_>>();
-    if let Some(i) = selected.filter(|i| *i < models.len()) {
-        if !ids.contains(&i) {
-            ids.insert(0, i);
-        }
-    }
-    (
-        ids.into_iter()
-            .map(|i| SelectOption::new(i as u64, models[i].1.clone()))
-            .collect(),
-        pages,
-        page,
-    )
 }
 
 #[cfg(test)]
@@ -2705,6 +2620,109 @@ mod tests {
         app.update();
         app.update();
     }
+    fn composer_text(app: &App) -> String {
+        let m = app.world().resource::<Model>().unwrap();
+        app.world()
+            .resource::<SourceDocuments>()
+            .unwrap()
+            .get(m.document)
+            .unwrap()
+            .text()
+            .into()
+    }
+    fn press(app: &mut App, key: NamedKey, modifiers: Modifiers) {
+        app.world_mut().resource_mut::<Input>().unwrap().keys =
+            vec![KeyEvent::named(key, modifiers)];
+        app.update();
+    }
+    #[test]
+    fn composer_enter_sends_without_appending_a_newline() {
+        let (mut app, mut rx) = idle_fixture();
+        draft(&mut app, "Send this exactly");
+        while rx.try_recv().is_ok() {}
+        let editor = app.world().resource::<Ui>().unwrap().composer.editor;
+        request_focus(app.world_mut(), editor);
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        assert_eq!(composer_text(&app), "Send this exactly");
+        assert!(matches!(rx.try_recv().unwrap().command, Command::Send(_)));
+        assert!(rx.try_recv().is_err());
+        // Admission has not yet acknowledged this draft: another Enter cannot duplicate it.
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        assert!(rx.try_recv().is_err());
+    }
+    #[test]
+    fn composer_primary_enter_still_sends() {
+        let (mut app, mut rx) = idle_fixture();
+        draft(&mut app, "Alternate send");
+        while rx.try_recv().is_ok() {}
+        let editor = app.world().resource::<Ui>().unwrap().composer.editor;
+        request_focus(app.world_mut(), editor);
+        let modifiers = if cfg!(target_os = "macos") {
+            Modifiers {
+                super_key: true,
+                ..Default::default()
+            }
+        } else {
+            Modifiers {
+                ctrl: true,
+                ..Default::default()
+            }
+        };
+        press(&mut app, NamedKey::Enter, modifiers);
+        assert!(matches!(rx.try_recv().unwrap().command, Command::Send(_)));
+        assert_eq!(composer_text(&app), "Alternate send");
+    }
+    #[test]
+    fn composer_shift_enter_inserts_newline_without_sending() {
+        let (mut app, mut rx) = idle_fixture();
+        draft(&mut app, "Keep writing");
+        while rx.try_recv().is_ok() {}
+        let editor = app.world().resource::<Ui>().unwrap().composer.editor;
+        request_focus(app.world_mut(), editor);
+        press(
+            &mut app,
+            NamedKey::Enter,
+            Modifiers {
+                shift: true,
+                ..Default::default()
+            },
+        );
+        let text = composer_text(&app);
+        assert_eq!(text.matches('\n').count(), 1, "{text:?}");
+        assert!(text.contains("Keep writing"));
+        assert!(rx.try_recv().is_err());
+        assert!(!app.world().resource::<Model>().unwrap().loading);
+    }
+    #[test]
+    fn composer_enter_does_not_send_empty_or_ime_input_or_search_fields() {
+        let (mut app, mut rx) = idle_fixture();
+        let ui = *app.world().resource::<Ui>().unwrap();
+        while rx.try_recv().is_ok() {}
+        request_focus(app.world_mut(), ui.composer.editor);
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        assert!(rx.try_recv().is_err());
+        draft(&mut app, "Unsent draft");
+        request_focus(app.world_mut(), ui.composer.editor);
+        app.world_mut().resource_mut::<Input>().unwrap().ime_preedit = "候補".into();
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        assert!(!app.world().resource::<Model>().unwrap().loading);
+        assert!(rx.try_recv().is_err());
+        app.world_mut()
+            .resource_mut::<Input>()
+            .unwrap()
+            .ime_preedit
+            .clear();
+        // The search row shares the composer card, but not its keymap context.
+        app.world_mut()
+            .resource_mut::<Model>()
+            .unwrap()
+            .model_search_open = true;
+        app.update();
+        request_focus(app.world_mut(), ui.model_filter);
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        assert!(rx.try_recv().is_err());
+        assert!(!app.world().resource::<Model>().unwrap().loading);
+    }
     #[test]
     fn nonchat_surfaces_cannot_dispatch_chat_shortcuts_or_hidden_send_actions() {
         for surface in [
@@ -2840,6 +2858,16 @@ mod tests {
         assert!(app.world().get::<Button>(send.root).unwrap().enabled);
         assert_eq!(
             try_activate(app.world_mut(), ui.model),
+            ActivationResult::Accepted
+        );
+        app.update();
+        app.update();
+        let provider = model_picker::handle(app.world())
+            .unwrap()
+            .item(app.world(), 1)
+            .unwrap();
+        assert_eq!(
+            try_activate(app.world_mut(), provider),
             ActivationResult::Accepted
         );
         app.update();
@@ -3050,17 +3078,6 @@ mod tests {
             compose.x + compose.w <= dock.x - 12.,
             "composer {compose:?}, dock {dock:?}"
         );
-    }
-    #[test]
-    fn a_large_catalog_never_exceeds_rndr_native_selection_capacity() {
-        let models = (0..600)
-            .map(|i| ("fixture".into(), format!("model {i}")))
-            .collect::<Vec<_>>();
-        for page in 0..4 {
-            let (options, _, _) = model_options(&models, Some(599), "", page);
-            assert!(options.len() <= 256);
-            assert!(options.iter().any(|o| o.id == OptionId(599)));
-        }
     }
     #[test]
     fn stale_history_cannot_replace_the_selected_conversation() {

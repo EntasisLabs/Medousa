@@ -828,3 +828,38 @@ fn html_artifact_cards_are_retained_controls_not_markdown_or_browsers() {
         card
     );
 }
+
+#[test]
+fn worker_completion_history_renders_and_copies_reply_not_envelope() {
+    let reply = "**Work complete**\n\n- The actual agent reply.";
+    for segmented in [false, true] {
+        let payload =
+            serde_json::json!({"request_id":"work-123", "status":"completed", "text":reply})
+                .to_string();
+        let turn = serde_json::from_value(serde_json::json!({
+            "entry_id":"completion", "entry_seq":9, "role":"assistant", "content":payload,
+            "answer_state":"worker_synthesis",
+            "parts": if segmented { serde_json::json!([{"kind":"text", "markdown":payload,"segment_id":"reply"}]) } else { serde_json::Value::Null }
+        })).unwrap();
+        let items =
+            medousa_app_core::wire_history::project_wire_history("s", "a", &[turn], None, None);
+        let (mut world, root) = fixture();
+        sync(&mut world, root, Some(&snapshot(items, 1)));
+        let state = world.get::<Timeline>(root).unwrap();
+        assert_eq!(state.rows.len(), 1);
+        let row = &state.rows[0];
+        let body = row
+            .parts
+            .iter()
+            .find(|p| p.id == if segmented { "text:reply" } else { "body" })
+            .unwrap()
+            .entity;
+        assert_eq!(world.get::<MarkdownView>(body).unwrap().source(), reply);
+        let copy = children_of(&world, row.entity)
+            .into_iter()
+            .find(|&e| world.has::<CopyText>(e))
+            .unwrap();
+        assert!(activate(&mut world, copy));
+        assert_eq!(world.resource::<Clipboard>().unwrap().text, reply);
+    }
+}
