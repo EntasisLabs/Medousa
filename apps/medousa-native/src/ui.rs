@@ -70,6 +70,11 @@ pub struct Model {
     loading: bool,
     models: Vec<(String, String)>,
     selected: Option<usize>,
+    defaults: Option<medousa_types::TuiDefaults>,
+    model_chosen: bool,
+    depth_chosen: bool,
+    defaults_pending: bool,
+    pending_first_send: Option<(DocumentId, rndr_core::editing::Revision)>,
     sessions: Vec<(String, String)>,
     modes: Vec<(String, String, bool)>,
     mode: Option<String>,
@@ -108,6 +113,11 @@ impl Model {
             loading: false,
             models: vec![],
             selected: None,
+            defaults: None,
+            model_chosen: false,
+            depth_chosen: false,
+            defaults_pending: false,
+            pending_first_send: None,
             sessions: vec![],
             modes: vec![],
             mode: None,
@@ -1198,6 +1208,7 @@ fn dispatch(world: &mut World, command: Command) {
             .is_err()
         }) {
             m.loading = false;
+            m.pending_first_send = None;
             m.chat.status = "Owning workshop unavailable. Reconnect that source; this item cannot use another daemon.".into();
         }
         return;
@@ -1211,6 +1222,7 @@ fn dispatch(world: &mut World, command: Command) {
         .is_err()
     }) {
         m.loading = false;
+        m.pending_first_send = None;
         m.chat.status =
             "Local daemon connection unavailable. Start the daemon and restart Medousa.".into();
     }
@@ -1233,8 +1245,26 @@ fn switch_document(world: &mut World, session: &str) -> Result<(), String> {
         .drafts
         .get(session)
         .copied();
-    let doc = known.unwrap_or_else(|| world.resource_mut::<SourceDocuments>().unwrap().open(""));
+    // Promote the initial draft in place; do not remount or lose its text/focus.
+    let initial = world.resource::<Model>().unwrap().chat.session().is_none()
+        && world
+            .resource::<Model>()
+            .unwrap()
+            .requested_session
+            .is_none();
+    let doc = known.unwrap_or_else(|| {
+        if initial {
+            old
+        } else {
+            world.resource_mut::<SourceDocuments>().unwrap().open("")
+        }
+    });
     if doc == old {
+        world
+            .resource_mut::<Model>()
+            .unwrap()
+            .drafts
+            .insert(session.into(), doc);
         return Ok(());
     }
     ui.composer
@@ -1312,6 +1342,7 @@ fn update(world: &mut World) {
         }
         if event.control == ui.depth && id < 3 {
             m.depth = id;
+            m.depth_chosen = true;
         }
         if event.control == ui.mode && id < m.modes.len() && m.modes[id].2 {
             if let (Some(session), Ok(mode)) = (
@@ -1585,45 +1616,7 @@ fn action(world: &mut World, id: u64) {
                     return;
                 }
             }
-            let m = world.resource::<Model>().unwrap();
-            if m.loading || m.chat.busy() || m.chat.uncertain {
-                return;
-            }
-            let Some(session) = m.chat.session() else {
-                world.resource_mut::<Model>().unwrap().chat.status =
-                    "Create or open a conversation before sending.".into();
-                return;
-            };
-            let Some((provider, model)) = m.selected.and_then(|i| m.models.get(i)) else {
-                return;
-            };
-            let doc = world
-                .resource::<SourceDocuments>()
-                .unwrap()
-                .get(m.document)
-                .unwrap();
-            if doc.is_composing() {
-                return;
-            }
-            let pending = (m.document, doc.revision());
-            let mut request = crate::chat::turn_request(session, doc.text(), provider, model);
-            let refs = match attachments::media_refs(world, session) {
-                Ok(refs) => refs,
-                Err(error) => {
-                    world.resource_mut::<Model>().unwrap().chat.status = error;
-                    return;
-                }
-            };
-            if doc.text().trim().is_empty() && refs.is_empty() {
-                return;
-            }
-            request.media_refs = refs.clone();
-            request.response_depth_mode = ["concise", "standard", "deep"][m.depth].into();
-            let m = world.resource_mut::<Model>().unwrap();
-            m.loading = true;
-            m.pending_draft = Some(pending);
-            m.pending_media = refs;
-            dispatch(world, Command::Send(Box::new(request)));
+            send_native(world);
         }
         STOP => {
             if world.has::<Hidden>(ui.exchange.main) {
@@ -1655,6 +1648,65 @@ fn action(world: &mut World, id: u64) {
         _ => {}
     }
 }
+fn send_native(world: &mut World) {
+    let m = world.resource::<Model>().unwrap();
+    if m.defaults_pending {
+        return;
+    }
+    if m.loading || m.chat.busy() || m.chat.uncertain {
+        return;
+    }
+    let Some((provider, model)) = m.selected.and_then(|i| m.models.get(i)) else {
+        return;
+    };
+    let doc = world
+        .resource::<SourceDocuments>()
+        .unwrap()
+        .get(m.document)
+        .unwrap();
+    if doc.is_composing() {
+        return;
+    }
+    let pending = (m.document, doc.revision());
+    if doc.text().trim().is_empty() && m.chat.session().is_none() {
+        return;
+    }
+    let Some(session) = m.chat.session() else {
+        let m = world.resource_mut::<Model>().unwrap();
+        if m.commands.is_none() || m.requested_session.is_some() {
+            return;
+        }
+        m.pending_first_send = Some(pending);
+        m.loading = true;
+        dispatch(world, Command::New);
+        return;
+    };
+    let mut request = crate::chat::turn_request(session, doc.text(), provider, model);
+    if let Some(defaults) = &m.defaults {
+        request.reasoning_effort = defaults.reasoning_effort.clone().unwrap_or_default();
+        if let Some(matrix) = &defaults.stage_routing {
+            request.stage_routing = crate::chat::align_saved_routes(matrix, provider, model);
+        }
+    }
+    let refs = match attachments::media_refs(world, session) {
+        Ok(refs) => refs,
+        Err(error) => {
+            world.resource_mut::<Model>().unwrap().chat.status = error;
+            return;
+        }
+    };
+    if doc.text().trim().is_empty() && refs.is_empty() {
+        return;
+    }
+    request.media_refs = refs.clone();
+    request.response_depth_mode = ["concise", "standard", "deep"][m.depth].into();
+    let m = world.resource_mut::<Model>().unwrap();
+    m.loading = true;
+    m.pending_draft = Some(pending);
+    m.pending_media = refs;
+    dispatch(world, Command::Send(Box::new(request)));
+}
+
 fn apply_reply(world: &mut World, reply: Reply) {
     if !crate::workshops::receive(world, &reply) {
         conversations::reply(world, reply);
@@ -1674,6 +1726,7 @@ pub(crate) fn workshop_ready(world: &mut World, owner: &str) {
     }
     let commands = crate::workshops::commands(world, owner);
     let (models, modes) = crate::workshops::catalog(world, owner);
+    let defaults_pending = crate::workshops::chat_defaults(world, owner).is_none();
     let model = world.resource_mut::<Model>().unwrap();
     if model.owner.is_empty() && model.chat.session().is_none() {
         model.owner = owner.into();
@@ -1681,8 +1734,19 @@ pub(crate) fn workshop_ready(world: &mut World, owner: &str) {
         model.models = models;
         model.modes = modes;
         model.loading = false;
+        model.defaults_pending = defaults_pending;
         model.chat.status = "Connected".into();
     }
+    if let Some(defaults) = crate::workshops::chat_defaults(world, owner) {
+        conversations::defaults(world, owner, defaults);
+    }
+}
+pub(crate) fn workshop_defaults(
+    world: &mut World,
+    owner: &str,
+    defaults: medousa_types::TuiDefaults,
+) {
+    conversations::defaults(world, owner, defaults);
 }
 pub(crate) fn workshop_catalog(
     world: &mut World,
@@ -1860,6 +1924,17 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
             }
             restore_history_model(m);
             m.loading = false;
+            let pending = m.pending_first_send.take();
+            if let Some((document, revision)) = pending {
+                let unchanged = world
+                    .resource::<SourceDocuments>()
+                    .unwrap()
+                    .get(document)
+                    .is_some_and(|d| d.revision() == revision && !d.is_composing());
+                if unchanged {
+                    send_native(world);
+                }
+            }
         }
         Update::SettledHistory(session, authority, turns, settled_turn, active) => {
             let m = world.resource_mut::<Model>().unwrap();
@@ -1936,6 +2011,9 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
                 m.chat.status = "Reconciling history…".into();
             }
         }
+        Update::Defaults(defaults) => {
+            apply_defaults(world.resource_mut::<Model>().unwrap(), *defaults);
+        }
         Update::Models(models) => {
             let m = world.resource_mut::<Model>().unwrap();
             let previous = m.selected.and_then(|i| m.models.get(i)).cloned();
@@ -1946,6 +2024,9 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
                 m.selected = Some(0);
             }
             m.models = models;
+            if let Some(defaults) = m.defaults.clone() {
+                apply_defaults(m, defaults);
+            }
             restore_history_model(m);
             m.chat.status = "Connected".into();
         }
@@ -1970,17 +2051,52 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
             m.chat.fail(message);
             m.loading = false;
             m.pending_draft = None;
+            m.pending_first_send = None;
         }
         Update::Unavailable(message) => {
             let m = world.resource_mut::<Model>().unwrap();
+            m.pending_first_send = None;
             m.chat.status = message;
             m.loading = false;
         }
     }
 }
+// Defaults are workshop-owned, while explicit choices and historical routes
+// remain conversation-owned. Metadata can arrive before or after the catalog.
+fn apply_defaults(m: &mut Model, defaults: medousa_types::TuiDefaults) {
+    let preferred = defaults
+        .provider
+        .as_deref()
+        .zip(defaults.model.as_deref())
+        .map(|(p, n)| (p.trim().to_owned(), n.trim().to_owned()))
+        .filter(|(p, n)| !p.is_empty() && !n.is_empty());
+    if let Some(pair) = preferred {
+        let i = m.models.iter().position(|v| *v == pair).unwrap_or_else(|| {
+            m.models.push(pair);
+            m.models.len() - 1
+        });
+        if !m.model_chosen {
+            m.selected = Some(i);
+        }
+    }
+    if !m.depth_chosen {
+        m.depth = match defaults.response_depth_mode.as_deref() {
+            Some("concise") => 0,
+            Some("deep") => 2,
+            _ => 1,
+        };
+    }
+    m.defaults_pending = false;
+    m.defaults = Some(defaults);
+    restore_history_model(m);
+}
+
 // Resolve the last persisted response against the current catalog. Never
 // silently display catalog entry zero when reopening a known conversation.
 fn restore_history_model(m: &mut Model) {
+    if m.model_chosen {
+        return;
+    }
     let Some(item) = m
         .chat
         .snapshot()
@@ -2087,7 +2203,10 @@ fn sync(world: &mut World) {
 
     attachments::sync(world, ui.attachments, m.chat.session());
     let external = !matches!(runtimes::active(world), runtimes::ActiveRuntime::Native);
-    let available = !m.loading && !m.chat.busy() && !runtimes::busy(world);
+    let available = !m.loading
+        && !m.chat.busy()
+        && !runtimes::busy(world)
+        && !world.resource::<Model>().unwrap().defaults_pending;
     let selector_key = format!(
         "{:?}{:?}{:?}{}{}",
         m.modes, m.selected, m.mode, m.depth, available
@@ -2143,7 +2262,6 @@ fn sync(world: &mut World) {
     let send_enabled = available
         && !m.chat.uncertain
         && m.connected
-        && m.chat.session().is_some()
         && (external || m.selected.is_some())
         && (!doc.text().trim().is_empty()
             || m.chat
@@ -2635,6 +2753,210 @@ mod tests {
             vec![KeyEvent::named(key, modifiers)];
         app.update();
     }
+    fn preferred_defaults() -> medousa_types::TuiDefaults {
+        medousa_types::TuiDefaults {
+            provider: Some("preferred".into()),
+            model: Some("saved-model".into()),
+            response_depth_mode: Some("deep".into()),
+            reasoning_effort: Some("high".into()),
+            ..Default::default()
+        }
+    }
+    fn initial_fixture() -> (App, tokio::sync::mpsc::UnboundedReceiver<Request>) {
+        let mut app = fixture();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        app.world_mut().resource_mut::<Model>().unwrap().commands = Some(tx);
+        apply_defaults(
+            app.world_mut().resource_mut::<Model>().unwrap(),
+            preferred_defaults(),
+        );
+        app.update();
+        (app, rx)
+    }
+    #[test]
+    fn first_send_button_waits_for_defaults_then_creates_in_visible_composer() {
+        let (mut app, mut rx) = initial_fixture();
+        draft(&mut app, "First click");
+        while rx.try_recv().is_ok() {}
+        app.world_mut()
+            .resource_mut::<Model>()
+            .unwrap()
+            .defaults_pending = true;
+        app.update();
+        let ui = *app.world().resource::<Ui>().unwrap();
+        let send = button(app.world_mut(), ui.controls, SEND, "↑", false);
+        app.update();
+        assert!(!app.world().get::<Button>(send.root).unwrap().enabled);
+        action(app.world_mut(), SEND);
+        assert!(rx.try_recv().is_err());
+        apply_defaults(
+            app.world_mut().resource_mut::<Model>().unwrap(),
+            preferred_defaults(),
+        );
+        app.update();
+        let mut at = Some(ui.composer.editor);
+        while let Some(e) = at {
+            assert!(
+                !app.world().has::<Hidden>(e),
+                "initial editor hidden at {e:?}"
+            );
+            at = app.world().get::<Parent>(e).map(|p| p.entity);
+        }
+        assert!(app.world().get::<Button>(send.root).unwrap().enabled);
+        assert_eq!(
+            try_activate(app.world_mut(), send.root),
+            ActivationResult::Accepted
+        );
+        app.update();
+        assert!(matches!(rx.try_recv().unwrap().command, Command::New));
+    }
+    #[test]
+    fn first_enter_promotes_initial_composer_in_place_and_sends_once() {
+        let (mut app, mut rx) = initial_fixture();
+        draft(&mut app, "First message");
+        while rx.try_recv().is_ok() {}
+        let ui = *app.world().resource::<Ui>().unwrap();
+        let document = app.world().resource::<Model>().unwrap().document;
+        request_focus(app.world_mut(), ui.composer.editor);
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        assert!(matches!(rx.try_recv().unwrap().command, Command::New));
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        assert!(rx.try_recv().is_err());
+        assert_eq!(composer_text(&app), "First message");
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::History("created".into(), "owner".into(), vec![], None),
+            },
+        );
+        let request = rx.try_recv().unwrap();
+        let Command::Send(request) = request.command else {
+            panic!("expected first send")
+        };
+        assert_eq!(request.session_id, "created");
+        assert_eq!(request.prompt, "First message");
+        assert_eq!(
+            (&*request.provider, &*request.model),
+            ("preferred", "saved-model")
+        );
+        assert_eq!(request.response_depth_mode, "deep");
+        assert_eq!(request.reasoning_effort, "high");
+        assert!(rx.try_recv().is_err());
+        assert_eq!(app.world().resource::<Model>().unwrap().document, document);
+        assert_eq!(
+            app.world().resource::<Ui>().unwrap().composer.editor,
+            ui.composer.editor
+        );
+        assert_eq!(app.world().resource::<Model>().unwrap().generation, 0);
+        assert_eq!(
+            app.world().resource::<Model>().unwrap().chat.session(),
+            Some("created")
+        );
+        assert_eq!(composer_text(&app), "First message"); // Clear only on admission.
+        app.update();
+        assert_eq!(
+            app.world().resource::<Focus>().unwrap().entity,
+            Some(ui.composer.editor)
+        );
+    }
+    #[test]
+    fn failed_initial_creation_keeps_draft_and_does_not_auto_retry() {
+        let (mut app, mut rx) = initial_fixture();
+        draft(&mut app, "Keep me");
+        while rx.try_recv().is_ok() {}
+        action(app.world_mut(), SEND);
+        assert!(matches!(rx.try_recv().unwrap().command, Command::New));
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::Failure("Unavailable".into()),
+            },
+        );
+        app.update();
+        assert_eq!(composer_text(&app), "Keep me");
+        let m = app.world().resource::<Model>().unwrap();
+        assert!(!m.loading);
+        assert!(m.pending_first_send.is_none());
+        assert!(rx.try_recv().is_err());
+    }
+    #[test]
+    fn editing_initial_draft_during_creation_never_sends_unapproved_text() {
+        let (mut app, mut rx) = initial_fixture();
+        draft(&mut app, "Original");
+        while rx.try_recv().is_ok() {}
+        action(app.world_mut(), SEND);
+        assert!(matches!(rx.try_recv().unwrap().command, Command::New));
+        draft(&mut app, "Edited while creating");
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::History("created".into(), "a".into(), vec![], None),
+            },
+        );
+        assert!(rx.try_recv().is_err());
+        assert_eq!(composer_text(&app), "Edited while creating");
+        assert!(!app.world().resource::<Model>().unwrap().loading);
+    }
+    #[test]
+    fn defaults_and_catalog_arrival_order_preserve_preference_and_explicit_choices() {
+        for defaults_first in [false, true] {
+            let mut app = fixture();
+            let catalog = vec![("first".into(), "not-preferred".into())];
+            if defaults_first {
+                apply_current_reply(
+                    app.world_mut(),
+                    Reply {
+                        generation: 0,
+                        update: Update::Defaults(Box::new(preferred_defaults())),
+                    },
+                );
+            }
+            apply_current_reply(
+                app.world_mut(),
+                Reply {
+                    generation: 0,
+                    update: Update::Models(catalog.clone()),
+                },
+            );
+            if !defaults_first {
+                apply_current_reply(
+                    app.world_mut(),
+                    Reply {
+                        generation: 0,
+                        update: Update::Defaults(Box::new(preferred_defaults())),
+                    },
+                );
+            }
+            let m = app.world_mut().resource_mut::<Model>().unwrap();
+            assert_eq!(
+                m.models[m.selected.unwrap()],
+                ("preferred".into(), "saved-model".into())
+            );
+            m.selected = Some(0);
+            m.model_chosen = true;
+            m.depth = 0;
+            m.depth_chosen = true;
+            apply_defaults(m, preferred_defaults());
+            assert_eq!(m.selected, Some(0));
+            assert_eq!(m.depth, 0);
+        }
+    }
+    #[test]
+    fn initial_blank_or_composing_draft_does_not_create_session() {
+        let (mut app, mut rx) = initial_fixture();
+        while rx.try_recv().is_ok() {}
+        action(app.world_mut(), SEND);
+        assert!(rx.try_recv().is_err());
+        draft(&mut app, "Composing");
+        let editor = app.world().resource::<Ui>().unwrap().composer.editor;
+        request_focus(app.world_mut(), editor);
+        app.world_mut().resource_mut::<Input>().unwrap().ime_preedit = "候補".into();
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        assert!(rx.try_recv().is_err());
+    }
     #[test]
     fn composer_enter_sends_without_appending_a_newline() {
         let (mut app, mut rx) = idle_fixture();
@@ -2903,6 +3225,40 @@ mod tests {
                 .unwrap()
                 .text(),
             "Draft only; do not send"
+        );
+    }
+    #[test]
+    fn history_and_defaults_refresh_never_replace_an_explicit_model() {
+        let mut app = fixture();
+        let m = app.world_mut().resource_mut::<Model>().unwrap();
+        m.chat.hydrate("s".into(), "a".into(), vec![serde_json::json!({
+            "role":"assistant", "content":"Hello", "parts":[{"kind":"model_receipt","provider":"history","model":"old"}]
+        })], None).unwrap();
+        m.models = vec![
+            ("history".into(), "old".into()),
+            ("chosen".into(), "new".into()),
+        ];
+        m.selected = Some(1);
+        m.model_chosen = true;
+        apply_defaults(m, preferred_defaults());
+        assert_eq!(
+            m.models[m.selected.unwrap()],
+            ("chosen".into(), "new".into())
+        );
+        apply_current_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::Models(vec![
+                    ("history".into(), "old".into()),
+                    ("chosen".into(), "new".into()),
+                ]),
+            },
+        );
+        let m = app.world().resource::<Model>().unwrap();
+        assert_eq!(
+            m.models[m.selected.unwrap()],
+            ("chosen".into(), "new".into())
         );
     }
     #[test]

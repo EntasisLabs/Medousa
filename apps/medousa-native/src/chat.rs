@@ -176,6 +176,20 @@ impl Chat {
     }
 }
 
+// Keep parity with Tauri's alignStageRoutingWithHost: stale uniform matrices
+// follow the picker, while intentionally mixed worker routes stay configured.
+pub(crate) fn align_saved_routes(
+    matrix: &medousa_types::StageRoutingMatrix,
+    provider: &str,
+    model: &str,
+) -> medousa_types::StageRoutingMatrix {
+    if matrix.orchestrator.role.trim().is_empty() {
+        medousa_types::StageRoutingMatrix::default_for(provider, model)
+    } else {
+        matrix.clone().aligned_with_host(provider, model)
+    }
+}
+
 pub fn turn_request(
     session: &str,
     prompt: &str,
@@ -209,5 +223,26 @@ pub fn turn_request(
         liquid_interactions: vec![],
         identity_user_id: None,
         wake: None,
+    }
+}
+
+#[cfg(test)]
+mod saved_route_tests {
+    use super::align_saved_routes;
+    use medousa_types::StageRoutingMatrix;
+    #[test]
+    fn stale_uniform_routes_rebase_but_mixed_routes_keep_their_worker_targets() {
+        let mut saved = StageRoutingMatrix::default_for("old", "old-model");
+        assert_eq!(
+            align_saved_routes(&saved, "new", "new-model"),
+            StageRoutingMatrix::default_for("new", "new-model")
+        );
+        saved.chunker.provider = "worker".into();
+        saved.chunker.model = "cheap".into();
+        let mixed = align_saved_routes(&saved, "new", "new-model");
+        assert_eq!(mixed.chunker, saved.chunker);
+        assert_eq!(mixed.orchestrator, saved.orchestrator);
+        assert_eq!(mixed.final_response.provider, "new");
+        assert_eq!(mixed.final_response.model, "new-model");
     }
 }

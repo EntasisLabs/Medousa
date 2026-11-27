@@ -241,3 +241,24 @@ fn artifact_destination_is_independent_rebindable_and_source_chat_stays_with_own
     assert!(!new.accepts(&old));
     assert_eq!(workshops::binding(app.world(), SurfaceId::Notes), notes);
 }
+
+#[test]
+fn saved_settings_defaults_reach_next_chat_without_restart() {
+    let (mut app, _dir, _channels) = boot();
+    choose(&mut app, SurfaceId::Chat, 0);
+    choose(&mut app, SurfaceId::Settings, 0);
+    workshops::saved_chat_defaults(
+        app.world_mut(),
+        &serde_json::json!({
+            "provider":"preferred", "model":"saved", "response_depth_mode":"deep"
+        }),
+    );
+    crate::surfaces::select(app.world_mut(), SurfaceId::Chat);
+    conversations::open(app.world_mut(), None);
+    let m = app.world().resource::<Model>().unwrap();
+    assert_eq!(
+        m.models[m.selected.unwrap()],
+        ("preferred".into(), "saved".into())
+    );
+    assert_eq!(m.depth, 2);
+}

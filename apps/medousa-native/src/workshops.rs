@@ -39,6 +39,8 @@ const CONNECT: u64 = 0x5753_1000;
 const START: u64 = 0x5753_2000;
 #[derive(Default, Clone)]
 struct Catalog {
+    defaults: Option<medousa_types::TuiDefaults>,
+    defaults_saved: bool,
     rows: Vec<(String, String)>,
     summaries: Vec<medousa_types::SessionHistorySummary>,
     cursor: Option<String>,
@@ -560,6 +562,31 @@ pub(crate) fn catalog(
         .map(|c| (c.models.clone(), c.modes.clone()))
         .unwrap_or_default()
 }
+pub(crate) fn saved_chat_defaults(w: &mut World, value: &serde_json::Value) {
+    // auxiliary::tick has already checked the response's captured binding/epoch.
+    let Some(owner) = binding(w, SurfaceId::Settings).map(|b| b.authority) else {
+        return;
+    };
+    let Ok(defaults) = serde_json::from_value::<medousa_types::TuiDefaults>(value.clone()) else {
+        return;
+    };
+    let c = w
+        .resource_mut::<Workshops>()
+        .unwrap()
+        .catalogs
+        .entry(owner.clone())
+        .or_default();
+    c.defaults = Some(defaults.clone());
+    c.defaults_saved = true;
+    crate::ui::workshop_defaults(w, &owner, defaults);
+}
+pub(crate) fn chat_defaults(w: &World, owner: &str) -> Option<medousa_types::TuiDefaults> {
+    w.resource::<Workshops>()?
+        .catalogs
+        .get(owner)?
+        .defaults
+        .clone()
+}
 pub(crate) fn source_label(w: &World, owner: &str) -> String {
     let Some(s) = w.resource::<Workshops>() else {
         return owner.into();
@@ -703,6 +730,12 @@ pub(crate) fn receive(w: &mut World, reply: &Reply) -> bool {
             }
             c.cursor = cursor.clone();
         }
+        Update::Defaults(defaults) => {
+            // A startup GET may finish after a settings PUT accepted newer data.
+            if !c.defaults_saved {
+                c.defaults = Some(defaults.as_ref().clone());
+            }
+        }
         Update::Models(rows) => c.models = rows.clone(),
         Update::Modes(rows) => c.modes = rows.clone(),
         Update::Notice(message) | Update::Unavailable(message) | Update::Failure(message) => {
@@ -735,6 +768,9 @@ pub(crate) fn receive(w: &mut World, reply: &Reply) -> bool {
         .then(|| "per-source".into());
     let models = catalog(w, &owner);
     crate::ui::workshop_catalog(w, &owner, models.0, models.1, rows, summaries, cursor);
+    if let Some(defaults) = chat_defaults(w, &owner) {
+        crate::ui::workshop_defaults(w, &owner, defaults);
+    }
     true
 }
 fn field(w: &mut World, p: Entity, name: &str, value: &str) -> Entity {

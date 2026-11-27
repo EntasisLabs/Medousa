@@ -2647,3 +2647,63 @@ fn world_activity_filters_to_evidence_and_computer_shows_permissions() {
     assert!(t.iter().any(|x| x == "Medousa is operating"));
     assert!(t.iter().any(|x| x == "Ready"));
 }
+
+#[test]
+fn accepted_defaults_save_updates_new_chat_and_defeats_late_startup_read() {
+    let mut app = agent_open();
+    let dir = tempfile::tempdir().unwrap();
+    let _channels = crate::workshops::install_fixture(
+        app.world_mut(),
+        dir.path().join("sources.json"),
+        &[("owner", "Studio")],
+    );
+    app.world_mut()
+        .resource_mut::<crate::workshops::Workshops>()
+        .unwrap()
+        .bindings
+        .insert(
+            crate::surfaces::SurfaceId::Settings,
+            crate::routing::Binding::new("owner".into()),
+        );
+    let before =
+        serde_json::json!({"provider":"old", "model":"old-model", "response_depth_mode":"concise"});
+    crate::ui::workshop_defaults(
+        app.world_mut(),
+        "owner",
+        serde_json::from_value(before.clone()).unwrap(),
+    );
+    let serial = next();
+    state_mut(app.world_mut()).unwrap().patching = Some((
+        serial,
+        agent::Patch::Model("preferred".into(), "saved".into()),
+    ));
+    let accepted =
+        serde_json::json!({"provider":"preferred", "model":"saved", "response_depth_mode":"deep"});
+    apply(
+        app.world_mut(),
+        Update {
+            serial,
+            result: Ok(Reply::Defaults(accepted)),
+        },
+    );
+    let saved = crate::workshops::chat_defaults(app.world(), "owner").unwrap();
+    assert_eq!(saved.model.as_deref(), Some("saved"));
+    assert_eq!(saved.response_depth_mode.as_deref(), Some("deep"));
+    // Delayed startup metadata is older than the accepted save.
+    crate::workshops::receive(
+        app.world_mut(),
+        &crate::backend::Reply {
+            generation: u64::MAX,
+            update: crate::backend::Update::Defaults(Box::new(
+                serde_json::from_value(before).unwrap(),
+            )),
+        },
+    );
+    assert_eq!(
+        crate::workshops::chat_defaults(app.world(), "owner")
+            .unwrap()
+            .model
+            .as_deref(),
+        Some("saved")
+    );
+}

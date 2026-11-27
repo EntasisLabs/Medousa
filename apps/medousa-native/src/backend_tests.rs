@@ -449,13 +449,20 @@ fn fixture(wires: Vec<Wire>) -> (Arc<MedousaClient>, thread::JoinHandle<()>) {
 }
 
 fn fixture_gated(
-    wires: Vec<Wire>,
+    mut wires: Vec<Wire>,
     gate: Option<(
         &'static str,
         std::sync::mpsc::Receiver<()>,
         std::sync::mpsc::Sender<()>,
     )>,
 ) -> (Arc<MedousaClient>, thread::JoinHandle<()>) {
+    if wires.iter().any(|w| w.path == "/v1/models/catalog")
+        && !wires.iter().any(|w| w.path == "/v1/runtime/tui-defaults") {
+        // Optional startup settings read is independent of other metadata.
+        let mut defaults = json_wire("GET", "/v1/runtime/tui-defaults", json!({}));
+        defaults.status = 404;
+        wires.push(defaults);
+    }
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -1593,7 +1600,8 @@ async fn pending_admission_survives_navigation_and_does_not_block_another_sessio
 // Startup catalogs are deliberately unordered; only normalize them for older
 // assertions about subsequent serialized mutation replies.
 fn observed(app: &App) -> Vec<&Reply> {
-    let mut replies: Vec<_> = rndr_core::events::<Reply>(app.world()).iter().collect();
+    let mut replies: Vec<_> = rndr_core::events::<Reply>(app.world()).iter()
+        .filter(|r| !matches!(r.update, Update::Defaults(_))).collect();
     replies.sort_by_key(|r| {
         if r.generation != 0 {
             return 3;
@@ -1854,5 +1862,29 @@ async fn idle_refresh_discovers_callback_after_original_stream_is_gone() {
     );
     drop(commands);
     task.await.unwrap();
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn startup_reads_saved_chat_defaults_from_owning_workshop() {
+    let (client, server) = fixture(vec![list_wire(),
+        json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
+        registry_wire(),
+        json_wire("GET", "/v1/runtime/tui-defaults", json!({
+            "provider":"preferred", "model":"saved", "response_depth_mode":"deep",
+            "reasoning_effort":"high"
+        })),
+    ]);
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
+    let (commands, rx) = mpsc::unbounded_channel();
+    drop(commands);
+    serve(client, rx, tx).await;
+    app.update();
+    assert!(rndr_core::events::<Reply>(app.world()).iter().any(|r| matches!(
+        &r.update, Update::Defaults(d) if d.provider.as_deref() == Some("preferred")
+            && d.model.as_deref() == Some("saved") && d.response_depth_mode.as_deref() == Some("deep")
+            && d.reasoning_effort.as_deref() == Some("high")
+    )));
     server.join().unwrap();
 }

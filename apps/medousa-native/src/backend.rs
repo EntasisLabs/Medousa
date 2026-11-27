@@ -100,6 +100,7 @@ pub enum Update {
     },
     Admitted(String, String),
     Stream(TurnStreamEnvelopeV3),
+    Defaults(Box<medousa_types::TuiDefaults>),
     Models(Vec<(String, String)>),
     Sessions(Vec<(String, String)>),
     SessionsPage {
@@ -777,6 +778,18 @@ pub(crate) async fn serve(
                 }
             }
             timing("modes", started);
+        });
+    }
+    {
+        let client = client.clone();
+        let tx = tx.clone();
+        metadata_tasks.spawn(async move {
+            // Same workshop record as Tauri and native Settings; never read local
+            // files for a remote workshop or gate navigation on this optional read.
+            let defaults = client.http()
+                .get::<medousa_types::TuiDefaults>("/v1/runtime/tui-defaults").await
+                .unwrap_or_default();
+            emit(&tx, tx.catalog_route, Update::Defaults(Box::new(defaults)));
         });
     }
     // Generation is an opaque UI-owned session route, not a global navigation

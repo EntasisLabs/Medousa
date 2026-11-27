@@ -247,6 +247,7 @@ pub(super) fn update(world: &mut World) {
                     }
                     Some(Choice::Model(provider, model)) => {
                         let m = world.resource_mut::<Model>().unwrap();
+                        m.model_chosen = true;
                         m.selected = m
                             .models
                             .iter()

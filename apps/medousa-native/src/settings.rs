@@ -2507,7 +2507,7 @@ fn capture(w: &World, s: &mut State) {
 }
 
 pub fn apply(w: &mut World, u: Update) {
-    with_state(w, |_, s| {
+    with_state(w, |w, s| {
         let reading_mode = s.mode_reading == Some(u.serial);
         if reading_mode || s.mode_busy == Some(u.serial) {
             if reading_mode {
@@ -3056,7 +3056,10 @@ pub fn apply(w: &mut World, u: Update) {
         {
             s.patching = None;
             match u.result {
-                Ok(Reply::Defaults(d)) => s.defaults = Some(d),
+                Ok(Reply::Defaults(d)) => {
+                    crate::workshops::saved_chat_defaults(w, &d);
+                    s.defaults = Some(d);
+                }
                 Err(e) => {
                     s.message = format!("That change wasn’t saved: {e}");
                     // Show what the record really holds.

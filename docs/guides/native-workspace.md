@@ -26,6 +26,22 @@ send shortcuts do not send a message while another workspace is active.
 
 ## Write a message and choose a model
 
+When Chat opens without a loaded conversation, write directly in the initial
+composer. The first Send creates the conversation in that same view and sends
+your message; you do not need to click **New chat** first. The editor, draft and
+focus stay in place. Creation failures keep your draft, and repeated Enter while
+creation is pending does not create duplicate conversations. If you edit the
+draft during creation, the updated text stays unsent until you send it again.
+
+New conversations use the owning workshop's saved provider/model, answer depth,
+reasoning effort and stage routes, from the same runtime-defaults record used by
+Tauri and **Settings → Medousa Agent**. An explicit model choice stays with that
+conversation; opening another new chat starts from the saved defaults again.
+Reopened conversations still restore their recorded response model. Each
+workshop supplies its own defaults, including when it is remote. Saving new
+defaults in native Settings updates subsequent new chats without restarting;
+an older startup read cannot replace that accepted save.
+
 In the main Chat composer, **Enter** sends and **Shift+Enter** inserts a new
 line. **Command+Enter** on macOS (or **Ctrl+Enter** elsewhere) also sends.
 These shortcuts belong to the message editor, not search fields, menus, Notes,

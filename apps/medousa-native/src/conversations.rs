@@ -367,12 +367,19 @@ pub(super) fn open(world: &mut World, session: Option<String>) {
         next.commands = crate::workshops::commands(world, &owner);
         (next.models, next.modes) = crate::workshops::catalog(world, &owner);
         next.selected = (!next.models.is_empty()).then_some(0);
+        next.defaults_pending = crate::workshops::chat_defaults(world, &owner).is_none();
+        if let Some(defaults) = crate::workshops::chat_defaults(world, &owner) {
+            apply_defaults(&mut next, defaults);
+        }
     } else {
         next.owner = m.owner.clone();
         next.commands = m.commands.clone();
         next.models = m.models.clone();
         next.modes = m.modes.clone();
         next.selected = m.selected;
+        if let Some(defaults) = m.defaults.clone() {
+            apply_defaults(&mut next, defaults);
+        }
     }
     next.sessions = m.sessions.clone();
     next.session_cursor = m.session_cursor.clone();
@@ -398,6 +405,17 @@ pub(super) fn open(world: &mut World, session: Option<String>) {
     world.insert(ui.content, Hidden);
     dispatch(world, session.map(Command::Open).unwrap_or(Command::New));
     world.resource_mut::<Focus>().unwrap().entity = None;
+}
+pub(super) fn defaults(world: &mut World, owner: &str, defaults: medousa_types::TuiDefaults) {
+    let m = world.resource_mut::<Model>().unwrap();
+    if m.owner == owner {
+        apply_defaults(m, defaults.clone());
+    }
+    for p in world.resource_mut::<Deck>().unwrap().parked.values_mut() {
+        if p.model.owner == owner {
+            apply_defaults(&mut p.model, defaults.clone());
+        }
+    }
 }
 pub(super) fn catalog(
     world: &mut World,
@@ -521,7 +539,8 @@ pub(super) fn reply(world: &mut World, reply: Reply) {
     let old = current(world);
     let global = matches!(
         &reply.update,
-        Update::Models(_)
+        Update::Defaults(_)
+            | Update::Models(_)
             | Update::Modes(_)
             | Update::Unavailable(_)
             | Update::Sessions(_)
@@ -1047,6 +1066,72 @@ mod tests {
             .unwrap()
             .text()
             .to_string()
+    }
+    #[test]
+    fn new_tabs_use_saved_defaults_not_previous_conversation_selection() {
+        let mut app = fixture();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let m = app.world_mut().resource_mut::<Model>().unwrap();
+        m.commands = Some(tx);
+        apply_defaults(
+            m,
+            medousa_types::TuiDefaults {
+                provider: Some("preferred".into()),
+                model: Some("saved".into()),
+                response_depth_mode: Some("deep".into()),
+                ..Default::default()
+            },
+        );
+        m.models.push(("other".into(), "override".into()));
+        m.selected = Some(1);
+        m.model_chosen = true;
+        m.depth = 0;
+        open(app.world_mut(), None);
+        let m = app.world().resource::<Model>().unwrap();
+        assert_eq!(
+            m.models[m.selected.unwrap()],
+            ("preferred".into(), "saved".into())
+        );
+        assert_eq!(m.depth, 2);
+        assert!(matches!(rx.try_recv().unwrap().command, Command::New));
+    }
+    #[test]
+    fn defaults_only_update_their_own_workshop_including_parked_initial_draft() {
+        let mut app = fixture();
+        app.world_mut().resource_mut::<Model>().unwrap().owner = "a".into();
+        loaded(&mut app, "a-session");
+        let saved = medousa_types::TuiDefaults {
+            provider: Some("provider-a".into()),
+            model: Some("model-a".into()),
+            ..Default::default()
+        };
+        defaults(app.world_mut(), "a", saved);
+        let m = app.world().resource::<Model>().unwrap();
+        assert_eq!(
+            m.models[m.selected.unwrap()],
+            ("provider-a".into(), "model-a".into())
+        );
+        assert!(
+            app.world()
+                .resource::<Deck>()
+                .unwrap()
+                .parked
+                .get(&0)
+                .unwrap()
+                .model
+                .defaults
+                .is_some()
+        );
+        defaults(
+            app.world_mut(),
+            "b",
+            medousa_types::TuiDefaults {
+                provider: Some("provider-b".into()),
+                model: Some("model-b".into()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(app.world().resource::<Model>().unwrap().models.len(), 1);
     }
     #[test]
     fn integrated_tab_band_survives_splits_route_focus_and_overflow() {
