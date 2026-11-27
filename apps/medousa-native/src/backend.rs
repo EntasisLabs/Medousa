@@ -19,6 +19,7 @@ use tokio::sync::mpsc;
 
 pub enum Command {
     New,
+    NewWithMode(AgentModeId),
     List(String),
     More {
         query: String,
@@ -502,6 +503,37 @@ async fn read_history(client: &MedousaClient, id: &str) -> Result<Update, medous
     Ok(Update::Failure("History changed during three reconciliation attempts. Reload again; sending remains blocked. No atomic snapshot is available.".into()))
 }
 
+// New native conversations default to Assistant. Apply the session mode
+// before publishing history, which can immediately trigger the first send.
+async fn create_chat(
+    client: &MedousaClient,
+    mode: AgentModeId,
+) -> Result<Update, medousa_sdk::SdkError> {
+    let session = client
+        .sessions()
+        .create(&CreateSessionRequest {
+            session_id: None,
+            catalog: Some("single".into()),
+            member_profile_ids: None,
+            agent_profile_id: None,
+            display_name: Some("Today".into()),
+        })
+        .await?;
+    client
+        .sessions()
+        .set_agent_mode(
+            &session.session_id,
+            &SetSessionAgentModeRequest {
+                mode,
+                scope: AgentModeScope::Session,
+                task_id: None,
+                expires_at_utc: None,
+            },
+        )
+        .await?;
+    history(client, &session.session_id).await
+}
+
 // Mode metadata is independent of transcript reconciliation. A failed read must
 // not make a successfully loaded chat uncertain or replace its live prose.
 async fn mode(client: &MedousaClient, session: &str) -> Update {
@@ -786,8 +818,10 @@ pub(crate) async fn serve(
         metadata_tasks.spawn(async move {
             // Same workshop record as Tauri and native Settings; never read local
             // files for a remote workshop or gate navigation on this optional read.
-            let defaults = client.http()
-                .get::<medousa_types::TuiDefaults>("/v1/runtime/tui-defaults").await
+            let defaults = client
+                .http()
+                .get::<medousa_types::TuiDefaults>("/v1/runtime/tui-defaults")
+                .await
                 .unwrap_or_default();
             emit(&tx, tx.catalog_route, Update::Defaults(Box::new(defaults)));
         });
@@ -970,20 +1004,8 @@ pub(crate) async fn serve(
             Command::Rename { .. } | Command::Delete(_) | Command::Fork(_)
         );
         let result = match command {
-            Command::New => match client
-                .sessions()
-                .create(&CreateSessionRequest {
-                    session_id: None,
-                    catalog: Some("single".into()),
-                    member_profile_ids: None,
-                    agent_profile_id: None,
-                    display_name: Some("Today".into()),
-                })
-                .await
-            {
-                Ok(s) => history(&client, &s.session_id).await,
-                Err(e) => Err(e),
-            },
+            Command::New => create_chat(&client, AgentModeId::Assistant).await,
+            Command::NewWithMode(mode) => create_chat(&client, mode).await,
             Command::List(query) => sessions(&client, &query, None).await,
             Command::More { query, cursor } => sessions(&client, &query, Some(&cursor)).await,
             Command::Rename { session, title } => client
