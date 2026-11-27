@@ -417,6 +417,9 @@ pub(super) fn apply(
                 n.roots = r.roots;
                 n.core = VaultBufferCore::new(r.active_root_id);
                 n.list_page(false);
+                if let Some(path) = n.pending_navigation.take() {
+                    open_note(w, n, path);
+                }
             }
             _ => message(
                 w,

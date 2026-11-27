@@ -1597,3 +1597,150 @@ fn closing_a_clean_note_releases_its_source_and_rich_documents() {
     assert!(w.resource::<SourceDocuments>().unwrap().get(document).is_none());
     assert!(w.resource::<MarkdownDocuments>().unwrap().get(rich).is_none());
 }
+
+#[test]
+fn navigation_context_tracks_emitting_preview_and_preserves_parked_dirty_note() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "folder/a.md", "one", Some("v1"));
+    let preview = w.resource::<Notes>().unwrap().views["folder/a.md"].preview;
+    edit(w, "folder/a.md", "unsaved draft");
+    load(w, "other.md", "two", Some("v2"));
+    assert_eq!(link_context(w, preview).as_deref(), Some("folder/a.md"));
+    assert!(
+        w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("folder/a.md")
+            .unwrap()
+            .dirty
+    );
+    assert_eq!(
+        w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("folder/a.md")
+            .unwrap()
+            .content,
+        "unsaved draft"
+    );
+    assert!(!can_rebind(w));
+}
+
+#[test]
+fn navigation_waits_for_confirmed_identity_and_failure_drops_deferred_open() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    activate(w);
+    w.resource_mut::<Notes>().unwrap().pending_navigation = Some("target.md".into());
+    let command = drain_commands(w)
+        .into_iter()
+        .find(|c| {
+            matches!(
+                c.operation,
+                Operation::Manage(management::Command::Identity)
+            )
+        })
+        .unwrap();
+    apply(
+        w,
+        NoteUpdate {
+            command,
+            result: Err("offline".into()),
+        },
+    );
+    let n = w.resource::<Notes>().unwrap();
+    assert!(n.selected.is_none());
+    assert!(n.pending_navigation.is_none());
+    assert!(!n.initializing);
+    assert!(drain_commands(w).is_empty());
+}
+
+#[test]
+fn navigation_rich_editor_link_event_opens_relative_note_without_losing_draft() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = crate::ui::app();
+    let _channels = crate::workshops::install_fixture(
+        app.world_mut(),
+        dir.path().join("sources.json"),
+        &[("authority-a", "A")],
+    );
+    app.world_mut().insert_resource(Viewport::new(1000., 800.));
+    app.update();
+    assert!(crate::workshops::navigate_binding(
+        app.world_mut(),
+        crate::surfaces::SurfaceId::Notes,
+        "authority-a"
+    ));
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+    app.update(); // Publish the newly mounted Notes source binding before input.
+    complete_identity_fixture(app.world_mut());
+    let w = app.world_mut();
+    assert_eq!(
+        crate::workshops::binding(w, crate::surfaces::SurfaceId::Notes)
+            .unwrap()
+            .authority,
+        "authority-a"
+    );
+    load(w, "folder/current.md", "[Next](Next.md)", Some("v1"));
+    edit(w, "folder/current.md", "[Next](Next.md) unsaved");
+    let rich = w.resource::<Notes>().unwrap().views["folder/current.md"]
+        .rich
+        .root;
+    assert_eq!(link_context(w, rich).as_deref(), Some("folder/current.md"));
+    send(
+        w,
+        LinkActivated {
+            view: rich,
+            href: "Next.md".into(),
+        },
+    );
+    app.update();
+    let n = app.world().resource::<Notes>().unwrap();
+    assert_eq!(n.selected.as_deref(), Some("folder/Next.md"));
+    let draft = n.core.get("folder/current.md").unwrap();
+    assert!(draft.dirty);
+    assert_eq!(draft.content, "[Next](Next.md) unsaved");
+}
+
+#[test]
+fn navigation_heading_scrolls_to_offscreen_duplicate_in_preview() {
+    let mut app = fixture();
+    let body = format!(
+        "# Topic\n\n{}\n\n# Topic\n\nEnd",
+        (0..100)
+            .map(|i| format!("Paragraph {i}.\n\n"))
+            .collect::<String>()
+    );
+    load(app.world_mut(), "long.md", &body, Some("v1"));
+    let preview = {
+        let n = app.world_mut().resource_mut::<Notes>().unwrap();
+        n.live = false;
+        n.source = false;
+        n.pending_heading = Some(("long.md".into(), "topic-1".into()));
+        n.redraw = true;
+        n.views["long.md"].preview
+    };
+    for _ in 0..4 {
+        tick(app.world_mut());
+        app.update();
+    }
+    assert!(
+        app.world()
+            .resource::<Notes>()
+            .unwrap()
+            .pending_heading
+            .is_none()
+    );
+    assert!(app.world().get::<Scroll>(preview).unwrap().offset[1] < -100.);
+    assert_eq!(
+        app.world()
+            .resource::<Notes>()
+            .unwrap()
+            .core
+            .get("long.md")
+            .unwrap()
+            .content,
+        body
+    );
+}

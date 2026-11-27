@@ -31,6 +31,7 @@ struct Item {
 }
 #[derive(Clone)]
 enum ItemState {
+    Picking,
     Pending,
     Ready(MediaRef),
     Failed(String),
@@ -54,6 +55,8 @@ impl Component for View {}
 pub struct AttachmentCommand {
     pub(crate) session: String,
     id: u64,
+    files: Option<Vec<PathBuf>>,
+    limit: usize,
 }
 pub struct AttachmentUpdate {
     session: String,
@@ -163,7 +166,9 @@ pub fn sync(world: &mut World, root: Entity, session: Option<&str>) {
             }
         }
         let label = match item.state {
-            ItemState::Pending => format!("{} — selecting / uploading…", item.label),
+            ItemState::Pending | ItemState::Picking => {
+                format!("{} — selecting / uploading…", item.label)
+            }
             ItemState::Ready(_) => item.label,
             ItemState::Failed(error) => format!("{} — {error}", item.label),
         };
@@ -204,7 +209,9 @@ pub fn action(world: &mut World, intent: &ActionIntent) -> bool {
             };
             if state.drafts.get(&session).is_some_and(|items| {
                 items.len() >= MAX_FILES
-                    || items.iter().any(|i| matches!(i.state, ItemState::Pending))
+                    || items
+                        .iter()
+                        .any(|i| matches!(i.state, ItemState::Pending | ItemState::Picking))
             }) {
                 return true;
             }
@@ -213,9 +220,15 @@ pub fn action(world: &mut World, intent: &ActionIntent) -> bool {
             state.drafts.entry(session.clone()).or_default().push(Item {
                 id,
                 label: "Files".into(),
-                state: ItemState::Pending,
+                state: ItemState::Picking,
             });
-            state.commands.push(AttachmentCommand { session, id });
+            let limit = MAX_FILES - state.drafts[&session].len() + 1;
+            state.commands.push(AttachmentCommand {
+                session,
+                id,
+                files: None,
+                limit,
+            });
             state.revision += 1;
             true
         }
@@ -239,6 +252,57 @@ pub fn action(world: &mut World, intent: &ActionIntent) -> bool {
     }
 }
 
+/// Queue local device files for authenticated upload to this exact conversation.
+/// No filesystem access occurs on the UI thread. Reserve one slot per path so
+/// separate drops cannot race past the per-message limit.
+pub fn queue_files(world: &mut World, session: &str, files: Vec<PathBuf>) -> Result<(), String> {
+    let Some(state) = world.resource_mut::<Attachments>() else {
+        return Err("Attachments are unavailable.".into());
+    };
+    let count = state.drafts.get(session).map_or(0, Vec::len);
+    if files.is_empty() {
+        return Ok(());
+    }
+    if files.len() > MAX_FILES.saturating_sub(count) {
+        return Err(format!(
+            "Attach at most {MAX_FILES} files per message. Remove some attachments and try again."
+        ));
+    }
+    // A picker reserves an unknown number of slots until it returns.
+    if state
+        .drafts
+        .get(session)
+        .is_some_and(|items| items.iter().any(|i| matches!(i.state, ItemState::Picking)))
+    {
+        return Err("Wait for the file picker to finish before dropping more files.".into());
+    }
+    for path in files {
+        state.next += 1;
+        let id = state.next;
+        let label = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "File".into());
+        state.drafts.entry(session.into()).or_default().push(Item {
+            id,
+            label,
+            state: ItemState::Pending,
+        });
+        state.commands.push(AttachmentCommand {
+            session: session.into(),
+            id,
+            files: Some(vec![path]),
+            limit: 1,
+        });
+    }
+    state.revision += 1;
+    Ok(())
+}
+
+pub const fn max_files() -> usize {
+    MAX_FILES
+}
+
 pub fn drain_commands(world: &mut World) -> Vec<AttachmentCommand> {
     world
         .resource_mut::<Attachments>()
@@ -258,23 +322,34 @@ pub async fn execute(
         id: command.id,
         items: vec![],
     };
-    let Some(files) = rfd::AsyncFileDialog::new()
-        .set_title("Attach files to Medousa")
-        .pick_files()
-        .await
-    else {
-        return Ok(update);
+    let files = match command.files {
+        Some(files) => files,
+        None => {
+            let Some(files) = rfd::AsyncFileDialog::new()
+                .set_title("Attach files to Medousa")
+                .pick_files()
+                .await
+            else {
+                return Ok(update);
+            };
+            files.into_iter().map(|f| f.path().to_path_buf()).collect()
+        }
     };
-    if files.len() > MAX_FILES {
+    if files.len() > command.limit {
         update.items.push((
             "Files".into(),
-            Err(format!("Select at most {MAX_FILES} files at a time.")),
+            Err(format!(
+                "Select at most {} additional files for this message.",
+                command.limit
+            )),
         ));
         return Ok(update);
     }
-    for file in files {
-        let path = file.path().to_path_buf();
-        let label = file.file_name();
+    for path in files {
+        let label = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "File".into());
         let result = match tokio::task::spawn_blocking(move || read_file(path)).await {
             Ok(Ok((bytes, mime))) => upload(client, &update.session, &label, &mime, bytes).await,
             Ok(Err(error)) => Err(error),
@@ -286,6 +361,14 @@ pub async fn execute(
 }
 
 fn read_file(path: PathBuf) -> Result<(Vec<u8>, String), String> {
+    // Reject directories and special devices before opening (a FIFO can block
+    // on open forever). Recheck the opened descriptor below as well.
+    if !std::fs::metadata(&path)
+        .map_err(|e| format!("Cannot inspect file: {e}"))?
+        .is_file()
+    {
+        return Err("Only regular files can be attached.".into());
+    }
     let file = std::fs::File::open(&path).map_err(|e| format!("Cannot open file: {e}"))?;
     let metadata = file
         .metadata()
@@ -366,10 +449,9 @@ pub fn apply(world: &mut World, update: AttachmentUpdate) {
     let Some(items) = state.drafts.get_mut(&update.session) else {
         return;
     };
-    let Some(index) = items
-        .iter()
-        .position(|i| i.id == update.id && matches!(i.state, ItemState::Pending))
-    else {
+    let Some(index) = items.iter().position(|i| {
+        i.id == update.id && matches!(i.state, ItemState::Pending | ItemState::Picking)
+    }) else {
         return;
     };
     items.remove(index);
@@ -403,7 +485,9 @@ pub fn media_refs(world: &World, session: &str) -> Result<Vec<MediaRef>, String>
         .iter()
         .map(|i| match &i.state {
             ItemState::Ready(media) => Ok(media.clone()),
-            ItemState::Pending => Err("Wait for attachment uploads before sending.".into()),
+            ItemState::Pending | ItemState::Picking => {
+                Err("Wait for attachment uploads before sending.".into())
+            }
             ItemState::Failed(error) => {
                 Err(format!("Remove failed attachment '{}': {error}", i.label))
             }

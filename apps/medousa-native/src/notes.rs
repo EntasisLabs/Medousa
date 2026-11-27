@@ -144,6 +144,9 @@ struct Notes {
     actions: HashMap<u64, Action>,
     queue: Vec<NoteCommand>,
     started: bool,
+    initializing: bool,
+    pending_navigation: Option<String>,
+    pending_heading: Option<(String, String)>,
     list: Vec<VaultNoteSummary>,
     cursor: Option<String>,
     generation: Option<u64>,
@@ -481,6 +484,7 @@ pub fn activate(world: &mut World) {
     };
     if !n.started {
         n.started = true;
+        n.initializing = true;
         management::initialize(n);
     }
 }
@@ -995,6 +999,72 @@ fn render(world: &mut World, n: &mut Notes) {
         }
     }
 }
+pub(crate) fn link_notice(world: &mut World, path: &str, message: &str) {
+    if let Some(n) = world.resource_mut::<Notes>() {
+        n.errors.insert(path.into(), message.into());
+        n.redraw = true;
+    }
+}
+/// Context is the actual emitting note, not whichever tab is selected later.
+pub(crate) fn link_context(world: &World, view: Entity) -> Option<String> {
+    let n = world.resource::<Notes>()?;
+    n.views
+        .iter()
+        .find_map(|(path, v)| (v.preview == view || v.rich.root == view).then(|| path.clone()))
+}
+#[cfg(test)]
+pub(crate) fn complete_identity_fixture(world: &mut World) {
+    let serial = world
+        .resource::<Notes>()
+        .unwrap()
+        .management
+        .pending
+        .unwrap();
+    apply(
+        world,
+        NoteUpdate {
+            command: NoteCommand {
+                serial,
+                operation: Operation::Manage(management::Command::Identity),
+            },
+            result: Ok(Response::Managed(
+                serde_json::json!({"activeRootId":"fixture-root", "roots":[]}),
+            )),
+        },
+    );
+}
+#[cfg(test)]
+pub(crate) fn selected_path_fixture(world: &World) -> Option<String> {
+    world.resource::<Notes>()?.selected.clone()
+}
+pub(crate) fn open_path(world: &mut World, path: String, heading: Option<String>) {
+    crate::surfaces::select(world, crate::surfaces::SurfaceId::Notes);
+    if crate::surfaces::active(world) != crate::surfaces::SurfaceId::Notes {
+        return;
+    }
+    let Some(mut n) = world.resource_mut::<Notes>().map(std::mem::take) else {
+        return;
+    };
+    capture(world, &mut n);
+    capture_rich(world, &mut n);
+    if !can_deactivate_views(world, &n) {
+        *world.resource_mut::<Notes>().unwrap() = n;
+        return;
+    }
+    n.pending_heading = heading.filter(|h| !h.is_empty()).map(|h| (path.clone(), h));
+    if n.pending_heading.is_some() {
+        // A heading link is a reading action. Retain rich/source drafts, but
+        // reveal its destination in the read preview's virtualized scrollport.
+        n.live = false;
+        n.source = false;
+    }
+    if n.initializing {
+        n.pending_navigation = Some(path);
+    } else {
+        open_note(world, &mut n, path);
+    }
+    *world.resource_mut::<Notes>().unwrap() = n;
+}
 fn open_note(world: &mut World, n: &mut Notes, path: String) {
     if n.management.pending.is_some() {
         return;
@@ -1082,6 +1152,77 @@ fn open_overflow(world: &mut World, n: &mut Notes, anchor: Entity) {
     }
     if let Ok(menu) = open_menu(world, anchor, MenuAt::Below, &entries) {
         n.menu = Some((menu, actions));
+    }
+}
+/// Readable Unicode text with GitHub-style
+/// punctuation removal/hyphens, and numeric suffixes for duplicate headings.
+fn heading_slug(text: &str) -> String {
+    text.chars()
+        .flat_map(char::to_lowercase)
+        .filter_map(|c| {
+            if c.is_whitespace() {
+                Some('-')
+            } else if c.is_alphanumeric() || c == '-' || c == '_' {
+                Some(c)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+fn reveal_heading(world: &mut World, n: &mut Notes) {
+    let Some((path, heading)) = n.pending_heading.as_ref() else {
+        return;
+    };
+    if n.selected.as_ref() != Some(path) || n.source || n.live {
+        return;
+    }
+    let Some(view) = n.views.get(path) else {
+        return;
+    };
+    let Some(markdown) = world.get_mut::<MarkdownView>(view.preview) else {
+        return;
+    };
+    let wanted = heading_slug(heading);
+    let mut counts = HashMap::<String, usize>::new();
+    let target = markdown
+        .blocks()
+        .iter()
+        .enumerate()
+        .find_map(|(index, block)| {
+            if !matches!(block.kind, MarkdownKind::Heading(_)) {
+                return None;
+            }
+            let base = heading_slug(&block.text);
+            let count = counts.entry(base.clone()).or_default();
+            let slug = if *count == 0 {
+                base
+            } else {
+                format!("{base}-{count}")
+            };
+            *count += 1;
+            (slug == wanted).then_some(index)
+        });
+    // scroll_to_block rejects an unsynced source: keep the request until the
+    // plugin's next parse/measure pass instead of jumping using stale geometry.
+    if let Some(index) = target {
+        if markdown.scroll_to_block(index) {
+            n.pending_heading = None;
+            frame_wake(world).wake();
+        }
+    } else {
+        let parsed = parse_markdown(markdown.source());
+        if parsed.len() == markdown.blocks().len()
+            && parsed
+                .iter()
+                .zip(markdown.blocks())
+                .all(|(a, b)| a.kind == b.kind && a.text == b.text)
+        {
+            n.errors
+                .insert(path.clone(), format!("Heading not found: {heading}"));
+            n.pending_heading = None;
+            n.redraw = true;
+        }
     }
 }
 pub fn tick(world: &mut World) {
@@ -1201,6 +1342,7 @@ pub fn tick(world: &mut World) {
         n.redraw = false;
         render(world, &mut n);
     }
+    reveal_heading(world, &mut n);
     *world.resource_mut::<Notes>().unwrap() = n;
 }
 /// Consume only Notes primary-F presses. Keep arrival order for other widgets.
@@ -1505,7 +1647,17 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
     capture_rich(world, &mut n);
     let NoteUpdate { command: c, result } = u;
     if let Operation::Manage(command) = &c.operation {
+        let identity = matches!(command, management::Command::Identity)
+            && n.management.pending == Some(c.serial);
         management::apply(world, &mut n, c.serial, command, result);
+        if identity {
+            n.initializing = false;
+            // Invalid/failed identity must not replay navigation against an unknown vault.
+            n.pending_navigation = None;
+            if n.selected.is_none() {
+                n.pending_heading = None;
+            }
+        }
         n.redraw = true;
         *world.resource_mut::<Notes>().unwrap() = n;
         tick(world);

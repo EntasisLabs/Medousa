@@ -549,6 +549,10 @@ fn position(text: &str, head: usize) -> (usize, usize) {
             .count(),
     )
 }
+pub(super) fn navigate_to(w: &mut World, c: &mut Code, key: Key, line: usize) {
+    c.workbench.jump = Some((key, line.saturating_sub(1), 0));
+    apply_jump(w, c);
+}
 pub(super) fn apply_jump(w: &mut World, c: &mut Code) {
     let Some((key, line, character)) = c.workbench.jump.clone() else {
         return;
@@ -585,6 +589,15 @@ pub(super) fn apply_jump(w: &mut World, c: &mut Code) {
             head: offset,
         },
     );
+    // A link load may finish after the user moved elsewhere. Update its retained
+    // selection, but only focus/reveal when it is still the visible destination.
+    if crate::surfaces::active(w) == crate::surfaces::SurfaceId::Code
+        && c.selected.as_ref() == Some(&key.0)
+        && c.current.get(&key.0) == Some(&key.1)
+        && let Some(focus) = w.resource_mut::<Focus>()
+    {
+        focus.entity = Some(view.handle.editor);
+    }
     c.workbench.jump = None;
 }
 fn named_route(op: ops::Operation, work: &str, key: &str, value: &str) -> String {

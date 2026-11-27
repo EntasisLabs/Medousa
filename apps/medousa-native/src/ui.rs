@@ -76,6 +76,7 @@ pub struct Model {
     defaults_pending: bool,
     pending_first_send: Option<(DocumentId, rndr_core::editing::Revision)>,
     pending_runtime_picker: bool,
+    pending_drop_files: Vec<std::path::PathBuf>,
     sessions: Vec<(String, String)>,
     modes: Vec<(String, String, bool)>,
     mode: Option<String>,
@@ -120,6 +121,7 @@ impl Model {
             defaults_pending: false,
             pending_first_send: None,
             pending_runtime_picker: false,
+            pending_drop_files: vec![],
             sessions: vec![],
             modes: vec![],
             mode: Some("assistant".into()),
@@ -1184,6 +1186,11 @@ fn depth_options() -> Vec<SelectOption> {
         .map(|(i, s)| SelectOption::new(i as u64, *s))
         .collect()
 }
+pub(crate) fn link_notice(world: &mut World, session: &str, message: &str) {
+    conversations::with_session(world, session, |world| {
+        world.resource_mut::<Model>().unwrap().chat.status = message.into();
+    });
+}
 fn dispatch(world: &mut World, command: Command) {
     if world.resource::<crate::workshops::Workshops>().is_some() {
         match &command {
@@ -1212,6 +1219,7 @@ fn dispatch(world: &mut World, command: Command) {
             m.loading = false;
             m.pending_first_send = None;
             m.pending_runtime_picker = false;
+            m.pending_drop_files.clear();
             m.chat.status = "Owning workshop unavailable. Reconnect that source; this item cannot use another daemon.".into();
         }
         return;
@@ -1227,6 +1235,7 @@ fn dispatch(world: &mut World, command: Command) {
         m.loading = false;
         m.pending_first_send = None;
         m.pending_runtime_picker = false;
+        m.pending_drop_files.clear();
         m.chat.status =
             "Local daemon connection unavailable. Start the daemon and restart Medousa.".into();
     }
@@ -1309,6 +1318,7 @@ fn update(world: &mut World) {
     for reply in events::<Reply>(world).to_vec() {
         apply_reply(world, reply);
     }
+    crate::navigation::tick(world);
     refresh_idle_chat(world);
     crate::surfaces::remember_focus(world);
     let chat_active = crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat;
@@ -1365,6 +1375,7 @@ fn update(world: &mut World) {
     if chat_active {
         conversations::tab_events(world);
         open_pending_runtime_picker(world);
+        composer_file_drops(world);
     }
     // Canonical FindBar consumes its source-edit intents before app routing.
     if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Code {
@@ -1664,6 +1675,59 @@ fn action(world: &mut World, id: u64) {
     }
 }
 // Called only for the focused route, not while projecting a parked reply/view.
+/// Positioned drops target only the composer. RNDR's current desktop binding
+/// delivers path-only reports: on those platforms the visible Chat window is
+/// the drop target. Never synthesize a drop position from the last (possibly
+/// stale) mouse event.
+fn composer_file_drops(world: &mut World) {
+    let mut batches: Vec<(Entity, Vec<std::path::PathBuf>)> = vec![];
+    for drop in events::<FileDrop>(world) {
+        if let Some(target) = conversations::drop_target(world, drop.position) {
+            if let Some((_, files)) = batches.iter_mut().find(|(e, _)| *e == target) {
+                files.push(drop.path.clone());
+            } else {
+                batches.push((target, vec![drop.path.clone()]));
+            }
+        }
+    }
+    for (target, files) in batches {
+        conversations::focus_entity(world, target);
+        // IME composition can refuse a pane switch. Never redirect that drop.
+        if world.resource::<Ui>().unwrap().compose != target {
+            continue;
+        }
+        admit_composer_files(world, files);
+    }
+}
+fn admit_composer_files(world: &mut World, files: Vec<std::path::PathBuf>) {
+    let m = world.resource::<Model>().unwrap();
+    if m.loading || m.chat.uncertain {
+        world.resource_mut::<Model>().unwrap().chat.status =
+            "Wait for the conversation to finish connecting, then drop the files again.".into();
+        return;
+    }
+    if !matches!(runtimes::active(world), runtimes::ActiveRuntime::Native) {
+        world.resource_mut::<Model>().unwrap().chat.status =
+            "File attachments are not supported by this runtime. Choose Medousa to attach files."
+                .into();
+        return;
+    }
+    if let Some(session) = m.chat.session().map(str::to_owned) {
+        if let Err(error) = attachments::queue_files(world, &session, files) {
+            world.resource_mut::<Model>().unwrap().chat.status = error;
+        }
+    } else if files.len() > attachments::max_files() {
+        world.resource_mut::<Model>().unwrap().chat.status =
+            "Attach at most 10 files per message.".into();
+    } else if m.commands.is_none() || m.requested_session.is_some() {
+        world.resource_mut::<Model>().unwrap().chat.status =
+            "Connect the owning workshop before attaching files.".into();
+    } else {
+        world.resource_mut::<Model>().unwrap().pending_drop_files = files;
+        create_initial_conversation(world, false);
+    }
+}
+
 fn open_pending_runtime_picker(world: &mut World) {
     let m = world.resource_mut::<Model>().unwrap();
     if !m.pending_runtime_picker || m.loading || m.chat.uncertain {
@@ -1976,6 +2040,13 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
             restore_history_model(m);
             m.loading = false;
             let pending = m.pending_first_send.take();
+            let files = std::mem::take(&mut m.pending_drop_files);
+            let session = m.chat.session().map(str::to_owned);
+            if let Some(session) = session {
+                if let Err(error) = attachments::queue_files(world, &session, files) {
+                    world.resource_mut::<Model>().unwrap().chat.status = error;
+                }
+            }
             if let Some((document, revision)) = pending {
                 let unchanged = world
                     .resource::<SourceDocuments>()
@@ -2104,11 +2175,13 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
             m.pending_draft = None;
             m.pending_first_send = None;
             m.pending_runtime_picker = false;
+            m.pending_drop_files.clear();
         }
         Update::Unavailable(message) => {
             let m = world.resource_mut::<Model>().unwrap();
             m.pending_first_send = None;
             m.pending_runtime_picker = false;
+            m.pending_drop_files.clear();
             m.chat.status = message;
             m.loading = false;
         }
@@ -2843,6 +2916,125 @@ mod tests {
         );
         app.update();
         (app, rx)
+    }
+    #[test]
+    fn file_drop_event_is_consumed_once_by_update() {
+        let (mut app, mut rx) = initial_fixture();
+        while rx.try_recv().is_ok() {}
+        let mut hover = FileHoverSet::default();
+        hover.hover(FileHover::from_report("drop.txt", None));
+        app.world_mut().insert_resource(hover);
+        rndr_core::send(app.world_mut(), FileDrop::from_report("drop.txt", None));
+        app.update();
+        assert!(matches!(rx.try_recv().unwrap().command, Command::New));
+        assert!(rx.try_recv().is_err());
+        app.world_mut()
+            .resource_mut::<FileHoverSet>()
+            .unwrap()
+            .cancel();
+        app.update();
+        assert!(rx.try_recv().is_err());
+    }
+    #[test]
+    fn file_drop_initial_chat_promotes_without_sending_or_losing_draft() {
+        let (mut app, mut rx) = initial_fixture();
+        draft(&mut app, "Keep my draft");
+        while rx.try_recv().is_ok() {}
+        let document = app.world().resource::<Model>().unwrap().document;
+        admit_composer_files(app.world_mut(), vec!["/device/drop.txt".into()]);
+        assert!(matches!(rx.try_recv().unwrap().command, Command::New));
+        assert!(rx.try_recv().is_err());
+        assert_eq!(composer_text(&app), "Keep my draft");
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::History("created".into(), "owner".into(), vec![], None),
+            },
+        );
+        let uploads = attachments::drain_commands(app.world_mut());
+        assert_eq!(uploads.len(), 1);
+        assert_eq!(uploads[0].session, "created");
+        assert!(
+            attachments::media_refs(app.world(), "created")
+                .unwrap_err()
+                .contains("Wait")
+        );
+        assert_eq!(app.world().resource::<Model>().unwrap().document, document);
+        assert_eq!(composer_text(&app), "Keep my draft");
+        assert!(rx.try_recv().is_err());
+    }
+    #[test]
+    fn file_drop_creation_failure_clears_paths_and_never_auto_retries() {
+        let (mut app, mut rx) = initial_fixture();
+        while rx.try_recv().is_ok() {}
+        admit_composer_files(app.world_mut(), vec!["drop.txt".into()]);
+        rx.try_recv().unwrap();
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::Failure("offline".into()),
+            },
+        );
+        assert!(
+            app.world()
+                .resource::<Model>()
+                .unwrap()
+                .pending_drop_files
+                .is_empty()
+        );
+        assert!(attachments::drain_commands(app.world_mut()).is_empty());
+        assert!(rx.try_recv().is_err());
+    }
+    #[test]
+    fn file_drop_target_respects_composer_bounds_active_surface_and_path_only_reports() {
+        let (mut app, _) = initial_fixture();
+        let ui = *app.world().resource::<Ui>().unwrap();
+        app.world_mut().insert(
+            ui.compose,
+            Rect {
+                x: 100.,
+                y: 200.,
+                w: 300.,
+                h: 80.,
+            },
+        );
+        assert_eq!(
+            conversations::drop_target(app.world(), Some([150., 220.])),
+            Some(ui.compose)
+        );
+        assert_eq!(
+            conversations::drop_target(app.world(), Some([50., 220.])),
+            None
+        );
+        assert_eq!(
+            conversations::drop_target(app.world(), Some([f32::NAN, 220.])),
+            None
+        );
+        assert_eq!(
+            conversations::drop_target(app.world(), None),
+            Some(ui.compose)
+        );
+        crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+        assert_eq!(conversations::drop_target(app.world(), None), None);
+    }
+    #[test]
+    fn file_drop_over_limit_does_not_create_conversation() {
+        let (mut app, mut rx) = initial_fixture();
+        while rx.try_recv().is_ok() {}
+        admit_composer_files(
+            app.world_mut(),
+            (0..11).map(|i| format!("{i}.txt").into()).collect(),
+        );
+        assert!(rx.try_recv().is_err());
+        assert!(
+            app.world()
+                .resource::<Model>()
+                .unwrap()
+                .pending_drop_files
+                .is_empty()
+        );
     }
     fn mode_catalog(app: &mut App) {
         app.world_mut().resource_mut::<Model>().unwrap().modes = vec![

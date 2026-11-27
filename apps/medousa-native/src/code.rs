@@ -1717,6 +1717,55 @@ pub fn shortcut(w: &mut World, command: &str) -> bool {
         .insert(id, requested);
     action(w, &HostIntent::Command(id))
 }
+/// Show one undertaking file in Code, as medousa-home's "Open in Code".
+/// Selecting the surface may be refused (an unsaved draft elsewhere); then
+/// nothing changes here either.
+pub(crate) fn open_file(w: &mut World, work: &str, path: &str) {
+    crate::surfaces::select(w, crate::surfaces::SurfaceId::Code);
+    if crate::surfaces::active(w) != crate::surfaces::SurfaceId::Code {
+        return;
+    }
+    let Some(mut c) = w.resource_mut::<Code>().map(std::mem::take) else {
+        return;
+    };
+    if c.selected.as_deref() != Some(work) {
+        c.selected = Some(work.to_owned());
+        c.explorer_picker = None;
+        reset_explorer_query(w, &mut c);
+        if !c.files.contains_key(work) {
+            c.enqueue(Operation::Tree(work.to_owned()));
+        }
+    }
+    let key = (work.to_owned(), path.to_owned());
+    c.open_tab(&key);
+    c.current.insert(key.0.clone(), key.1.clone());
+    if !c.buffers.contains_key(&key) {
+        c.enqueue(Operation::Load(key));
+    }
+    clear_focus(w, &c);
+    c.redraw = true;
+    *w.resource_mut::<Code>().unwrap() = c;
+    sync(w);
+}
+/// Link lines are one-based, while the retained workbench jump is zero-based.
+/// Keep a jump pending when the daemon load has not produced a view yet.
+pub(crate) fn open_location(w: &mut World, work: &str, path: &str, line: Option<usize>) {
+    if !can_deactivate(w) {
+        return;
+    }
+    open_file(w, work, path);
+    if crate::surfaces::active(w) != crate::surfaces::SurfaceId::Code {
+        return;
+    }
+    if let Some(line) = line {
+        let Some(mut c) = w.resource_mut::<Code>().map(std::mem::take) else {
+            return;
+        };
+        workbench::navigate_to(w, &mut c, (work.to_owned(), path.to_owned()), line);
+        *w.resource_mut::<Code>().unwrap() = c;
+    }
+}
+
 pub fn action(w: &mut World, host: &HostIntent) -> bool {
     if crate::terminal::action(w, host) {
         return true;

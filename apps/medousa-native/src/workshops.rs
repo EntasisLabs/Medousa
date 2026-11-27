@@ -630,6 +630,34 @@ pub(crate) fn source_for_session(w: &World, session: &str) -> String {
 pub(crate) fn binding(w: &World, surface: SurfaceId) -> Option<Binding> {
     w.resource::<Workshops>()?.bindings.get(&surface).cloned()
 }
+/// Bind an explicit navigation destination to the emitting daemon. Never fall
+/// back to a different connected source; reuse the normal unsaved-edit guard.
+pub(crate) fn navigate_binding(w: &mut World, surface: SurfaceId, owner: &str) -> bool {
+    if binding(w, surface).is_some_and(|b| b.authority == owner) {
+        return true;
+    }
+    if commands(w, owner).is_none() {
+        return false;
+    }
+    if !crate::ui::rebind_workshop_view(w, surface) {
+        note(
+            w,
+            "Save/discard pending edits before following a link to another workshop.".into(),
+        );
+        return false;
+    }
+    let Some(s) = w.resource_mut::<Workshops>() else {
+        return false;
+    };
+    s.bindings
+        .entry(surface)
+        .and_modify(|b| b.select(owner.to_owned()))
+        .or_insert_with(|| Binding::new(owner.to_owned()));
+    if surface == SurfaceId::Code {
+        bind_terminal(w, owner);
+    }
+    true
+}
 pub(crate) fn dispatch_list(w: &mut World, query: String, more: bool) -> bool {
     let Some(s) = w.resource_mut::<Workshops>() else {
         return false;

@@ -1525,3 +1525,27 @@ fn closing_a_clean_file_releases_its_editor_document_and_buffer() {
             .any(|c| format!("{c:?}").contains("a.rs"))
     );
 }
+
+#[test]
+fn navigation_code_line_jump_applies_after_load_and_preserves_source() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    let key = key("w", "src/lib.rs");
+    let mut c = std::mem::take(w.resource_mut::<Code>().unwrap());
+    workbench::navigate_to(w, &mut c, key.clone(), 3);
+    *w.resource_mut::<Code>().unwrap() = c;
+    load(w, "w", "src/lib.rs", "α\nsecond\nthird", "d1");
+    let c = w.resource::<Code>().unwrap();
+    let view = &c.views[&key];
+    let doc = w
+        .resource::<SourceDocuments>()
+        .unwrap()
+        .get(view.document)
+        .unwrap();
+    assert_eq!(
+        doc.view_selection(view.handle.editor).unwrap().head,
+        "α\nsecond\n".len()
+    );
+    assert_eq!(doc.text(), "α\nsecond\nthird");
+    assert!(!c.buffers[&key].dirty());
+}

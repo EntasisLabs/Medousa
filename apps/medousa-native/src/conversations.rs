@@ -267,6 +267,36 @@ pub(super) fn focus_entity(world: &mut World, mut entity: Entity) {
         entity = p.entity;
     }
 }
+/// Resolve only visible composer cards, never an offscreen retained tab.
+/// Path-only native drops intentionally target the currently focused chat.
+pub(super) fn drop_target(world: &World, point: Option<[f32; 2]>) -> Option<Entity> {
+    if crate::surfaces::active(world) != crate::surfaces::SurfaceId::Chat {
+        return None;
+    }
+    let current = world.resource::<Ui>()?;
+    let mut views = vec![current];
+    if point.is_some() {
+        views.extend(world.resource::<Deck>()?.parked.values().map(|p| &p.ui));
+    }
+    views.into_iter().find_map(|ui| {
+        if world.has::<Hidden>(ui.content) || world.has::<Hidden>(ui.exchange.main) {
+            return None;
+        }
+        let hit = match point {
+            None => true,
+            Some([x, y]) => world.get::<Rect>(ui.compose).is_some_and(|r| {
+                x.is_finite()
+                    && y.is_finite()
+                    && x >= r.x
+                    && x <= r.x + r.w
+                    && y >= r.y
+                    && y <= r.y + r.h
+            }),
+        };
+        hit.then_some(ui.compose)
+    })
+}
+
 pub(super) fn focus_from_input(world: &mut World) {
     if let Some(e) = world.resource::<Focus>().and_then(|f| f.entity) {
         focus_entity(world, e);
@@ -1521,6 +1551,69 @@ mod tests {
         );
         assert_eq!(documents(w), base_documents);
     }
+    #[test]
+    fn navigation_failure_notice_stays_with_emitting_conversation() {
+        let mut app = fixture();
+        let a = loaded(&mut app, "a");
+        let b = loaded(&mut app, "b");
+        let before = app.world().resource::<Model>().unwrap().chat.status.clone();
+        super::super::link_notice(app.world_mut(), "a", "Use a work-qualified code reference");
+        assert_eq!(current(app.world()), b);
+        assert_eq!(app.world().resource::<Model>().unwrap().chat.status, before);
+        focus(app.world_mut(), a);
+        assert_eq!(
+            app.world().resource::<Model>().unwrap().chat.status,
+            "Use a work-qualified code reference"
+        );
+    }
+
+    #[test]
+    fn file_drop_positions_follow_visible_split_composer_not_focused_tab() {
+        let mut app = fixture();
+        let a = loaded(&mut app, "a");
+        let view_a = *app.world().resource::<Ui>().unwrap();
+        let b = loaded(&mut app, "b");
+        let view_b = *app.world().resource::<Ui>().unwrap();
+        action(app.world_mut(), SPLIT);
+        for _ in 0..8 {
+            app.update();
+        }
+        let rect = *app.world().get::<Rect>(view_a.compose).unwrap();
+        let point = Some([rect.x + rect.w / 2., rect.y + rect.h / 2.]);
+        assert_eq!(current(app.world()), b);
+        assert_eq!(drop_target(app.world(), point), Some(view_a.compose));
+        assert_eq!(drop_target(app.world(), None), Some(view_b.compose));
+        rndr_core::send(
+            app.world_mut(),
+            FileDrop::from_report("/device/a.txt", point),
+        );
+        app.update();
+        assert_eq!(current(app.world()), a);
+        // Normal orchestration may already drain upload commands into the
+        // owning auxiliary transport; assert the retained admission, not its queue.
+        assert!(
+            attachments::media_refs(app.world(), "a")
+                .unwrap_err()
+                .contains("Wait")
+        );
+        assert!(
+            attachments::media_refs(app.world(), "b")
+                .unwrap()
+                .is_empty()
+        );
+        // Responsive collapse leaves the other retained pane with stale
+        // geometry. It must not remain eligible for positioned drops.
+        let rect_b = *app.world().get::<Rect>(view_b.compose).unwrap();
+        let stale_b = Some([rect_b.x + rect_b.w / 2., rect_b.y + rect_b.h / 2.]);
+        app.world_mut().resource_mut::<Viewport>().unwrap().width = 760.;
+        for _ in 0..8 {
+            app.update();
+        }
+        assert!(!app.world().has::<Hidden>(view_a.content));
+        assert!(app.world().has::<Hidden>(view_b.content));
+        assert_ne!(drop_target(app.world(), stale_b), Some(view_b.compose));
+    }
+
     #[test]
     fn split_join_and_responsive_collapse_preserve_both_conversations() {
         let mut app = fixture();

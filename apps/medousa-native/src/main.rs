@@ -13,6 +13,7 @@ mod diff_presentation;
 mod media_preview;
 mod native_style;
 mod notes;
+mod navigation;
 mod peer_management;
 mod peers;
 mod provider_timeline;

@@ -73,6 +73,51 @@ press Enter (or **Choose provider…**) to browse matching providers and models.
 Clear the filter to see the full catalog again. Escape or clicking outside
 closes the menu without changing the model or draft.
 
+## Open note and code references
+
+Select a link in a chat message or a note's Read view to follow it. In the rich
+note editor, use **Command-click** on macOS or **Ctrl-click** on Windows/Linux to
+follow a link; a normal click still places the caret so you can edit without
+navigating away. Heading links reveal their destination in the Read view, with
+any unsaved draft retained.
+
+App note references use `medousa://vault/folder/note.md`. Code references use
+`medousa://undertaking/WORK_ID/location?path=src%2Flib.rs&line=42` and open the
+specified work thread, file, and one-based line. Paths in a note can also refer to
+other notes relative to that note's folder; wikilinks without an extension gain
+`.md`. Note heading fragments such as `#installation` reveal the matching heading,
+including headings outside the current virtualized viewport.
+
+Navigation uses the emitting conversation or note's owning workshop, not the
+currently highlighted workshop picker. Remote note/code links remain on that
+daemon; they never open a similarly named device file. An attempted cross-workshop
+switch cannot discard unsaved note or code edits. Normal web/email links use the
+system opener; unsupported schemes and escaping paths do not become filesystem
+or process actions.
+
+## Drop files into Chat
+
+With the **Medousa** runtime selected, drag files from your device into Chat to
+attach them to the focused conversation. A composer hint appears while files are
+hovered. A new chat is created in place if needed, preserving your text and mode;
+attaching files never sends your message. Wait for uploads to finish, then send.
+Remove a failed attachment to unblock sending, or remove it and drop it again to
+retry. Directories, empty files, and files over **25 MiB** are rejected. A message
+can contain at most **10 files**, including files already attached or uploading.
+
+Files are read from the device only after an explicit drop and uploaded through
+the conversation's existing authenticated workshop connection. A remote daemon
+receives the file contents, not a device filesystem path. Vault links are different:
+opening a note reads the owning daemon's vault, not a file on your device.
+External runtimes that cannot send attachments reject drops explicitly.
+
+The current RNDR desktop binding reports dropped paths without a drop position on
+macOS, Windows, and X11. Those reports target the focused Chat pane, even when
+released elsewhere in the Chat window; no stale mouse position is used to guess.
+Positioned reports target the composer card in the matching visible split pane.
+Drops outside Chat do not attach anything. Wayland file drops are not supported by
+the current windowing binding; use the file picker instead.
+
 ## Sidebar grouping
 
 Chat history uses the same local-date sections as the Tauri app: **Today**,

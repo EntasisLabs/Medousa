@@ -211,3 +211,174 @@ fn image_upload_has_preview_and_removal_does_not_send_or_cross_sessions() {
     assert!(world.has::<Hidden>(tray));
     assert!(children_of(&world, tray).is_empty());
 }
+
+#[test]
+fn direct_drops_reserve_slots_and_keep_exact_paths_and_session() {
+    let mut w = world();
+    queue_files(
+        &mut w,
+        "a",
+        vec!["/device/one.txt".into(), "/device/Files".into()],
+    )
+    .unwrap();
+    assert!(media_refs(&w, "a").unwrap_err().contains("Wait"));
+    queue_files(&mut w, "a", vec!["/device/three.txt".into()]).unwrap();
+    let commands = drain_commands(&mut w);
+    assert_eq!(commands.len(), 3);
+    assert!(commands.iter().all(|c| c.session == "a" && c.limit == 1));
+    assert_eq!(
+        commands[0].files,
+        Some(vec![PathBuf::from("/device/one.txt")])
+    );
+    for (i, c) in commands.into_iter().enumerate() {
+        apply(&mut w, completed(&c.session, c.id, &format!("file-{i}")));
+    }
+    assert_eq!(media_refs(&w, "a").unwrap().len(), 3);
+    assert!(media_refs(&w, "b").unwrap().is_empty());
+}
+
+#[test]
+fn direct_drop_capacity_rejects_whole_batch_without_partial_admission() {
+    let mut w = world();
+    queue_files(
+        &mut w,
+        "a",
+        (0..9).map(|i| format!("{i}.txt").into()).collect(),
+    )
+    .unwrap();
+    assert!(queue_files(&mut w, "a", vec!["extra.txt".into(), "overflow.txt".into()]).is_err());
+    assert_eq!(drain_commands(&mut w).len(), 9);
+    queue_files(&mut w, "a", vec!["last.txt".into()]).unwrap();
+    assert!(queue_files(&mut w, "a", vec!["too-many.txt".into()]).is_err());
+    assert_eq!(w.resource::<Attachments>().unwrap().drafts["a"].len(), 10);
+}
+
+#[test]
+fn pending_picker_cannot_race_with_direct_drops() {
+    let mut w = world();
+    pending(&mut w, "a", 1);
+    w.resource_mut::<Attachments>()
+        .unwrap()
+        .drafts
+        .get_mut("a")
+        .unwrap()[0]
+        .state = ItemState::Picking;
+    assert!(
+        queue_files(&mut w, "a", vec!["one.txt".into()])
+            .unwrap_err()
+            .contains("picker")
+    );
+    assert!(drain_commands(&mut w).is_empty());
+}
+
+#[tokio::test]
+async fn dropped_device_file_upload_uses_owning_session_and_existing_credentials() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::Arc,
+        time::Duration,
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(4)))
+            .unwrap();
+        let mut raw = Vec::new();
+        let mut buf = [0; 4096];
+        let header_end = loop {
+            let n = socket.read(&mut buf).unwrap();
+            assert!(n > 0);
+            raw.extend_from_slice(&buf[..n]);
+            if let Some(i) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                break i + 4;
+            }
+        };
+        let header = String::from_utf8_lossy(&raw[..header_end]).to_ascii_lowercase();
+        let length: usize = header
+            .lines()
+            .find_map(|l| {
+                l.strip_prefix("content-length:")
+                    .and_then(|v| v.trim().parse().ok())
+            })
+            .unwrap();
+        while raw.len() < header_end + length {
+            let n = socket.read(&mut buf).unwrap();
+            assert!(n > 0);
+            raw.extend_from_slice(&buf[..n]);
+        }
+        let raw = String::from_utf8_lossy(&raw);
+        assert!(
+            raw.starts_with("POST /v1/media/upload?session_id=wire-session HTTP/1.1"),
+            "{raw}"
+        );
+        assert!(header.contains("authorization: bearer fixture-credential"));
+        assert!(raw.contains("filename=\"device-note.txt\""));
+        assert!(raw.contains("device file contents"));
+        assert!(!raw.contains("device-local-private-dir"));
+        let body = r#"{"media_id":"uploaded","mime":"text/plain","byte_size":20,"label":"device-note.txt"}"#;
+        write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+    });
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::AUTHORIZATION,
+        "Bearer fixture-credential".parse().unwrap(),
+    );
+    let http = reqwest::Client::builder()
+        .default_headers(headers)
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let client = MedousaClient::with_transport(
+        Arc::new(medousa_sdk::HttpTransport::with_client(http)),
+        origin,
+    );
+    let dir = tempfile::Builder::new()
+        .prefix("device-local-private-dir")
+        .tempdir()
+        .unwrap();
+    let path = dir.path().join("device-note.txt");
+    std::fs::write(&path, b"device file contents").unwrap();
+    let mut w = world();
+    let session = crate::routing::qualify("remote-workshop", "wire-session");
+    queue_files(&mut w, &session, vec![path]).unwrap();
+    let update = execute(&client, drain_commands(&mut w).remove(0))
+        .await
+        .unwrap();
+    apply(&mut w, update);
+    let refs = media_refs(&w, &session).unwrap();
+    assert_eq!(refs[0].media_id, "uploaded");
+    assert!(media_refs(&w, "wire-session").unwrap().is_empty());
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn invalid_dropped_file_stays_removable_and_blocks_send_without_network_request() {
+    use std::sync::Arc;
+    let client = MedousaClient::with_transport(
+        Arc::new(medousa_sdk::HttpTransport::new()),
+        "http://127.0.0.1:1",
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let mut w = world();
+    queue_files(&mut w, "a", vec![dir.path().to_owned()]).unwrap();
+    let update = execute(&client, drain_commands(&mut w).remove(0))
+        .await
+        .unwrap();
+    apply(&mut w, update);
+    assert!(
+        media_refs(&w, "a")
+            .unwrap_err()
+            .contains("Only regular files")
+    );
+    assert!(matches!(
+        w.resource::<Attachments>().unwrap().drafts["a"][0].state,
+        ItemState::Failed(_)
+    ));
+    assert!(
+        drain_commands(&mut w).is_empty(),
+        "Failed drops are never auto-retried"
+    );
+}
