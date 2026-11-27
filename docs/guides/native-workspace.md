@@ -33,6 +33,11 @@ focus stay in place. Creation failures keep your draft, and repeated Enter while
 creation is pending does not create duplicate conversations. If you edit the
 draft during creation, the updated text stays unsent until you send it again.
 
+New native conversations start in **Assistant** mode. The mode selector is
+usable in the initial composer, before a conversation exists. Choose another
+available mode there to apply it before the first message; existing conversations
+retain their server-reported mode. Mode changes are disabled while a turn is busy.
+
 New conversations use the owning workshop's saved provider/model, answer depth,
 reasoning effort and stage routes, from the same runtime-defaults record used by
 Tauri and **Settings → Medousa Agent**. An explicit model choice stays with that
@@ -47,6 +52,15 @@ line. **Command+Enter** on macOS (or **Ctrl+Enter** elsewhere) also sends.
 These shortcuts belong to the message editor, not search fields, menus, Notes,
 or Code. Input-method composition keeps Enter for confirming text rather than
 sending the draft.
+
+Use the runtime name in the composer to choose Medousa, an available installed
+agent, or a connected provider conversation. From the initial view, opening this
+picker creates the conversation in place without sending your draft, using the
+selected mode. Its choices update when the owning workshop's catalog finishes
+loading. Runtimes needing installation or sign-in appear under **Needs setup**.
+Runtime changes are disabled during a turn; a failed selection never silently
+sends the message through Medousa instead. Conversation tabs use selected fill
+without an accent underline, while retaining keyboard focus rings.
 
 For Medousa's own runtime, select the model name below the composer, choose a
 **provider**, then choose one of that provider's models. **All providers** goes

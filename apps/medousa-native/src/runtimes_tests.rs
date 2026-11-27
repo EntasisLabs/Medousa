@@ -606,3 +606,86 @@ fn runtime_menu_lists_ready_runtimes_and_folds_setup_into_one_entry() {
         [RuntimeCommand { operation: Operation::Select { runtime, .. }, .. }] if runtime == "fixture"
     ));
 }
+
+#[test]
+fn open_runtime_menu_refreshes_after_catalog_arrives_without_reopening_dismissed_menu() {
+    let mut app = App::new();
+    app.add_plugin(rndr_ui::UiPlugin);
+    setup(app.world_mut());
+    let anchor = app.world_mut().spawn((Layout {
+        width: Size::Px(120.),
+        height: Size::Px(30.),
+        ..Layout::row()
+    },));
+    app.update();
+    show(app.world_mut(), Some("s"));
+    refresh(app.world_mut(), "s");
+    let command = drain_commands(app.world_mut()).pop().unwrap();
+    open(app.world_mut(), anchor, "s");
+    app.update();
+    assert!(
+        app.world()
+            .resource::<Runtimes>()
+            .unwrap()
+            .menu
+            .as_ref()
+            .unwrap()
+            .picks
+            .values()
+            .all(|p| !matches!(p, Pick::Run(Operation::Select { .. })))
+    );
+    apply(
+        app.world_mut(),
+        RuntimeUpdate {
+            command,
+            may_have_mutated: false,
+            result: Ok(Payload::Catalog {
+                runtimes: Ok(serde_json::from_value(json!([runtime()])).unwrap()),
+                conversations: Ok(vec![]),
+            }),
+        },
+    );
+    app.update();
+    let menu = app
+        .world()
+        .resource::<Runtimes>()
+        .unwrap()
+        .menu
+        .as_ref()
+        .unwrap();
+    assert!(menu.handle.is_open(app.world()));
+    assert!(menu.picks.values().any(
+        |p| matches!(p, Pick::Run(Operation::Select { runtime, .. }) if runtime == "fixture")
+    ));
+    refresh(app.world_mut(), "s");
+    let command = drain_commands(app.world_mut()).pop().unwrap();
+    let handle = app
+        .world()
+        .resource::<Runtimes>()
+        .unwrap()
+        .menu
+        .as_ref()
+        .unwrap()
+        .handle;
+    handle.close(app.world_mut());
+    apply(
+        app.world_mut(),
+        RuntimeUpdate {
+            command,
+            may_have_mutated: false,
+            result: Ok(Payload::Catalog {
+                runtimes: Ok(vec![]),
+                conversations: Ok(vec![]),
+            }),
+        },
+    );
+    assert!(!handle.is_open(app.world()));
+    assert!(
+        app.world()
+            .resource::<Runtimes>()
+            .unwrap()
+            .menu
+            .as_ref()
+            .is_none_or(|m| !m.handle.is_open(app.world()))
+    );
+}

@@ -612,6 +612,25 @@ pub(super) fn action(world: &mut World, action: u64) -> bool {
     }
     true
 }
+// RNDR exposes tab headers but not its decorative underline as a handle.
+// Suppress only the full-width bottom rule. Selection fill, dirty marks,
+// accessibility and keyboard focus remain RNDR-owned.
+fn quiet_tab_underline(world: &mut World, list: Entity) {
+    for tab in children_of(world, list) {
+        if !world.has::<Tab>(tab) {
+            continue;
+        }
+        for child in children_of(world, tab) {
+            if world
+                .get::<Absolute>(child)
+                .is_some_and(|a| a.left == Some(0.) && a.right == Some(0.) && a.bottom == Some(0.))
+                && let Some(layout) = world.get_mut::<Layout>(child)
+            {
+                layout.height = Size::Px(0.);
+            }
+        }
+    }
+}
 /// Validate drag identities before removing anything. Self/stale/cross-group
 /// targets must not drop the source from the canonical ShellCore layout.
 fn reorder(ids: &mut Vec<String>, source: &str, target: &str, after: bool) -> bool {
@@ -950,6 +969,7 @@ pub(super) fn sync_all(world: &mut World) {
                         selected,
                     )
                     .unwrap();
+                    quiet_tab_underline(world, handle.list);
                     world.resource_mut::<Deck>().unwrap().strip_cache[i] =
                         Some((specs.clone(), selected, active, handle));
                     handle
@@ -1066,6 +1086,113 @@ mod tests {
             .unwrap()
             .text()
             .to_string()
+    }
+    #[test]
+    fn background_initial_runtime_creation_does_not_open_menu_over_another_tab() {
+        let mut app = fixture();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        app.world_mut().resource_mut::<Model>().unwrap().commands = Some(tx);
+        super::super::action(app.world_mut(), RUNTIME);
+        assert!(matches!(rx.try_recv().unwrap().command, Command::New));
+        let initial = current(app.world());
+        let other = loaded(&mut app, "other");
+        reply(
+            app.world_mut(),
+            Reply {
+                generation: initial,
+                update: Update::History("created".into(), "a".into(), vec![], None),
+            },
+        );
+        for _ in 0..3 {
+            app.update();
+        }
+        assert_eq!(current(app.world()), other);
+        assert!(
+            !app.world()
+                .query::<Label>()
+                .iter()
+                .any(|(_, l)| l.text == "Refresh runtimes")
+        );
+        focus(app.world_mut(), initial);
+        for _ in 0..3 {
+            app.update();
+        }
+        assert!(
+            app.world()
+                .query::<Label>()
+                .iter()
+                .any(|(_, l)| l.text == "Refresh runtimes")
+        );
+    }
+    #[test]
+    fn conversation_tabs_keep_selection_without_accent_underline() {
+        let mut app = fixture();
+        loaded(&mut app, "one");
+        loaded(&mut app, "two");
+        for _ in 0..4 {
+            app.update();
+        }
+        let mut checked = 0;
+        for (_, _, _, strip) in app
+            .world()
+            .resource::<Deck>()
+            .unwrap()
+            .strip_cache
+            .iter()
+            .flatten()
+        {
+            for tab in children_of(app.world(), strip.list) {
+                if !app.world().has::<Tab>(tab) {
+                    continue;
+                }
+                for child in children_of(app.world(), tab) {
+                    if app.world().get::<Absolute>(child).is_some_and(|a| {
+                        a.left == Some(0.) && a.right == Some(0.) && a.bottom == Some(0.)
+                    }) {
+                        assert_eq!(
+                            app.world().get::<Layout>(child).unwrap().height,
+                            Size::Px(0.)
+                        );
+                        if let Some(rect) = app.world().get::<Rect>(child) {
+                            assert_eq!(rect.h, 0.);
+                        }
+                        checked += 1;
+                    }
+                }
+            }
+            assert!(strip.selected(app.world()).is_some());
+        }
+        assert!(checked >= 2);
+    }
+    #[test]
+    #[ignore = "Synthetic native chat tab GPU visual acceptance"]
+    fn quiet_chat_tabs_visual_acceptance() {
+        let mut app = fixture();
+        app.world_mut()
+            .insert_resource(rndr_ui::InteractionMotion::snap());
+        let engine: std::sync::Arc<dyn TextEngine> =
+            std::sync::Arc::new(rndr_render::ParleyText::new());
+        app.world_mut().insert_resource(engine);
+        loaded(&mut app, "one");
+        loaded(&mut app, "two");
+        let mut exporter = rndr_render::Exporter::new().unwrap();
+        for _ in 0..10 {
+            rndr_paint::frame(&mut app);
+        }
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, 1400, 850, 1.)
+                .unwrap()
+        });
+        std::fs::create_dir_all("verification").unwrap();
+        image::save_buffer(
+            "verification/native-chat-quiet-tabs.png",
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
     }
     #[test]
     fn new_tabs_use_saved_defaults_not_previous_conversation_selection() {

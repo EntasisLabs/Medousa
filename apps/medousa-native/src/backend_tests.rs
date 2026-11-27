@@ -457,7 +457,8 @@ fn fixture_gated(
     )>,
 ) -> (Arc<MedousaClient>, thread::JoinHandle<()>) {
     if wires.iter().any(|w| w.path == "/v1/models/catalog")
-        && !wires.iter().any(|w| w.path == "/v1/runtime/tui-defaults") {
+        && !wires.iter().any(|w| w.path == "/v1/runtime/tui-defaults")
+    {
         // Optional startup settings read is independent of other metadata.
         let mut defaults = json_wire("GET", "/v1/runtime/tui-defaults", json!({}));
         defaults.status = 404;
@@ -1600,8 +1601,10 @@ async fn pending_admission_survives_navigation_and_does_not_block_another_sessio
 // Startup catalogs are deliberately unordered; only normalize them for older
 // assertions about subsequent serialized mutation replies.
 fn observed(app: &App) -> Vec<&Reply> {
-    let mut replies: Vec<_> = rndr_core::events::<Reply>(app.world()).iter()
-        .filter(|r| !matches!(r.update, Update::Defaults(_))).collect();
+    let mut replies: Vec<_> = rndr_core::events::<Reply>(app.world())
+        .iter()
+        .filter(|r| !matches!(r.update, Update::Defaults(_)))
+        .collect();
     replies.sort_by_key(|r| {
         if r.generation != 0 {
             return 3;
@@ -1867,13 +1870,18 @@ async fn idle_refresh_discovers_callback_after_original_stream_is_gone() {
 
 #[tokio::test]
 async fn startup_reads_saved_chat_defaults_from_owning_workshop() {
-    let (client, server) = fixture(vec![list_wire(),
+    let (client, server) = fixture(vec![
+        list_wire(),
         json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
         registry_wire(),
-        json_wire("GET", "/v1/runtime/tui-defaults", json!({
-            "provider":"preferred", "model":"saved", "response_depth_mode":"deep",
-            "reasoning_effort":"high"
-        })),
+        json_wire(
+            "GET",
+            "/v1/runtime/tui-defaults",
+            json!({
+                "provider":"preferred", "model":"saved", "response_depth_mode":"deep",
+                "reasoning_effort":"high"
+            }),
+        ),
     ]);
     let mut app = App::new();
     let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
@@ -1886,5 +1894,55 @@ async fn startup_reads_saved_chat_defaults_from_owning_workshop() {
             && d.model.as_deref() == Some("saved") && d.response_depth_mode.as_deref() == Some("deep")
             && d.reasoning_effort.as_deref() == Some("high")
     )));
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn new_chat_applies_selected_mode_before_publishing_history() {
+    for selected in [AgentModeId::Assistant, AgentModeId::Teacher] {
+        let mut change = json_wire(
+            "PUT",
+            "/v1/sessions/s/agent-mode",
+            mode_body(selected.as_str()),
+        );
+        change.check = Some(|raw| {
+            let body: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+            assert_eq!(body["scope"], "session");
+            assert!(body["mode"] == "assistant" || body["mode"] == "teacher");
+        });
+        let (client, server) = fixture(vec![
+            json_wire(
+                "POST",
+                "/v1/sessions",
+                json!({"authority_id":format!("auth_{}", "a".repeat(64)), "session_id":"s", "catalog":"single"}),
+            ),
+            change,
+            active_wire(false),
+            history_wire(false),
+            active_wire(false),
+        ]);
+        assert!(
+            matches!(create_chat(&client, selected).await.unwrap(), Update::History(id, _, _, None) if id == "s")
+        );
+        server.join().unwrap();
+    }
+}
+#[tokio::test]
+async fn new_chat_mode_failure_never_publishes_sendable_history() {
+    let mut change = json_wire(
+        "PUT",
+        "/v1/sessions/s/agent-mode",
+        json!({"error":"unavailable"}),
+    );
+    change.status = 409;
+    let (client, server) = fixture(vec![
+        json_wire(
+            "POST",
+            "/v1/sessions",
+            json!({"authority_id":format!("auth_{}", "a".repeat(64)), "session_id":"s", "catalog":"single"}),
+        ),
+        change,
+    ]);
+    assert!(create_chat(&client, AgentModeId::Assistant).await.is_err());
     server.join().unwrap();
 }

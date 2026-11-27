@@ -75,6 +75,7 @@ pub struct Model {
     depth_chosen: bool,
     defaults_pending: bool,
     pending_first_send: Option<(DocumentId, rndr_core::editing::Revision)>,
+    pending_runtime_picker: bool,
     sessions: Vec<(String, String)>,
     modes: Vec<(String, String, bool)>,
     mode: Option<String>,
@@ -118,9 +119,10 @@ impl Model {
             depth_chosen: false,
             defaults_pending: false,
             pending_first_send: None,
+            pending_runtime_picker: false,
             sessions: vec![],
             modes: vec![],
-            mode: None,
+            mode: Some("assistant".into()),
             depth: 1,
             search_query: String::new(),
             session_cursor: None,
@@ -1209,6 +1211,7 @@ fn dispatch(world: &mut World, command: Command) {
         }) {
             m.loading = false;
             m.pending_first_send = None;
+            m.pending_runtime_picker = false;
             m.chat.status = "Owning workshop unavailable. Reconnect that source; this item cannot use another daemon.".into();
         }
         return;
@@ -1223,6 +1226,7 @@ fn dispatch(world: &mut World, command: Command) {
     }) {
         m.loading = false;
         m.pending_first_send = None;
+        m.pending_runtime_picker = false;
         m.chat.status =
             "Local daemon connection unavailable. Start the daemon and restart Medousa.".into();
     }
@@ -1351,11 +1355,16 @@ fn update(world: &mut World) {
             ) {
                 m.loading = true;
                 dispatch(world, Command::SetMode(session, mode));
+            } else if m.chat.session().is_none() {
+                // Draft tabs have no server identity yet. Persist this choice
+                // during creation, before the first turn can be admitted.
+                m.mode = Some(m.modes[id].0.clone());
             }
         }
     }
     if chat_active {
         conversations::tab_events(world);
+        open_pending_runtime_picker(world);
     }
     // Canonical FindBar consumes its source-edit intents before app routing.
     if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Code {
@@ -1521,6 +1530,10 @@ fn action(world: &mut World, id: u64) {
             }
         }
         RUNTIME => {
+            let m = world.resource::<Model>().unwrap();
+            if m.loading || m.chat.busy() || m.chat.uncertain {
+                return;
+            }
             let session = world
                 .resource::<Model>()
                 .unwrap()
@@ -1531,6 +1544,8 @@ fn action(world: &mut World, id: u64) {
                 let label = format!("{}  ⌄", runtimes::label(world, Some(&session)));
                 let chip = button(world, ui.controls, RUNTIME, &label, true);
                 runtimes::open(world, chip.root, &session);
+            } else {
+                create_initial_conversation(world, true);
             }
         }
         MODEL_SEARCH => {
@@ -1648,6 +1663,44 @@ fn action(world: &mut World, id: u64) {
         _ => {}
     }
 }
+// Called only for the focused route, not while projecting a parked reply/view.
+fn open_pending_runtime_picker(world: &mut World) {
+    let m = world.resource_mut::<Model>().unwrap();
+    if !m.pending_runtime_picker || m.loading || m.chat.uncertain {
+        return;
+    }
+    let Some(session) = m.chat.session().map(str::to_owned) else {
+        return;
+    };
+    runtimes::show(world, Some(&session));
+    let ui = *world.resource::<Ui>().unwrap();
+    let chip = button(world, ui.controls, RUNTIME, "Medousa  ⌄", true);
+    if runtimes::open(world, chip.root, &session) {
+        world
+            .resource_mut::<Model>()
+            .unwrap()
+            .pending_runtime_picker = false;
+    }
+}
+// Runtime choice also needs a server session, but never implies sending a draft.
+// Reuse the initial route, editor and selected mode rather than opening a new tab.
+fn create_initial_conversation(world: &mut World, runtime_picker: bool) {
+    let m = world.resource_mut::<Model>().unwrap();
+    if m.loading || m.commands.is_none() || m.requested_session.is_some() {
+        return;
+    }
+    m.pending_runtime_picker = runtime_picker;
+    m.loading = true;
+    let mode = m.mode.as_deref().unwrap_or("assistant");
+    let mode = serde_json::from_value(serde_json::Value::String(mode.into()))
+        .unwrap_or(medousa_types::AgentModeId::Assistant);
+    let command = if mode == medousa_types::AgentModeId::Assistant {
+        Command::New
+    } else {
+        Command::NewWithMode(mode)
+    };
+    dispatch(world, command);
+}
 fn send_native(world: &mut World) {
     let m = world.resource::<Model>().unwrap();
     if m.defaults_pending {
@@ -1672,13 +1725,11 @@ fn send_native(world: &mut World) {
         return;
     }
     let Some(session) = m.chat.session() else {
-        let m = world.resource_mut::<Model>().unwrap();
         if m.commands.is_none() || m.requested_session.is_some() {
             return;
         }
-        m.pending_first_send = Some(pending);
-        m.loading = true;
-        dispatch(world, Command::New);
+        world.resource_mut::<Model>().unwrap().pending_first_send = Some(pending);
+        create_initial_conversation(world, false);
         return;
     };
     let mut request = crate::chat::turn_request(session, doc.text(), provider, model);
@@ -2052,10 +2103,12 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
             m.loading = false;
             m.pending_draft = None;
             m.pending_first_send = None;
+            m.pending_runtime_picker = false;
         }
         Update::Unavailable(message) => {
             let m = world.resource_mut::<Model>().unwrap();
             m.pending_first_send = None;
+            m.pending_runtime_picker = false;
             m.chat.status = message;
             m.loading = false;
         }
@@ -2178,7 +2231,13 @@ fn sync(world: &mut World) {
     approvals::sync(world, ui.approvals, m.chat.session(), m.chat.snapshot());
     runtimes::show(world, m.chat.session());
     let chip = format!("{}  ⌄", runtimes::label(world, m.chat.session()));
-    button(world, ui.controls, RUNTIME, &chip, true);
+    button(
+        world,
+        ui.controls,
+        RUNTIME,
+        &chip,
+        !m.loading && !m.chat.busy() && !m.chat.uncertain,
+    );
     context::sync(world, ui.context, m.chat.session());
     let refresh = world
         .resource::<Model>()
@@ -2208,8 +2267,8 @@ fn sync(world: &mut World) {
         && !runtimes::busy(world)
         && !world.resource::<Model>().unwrap().defaults_pending;
     let selector_key = format!(
-        "{:?}{:?}{:?}{}{}",
-        m.modes, m.selected, m.mode, m.depth, available
+        "{:?}{:?}{:?}{}{}{}",
+        m.modes, m.selected, m.mode, m.depth, available, external
     );
     let state = world.resource_mut::<Model>().unwrap();
     let selectors_changed = state.selectors_key != selector_key;
@@ -2226,13 +2285,25 @@ fn sync(world: &mut World) {
             })
             .collect::<Vec<_>>();
         let mut props = SelectionProps::new("Mode");
-        props.enabled = available && m.chat.session().is_some();
+        props.enabled = available && !external;
         let selected = m
             .mode
             .as_ref()
             .and_then(|mode| m.modes.iter().position(|(id, _, _)| id == mode))
             .map(|i| OptionId(i as u64));
         SingleSelect::mount(world, ui.controls, UiId(11), props, &modes, selected).unwrap();
+        // Match the conversation rows: selection is a quiet fill, not an
+        // accent stripe. RNDR still owns focus, selected semantics and the
+        // high-contrast shape cue. Reapply after catalog changes add rows.
+        for popup in world.entities_with::<AnchoredPopup>() {
+            if world.get::<AnchoredPopup>(popup).unwrap().anchor == ui.mode {
+                for row in children_of(world, popup) {
+                    if world.has::<SelectedState>(row) {
+                        world.insert(row, controls::QuietSelection);
+                    }
+                }
+            }
+        }
         let mut props = SelectionProps::new("Depth");
         props.enabled = available;
         SingleSelect::mount(
@@ -2294,7 +2365,7 @@ fn sync(world: &mut World) {
         ui.mode,
         11,
         &format!("{mode_title}  ⌄"),
-        available && m.chat.session().is_some(),
+        available && !external,
         160.,
     );
     quiet_selector(
@@ -2772,6 +2843,224 @@ mod tests {
         );
         app.update();
         (app, rx)
+    }
+    fn mode_catalog(app: &mut App) {
+        app.world_mut().resource_mut::<Model>().unwrap().modes = vec![
+            ("assistant".into(), "Assistant".into(), true),
+            ("teacher".into(), "Teacher".into(), true),
+            ("coder".into(), "Coder".into(), false),
+        ];
+        app.update();
+    }
+    #[test]
+    fn mode_selector_opens_in_initial_view_and_persists_draft_choice() {
+        let (mut app, mut rx) = initial_fixture();
+        mode_catalog(&mut app);
+        let mode = app.world().resource::<Ui>().unwrap().mode;
+        assert_eq!(
+            app.world().resource::<Model>().unwrap().mode.as_deref(),
+            Some("assistant")
+        );
+        assert!(app.world().get::<Button>(mode).unwrap().enabled);
+        request_focus(app.world_mut(), mode);
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        let popup = app
+            .world()
+            .entities_with::<AnchoredPopup>()
+            .into_iter()
+            .find(|&e| app.world().get::<AnchoredPopup>(e).unwrap().anchor == mode)
+            .unwrap();
+        assert!(
+            !app.world().has::<Hidden>(popup),
+            "mode popup must actually open"
+        );
+        let rows = children_of(app.world(), popup)
+            .into_iter()
+            .filter(|&row| app.world().has::<SelectedState>(row))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 3);
+        for &row in &rows {
+            assert!(app.world().has::<controls::QuietSelection>(row));
+            // Selection's separate, absolutely positioned edge marker is
+            // hidden; the selected row and accessible state are retained.
+            for child in children_of(app.world(), row) {
+                if app.world().has::<Absolute>(child) {
+                    assert!(app.world().has::<Hidden>(child));
+                }
+            }
+        }
+        assert!(app.world().get::<SelectedState>(rows[0]).unwrap().0);
+        press(&mut app, NamedKey::ArrowDown, Modifiers::default());
+        press(&mut app, NamedKey::Enter, Modifiers::default());
+        assert_eq!(
+            app.world().resource::<Model>().unwrap().mode.as_deref(),
+            Some("teacher")
+        );
+        // An authoritative Coder mode/catalog refresh uses the same quiet
+        // selection treatment, including rows newly added by the catalog.
+        {
+            let state = app.world_mut().resource_mut::<Model>().unwrap();
+            state.modes[2].2 = true;
+            state.mode = Some("coder".into());
+            state.modes.push(("general".into(), "General".into(), true));
+        }
+        app.update();
+        let refreshed = children_of(app.world(), popup)
+            .into_iter()
+            .filter(|&row| app.world().has::<SelectedState>(row))
+            .collect::<Vec<_>>();
+        assert_eq!(refreshed.len(), 4);
+        assert!(app.world().get::<SelectedState>(refreshed[2]).unwrap().0);
+        for row in refreshed {
+            assert!(app.world().has::<controls::QuietSelection>(row));
+            for child in children_of(app.world(), row) {
+                if app.world().has::<Absolute>(child) {
+                    assert!(app.world().has::<Hidden>(child));
+                }
+            }
+        }
+        app.world_mut().resource_mut::<Model>().unwrap().mode = Some("teacher".into());
+        app.update();
+        while rx.try_recv().is_ok() {}
+        draft(&mut app, "Teach me");
+        action(app.world_mut(), SEND);
+        assert!(matches!(
+            rx.try_recv().unwrap().command,
+            Command::NewWithMode(medousa_types::AgentModeId::Teacher)
+        ));
+    }
+    #[test]
+    fn existing_chat_mode_change_waits_for_server_effective_mode() {
+        let (mut app, mut rx) = initial_fixture();
+        mode_catalog(&mut app);
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::History("s".into(), "owner".into(), vec![], None),
+            },
+        );
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::Mode("general".into()),
+            },
+        );
+        app.update();
+        let mode = app.world().resource::<Ui>().unwrap().mode;
+        while rx.try_recv().is_ok() {}
+        rndr_core::send(
+            app.world_mut(),
+            SelectionChange {
+                control: mode,
+                value: SelectionValue::Selected(vec![OptionId(1)]),
+            },
+        );
+        app.update();
+        assert!(
+            matches!(rx.try_recv().unwrap().command, Command::SetMode(ref s, medousa_types::AgentModeId::Teacher) if s == "s")
+        );
+        assert_eq!(
+            app.world().resource::<Model>().unwrap().mode.as_deref(),
+            Some("general")
+        );
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::Mode("teacher".into()),
+            },
+        );
+        assert_eq!(
+            app.world().resource::<Model>().unwrap().mode.as_deref(),
+            Some("teacher")
+        );
+    }
+    #[test]
+    fn initial_runtime_picker_promotes_same_view_without_sending_draft() {
+        let (mut app, mut rx) = initial_fixture();
+        draft(&mut app, "Do not send yet");
+        let ui = *app.world().resource::<Ui>().unwrap();
+        let document = app.world().resource::<Model>().unwrap().document;
+        app.world_mut().resource_mut::<Model>().unwrap().mode = Some("teacher".into());
+        // Runtime selection must not require a native provider/model.
+        app.world_mut().resource_mut::<Model>().unwrap().selected = None;
+        while rx.try_recv().is_ok() {}
+        let trigger = button(app.world_mut(), ui.controls, RUNTIME, "Medousa  ⌄", true);
+        assert_eq!(
+            try_activate(app.world_mut(), trigger.root),
+            ActivationResult::Accepted
+        );
+        app.update();
+        assert!(matches!(
+            rx.try_recv().unwrap().command,
+            Command::NewWithMode(medousa_types::AgentModeId::Teacher)
+        ));
+        action(app.world_mut(), RUNTIME);
+        action(app.world_mut(), SEND);
+        assert!(
+            rx.try_recv().is_err(),
+            "no duplicate creation or send while pending"
+        );
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::History("created".into(), "owner".into(), vec![], None),
+            },
+        );
+        app.update();
+        while let Ok(request) = rx.try_recv() {
+            assert!(
+                !matches!(
+                    request.command,
+                    Command::Send(_) | Command::New | Command::NewWithMode(_)
+                ),
+                "opening runtime menu emitted a mutation"
+            );
+        }
+        assert_eq!(composer_text(&app), "Do not send yet");
+        assert_eq!(app.world().resource::<Model>().unwrap().document, document);
+        assert_eq!(
+            app.world().resource::<Ui>().unwrap().composer.editor,
+            ui.composer.editor
+        );
+        assert_eq!(
+            app.world().resource::<Model>().unwrap().chat.session(),
+            Some("created")
+        );
+        assert!(
+            app.world()
+                .query::<Label>()
+                .iter()
+                .any(|(_, l)| l.text == "Refresh runtimes")
+        );
+    }
+    #[test]
+    fn initial_runtime_creation_failure_keeps_draft_without_automatic_replay() {
+        let (mut app, mut rx) = initial_fixture();
+        draft(&mut app, "Keep this");
+        while rx.try_recv().is_ok() {}
+        action(app.world_mut(), RUNTIME);
+        assert!(matches!(rx.try_recv().unwrap().command, Command::New));
+        apply_reply(
+            app.world_mut(),
+            Reply {
+                generation: 0,
+                update: Update::Failure("offline".into()),
+            },
+        );
+        assert!(
+            !app.world()
+                .resource::<Model>()
+                .unwrap()
+                .pending_runtime_picker
+        );
+        assert_eq!(composer_text(&app), "Keep this");
+        // A failed creation may have been admitted: never replay it on a click.
+        action(app.world_mut(), RUNTIME);
+        assert!(rx.try_recv().is_err());
     }
     #[test]
     fn first_send_button_waits_for_defaults_then_creates_in_visible_composer() {

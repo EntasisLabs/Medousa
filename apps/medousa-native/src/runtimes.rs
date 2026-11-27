@@ -149,6 +149,7 @@ struct Runtimes {
 }
 /// The open runtime menu: what each item does, for the session it was built for.
 struct RuntimeMenu {
+    anchor: Entity,
     handle: MenuHandle,
     session: String,
     picks: HashMap<u64, Pick>,
@@ -322,7 +323,7 @@ pub fn label(world: &World, session: Option<&str>) -> String {
 /// Choose who answers `session`: Medousa, an installed agent runtime or a
 /// connected conversation, with the agent's own options in submenus. Runtimes
 /// that still need installing collapse into one submenu leading to Packages.
-pub fn open(world: &mut World, anchor: Entity, session: &str) {
+pub fn open(world: &mut World, anchor: Entity, session: &str) -> bool {
     if let Some(old) = world.resource_mut::<Runtimes>().unwrap().menu.take() {
         old.handle.close(world);
     }
@@ -471,10 +472,14 @@ pub fn open(world: &mut World, anchor: Entity, session: &str) {
     ));
     if let Ok(handle) = open_menu(world, anchor, MenuAt::Below, &entries) {
         world.resource_mut::<Runtimes>().unwrap().menu = Some(RuntimeMenu {
+            anchor,
             handle,
             session: session.into(),
             picks,
         });
+        true
+    } else {
+        false
     }
 }
 /// Apply a pick from the runtime menu. Picks for a conversation no longer
@@ -732,6 +737,13 @@ async fn execute_inner(
     }
 }
 pub fn apply(world: &mut World, update: RuntimeUpdate) {
+    let reopen = world.resource::<Runtimes>().and_then(|state| {
+        let menu = state.menu.as_ref()?;
+        (menu.session == update.command.session
+            && state.visible.as_deref() == Some(menu.session.as_str())
+            && menu.handle.is_open(world))
+        .then(|| (menu.anchor, menu.session.clone()))
+    });
     let state = world.resource_mut::<Runtimes>().expect("runtime setup");
     let s = state
         .sessions
@@ -821,6 +833,9 @@ pub fn apply(world: &mut World, update: RuntimeUpdate) {
                 }
             }
         }
+    }
+    if let Some((anchor, session)) = reopen {
+        open(world, anchor, &session);
     }
 }
 /// Host may clear a mutation uncertainty only after authoritative history /
