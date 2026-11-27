@@ -3758,6 +3758,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "image",
+ "log",
  "medousa-app-core",
  "medousa-desktop-host",
  "medousa-local-credential",
@@ -3784,6 +3785,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite",
+ "tracing",
  "urlencoding",
 ]
 

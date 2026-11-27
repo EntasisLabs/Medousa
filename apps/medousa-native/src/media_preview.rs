@@ -819,11 +819,13 @@ pub async fn execute(client: &MedousaClient, key: Key) -> PreviewUpdate {
             .map_err(|_| "Image decoder unavailable".to_string())?
     }
     .await;
-    eprintln!(
-        "native image preview elapsed_ms={} ready={}",
-        started.elapsed().as_millis(),
-        result.is_ok()
-    );
+    if cfg!(debug_assertions) {
+        eprintln!(
+            "native image preview elapsed_ms={} ready={}",
+            started.elapsed().as_millis(),
+            result.is_ok()
+        );
+    }
     PreviewUpdate { key, result }
 }
 #[cfg(test)]

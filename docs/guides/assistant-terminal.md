@@ -29,6 +29,11 @@ or project-task tools, rather than backgrounding it inside a turn shell.
 See [Coder PTY lifecycle and bounds](../engine/coding-engine.md#turn-owned-coder-ptys-sidecar-revision-8)
 for the confirmation, retry, platform, and process-containment limits.
 
+On macOS and Linux, Coder starts Bash or Zsh as a noninteractive login shell.
+To make a tool available to Coder, export its path in your workshop's login
+profile (such as `.zprofile` for Zsh). If Coder reports a shell startup timeout,
+check that the login profile can finish without keyboard input.
+
 Opening or polling a Coder terminal uses the daemon's in-memory connection
 credential. It does not unlock Keychain to retrieve a local CLI token.
 Local app and pairing credentials use private files; API keys and OAuth tokens

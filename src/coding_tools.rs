@@ -346,7 +346,7 @@ async fn create_bound_shell_session(
             "lease_generation": lease_generation,
             "attempt_id": attempt_id,
             "cwd": Value::Null,
-            "argv": agent_shell_argv(),
+            "argv": agent_shell_argv(&std::env::var("SHELL").unwrap_or_default()),
             "turn_owner": turn_owner,
         }),
     )
@@ -357,20 +357,23 @@ async fn create_bound_shell_session(
         state.lock().await.owned_sessions.insert(session_id.clone());
     }
     if !cfg!(windows) {
-        let mut readiness = ShellCommand::new(String::new(), Some(AGENT_SHELL_READY), 0);
-        // Read from creation, including a marker emitted before WS attachment.
-        // A wait window only yields the transport; the turn owns cancellation.
-        loop {
-            let cursor = readiness.next_sequence;
-            observe_session_input(&session_id, None, 1_000, Some(cursor), &mut readiness).await?;
-            if readiness.output.exit_code() == Some(0) {
-                created["next_sequence"] = Value::from(readiness.next_sequence);
-                break;
-            }
-            if readiness.completed() {
-                return Err(StasisError::PortFailure(
-                    "shell exited before startup completed".into(),
-                ));
+        match wait_for_agent_shell(&session_id).await {
+            Ok(sequence) => created["next_sequence"] = Value::from(sequence),
+            Err(error) => {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    destroy_turn_shell_session(&session_id),
+                )
+                .await
+                {
+                    Ok(Ok(())) => {
+                        if let Ok(state) = CODER_SHELL_STATE.try_with(Clone::clone) {
+                            state.lock().await.forget_confirmed_session(&session_id);
+                        }
+                    }
+                    _ => tracing::warn!(%session_id, "failed shell startup cleanup unconfirmed"),
+                }
+                return Err(error);
             }
         }
     }
@@ -380,16 +383,40 @@ async fn create_bound_shell_session(
 // Only agent-created sessions use this profile. Home's human Terminal still
 // opens the configured login shell through the unchanged session API.
 const AGENT_SHELL_READY: &str = "__MEDOUSA_SHELL_READY__";
+const AGENT_SHELL_STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-fn agent_shell_argv() -> Vec<String> {
+async fn wait_for_agent_shell(session_id: &str) -> StasisResult<u64> {
+    // Replay from creation so a fast shell can become ready before attachment.
+    let mut readiness = ShellCommand::new(String::new(), Some(AGENT_SHELL_READY), 0);
+    let deadline = tokio::time::Instant::now() + AGENT_SHELL_STARTUP_TIMEOUT;
+    loop {
+        let cursor = readiness.next_sequence;
+        let observe = observe_session_input(session_id, None, 1_000, Some(cursor), &mut readiness);
+        tokio::time::timeout_at(deadline, observe).await.map_err(|_| {
+            StasisError::PortFailure(format!(
+                "shell startup timed out after {} seconds before command submission. Check the workshop shell login profile for prompts or stalled commands.",
+                AGENT_SHELL_STARTUP_TIMEOUT.as_secs(),
+            ))
+        })??;
+        if readiness.output.exit_code() == Some(0) {
+            return Ok(readiness.next_sequence);
+        }
+        if readiness.completed() {
+            return Err(StasisError::PortFailure(
+                "shell exited before startup completed".into(),
+            ));
+        }
+    }
+}
+
+fn agent_shell_argv(shell: &str) -> Vec<String> {
     if cfg!(windows) {
         return Vec::new();
     }
-    // Match the human session's Bash/Zsh login initialization once so GUI
-    // launches retain version-manager PATH entries, then shed interactive hooks.
-    let shell = std::env::var("SHELL").unwrap_or_default();
+    // Load login PATH exports without inviting interactive plugins to prompt
+    // before the agent can observe readiness or send its first command.
     let (program, flags) = if shell.ends_with("/bash") || shell.ends_with("/zsh") {
-        (shell.as_str(), "-lic")
+        (shell, "-lc")
     } else {
         ("/bin/sh", "-c")
     };
@@ -2674,6 +2701,38 @@ mod tests {
         let mut next_sequence = 42;
         accept_shell_ready_watermark(&mut next_sequence, 10);
         assert_eq!(next_sequence, 10);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn agent_login_loads_profiles_without_interactive_startup() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::write(
+            home.path().join(".zprofile"),
+            "export MEDOUSA_TEST_PROFILE=loaded\n",
+        )
+        .unwrap();
+        // An interactive Zsh would enter the plugin hook before running -c.
+        std::fs::write(home.path().join(".zshrc"), "exit 42\n").unwrap();
+        for (shell, check) in [
+            ("/bin/bash", "shopt -q login_shell"),
+            ("/bin/zsh", r#"test "$MEDOUSA_TEST_PROFILE" = loaded"#),
+        ] {
+            if !Path::new(shell).exists() {
+                continue;
+            }
+            let argv = agent_shell_argv(shell);
+            let result = std::process::Command::new(&argv[0])
+                .args(&argv[1..argv.len() - 1])
+                .arg(format!("case $- in *i*) exit 42;; esac; {check}"))
+                .env("HOME", home.path())
+                .env("ZDOTDIR", home.path())
+                .env_remove("BASH_ENV")
+                .env_remove("MEDOUSA_TEST_PROFILE")
+                .status()
+                .unwrap();
+            assert!(result.success(), "{shell} agent login: {result}");
+        }
     }
 
     #[cfg(unix)]

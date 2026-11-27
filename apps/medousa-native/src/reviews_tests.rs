@@ -620,8 +620,12 @@ pub(crate) fn seed_visual(w: &mut World, changes: bool, confirm: bool) {
     );
     s.review["candidates"][0]["executor"] = json!("medousa-assistant");
     s.review["candidates"][0]["branch"] = json!("worktree/rust-ci-engine");
+    s.review["synthesis"]["unresolved_issues"] = json!([
+        "No project check was recorded for this revision.",
+        "Reconnect after daemon restart is untested."
+    ]);
     s.review["changed_files"] = json!([
-        {"path":"src/main.rs","lines_added":14,"lines_removed":2},
+        {"path":"src/main.rs","lines_added":14,"lines_removed":2,"scopes":[{"id":"a","label":"engine::main","kind":"function","line_start":1,"line_end":20,"lines_added":9,"lines_removed":2},{"id":"b","label":"engine::Config","kind":"struct","line_start":22,"line_end":40,"lines_added":5,"lines_removed":0}]},
         {"path":"Cargo.toml","lines_added":14,"lines_removed":0},
         {"path":"Cargo.lock","lines_added":107,"lines_removed":0},
         {"path":"README.md","lines_added":25,"lines_removed":0},
@@ -656,6 +660,7 @@ pub(crate) fn seed_visual(w: &mut World, changes: bool, confirm: bool) {
             } else { format!("let result_{line} = inspect_sealed_changes(); // gypq") }
         })).collect::<Vec<_>>());
         s.expanded.insert("src/main.rs".into());
+        s.symbols.insert("src/main.rs".into());
         s.file_cache.insert("src/main.rs".into(), value.clone());
         s.file = Some(("src/main.rs".into(), value));
     }
@@ -1099,4 +1104,80 @@ fn incomplete_sealed_file_has_no_context_control() {
             .values()
             .any(|a| matches!(a, Action::Context(_)))
     );
+}
+
+#[test]
+fn change_kinds_match_medousa_home_path_hints() {
+    use super::view::change_kind;
+    for (path, kind) in [
+        ("src/main.rs", 0),
+        ("apps/web/App.svelte", 0),
+        ("tests/cli.rs", 1),
+        ("src/reviews_tests.rs", 1),
+        ("web/button.test.ts", 1),
+        ("test_parser.py", 1),
+        (".github/workflows/ci.yml", 2),
+        ("Jenkinsfile", 2),
+        ("docs/CONTRACT-v1.md", 3),
+        ("README", 3),
+        ("CHANGELOG.md", 3),
+        ("Cargo.toml", 4),
+        ("examples/request.json", 4),
+    ] {
+        assert_eq!(change_kind(path), kind, "{path}");
+    }
+}
+
+#[test]
+fn restore_needs_the_loaded_reviewed_blob_and_explicit_confirmation() {
+    let mut w = seeded();
+    act(&mut w, Action::Restore("src/main.rs".into()));
+    assert!(w.resource::<State>().unwrap().confirmation.is_none());
+    act(&mut w, Action::Restore("not/in/review.rs".into()));
+    assert!(w.resource::<State>().unwrap().confirmation.is_none());
+    w.resource_mut::<State>()
+        .unwrap()
+        .file_cache
+        .insert("src/main.rs".into(), diff());
+    act(&mut w, Action::Restore("src/main.rs".into()));
+    assert!(take_commands(&mut w).is_empty());
+    act(&mut w, Action::Confirm);
+    let c = take_commands(&mut w).remove(0);
+    let Kind::Mutate {
+        revision: r,
+        mutation: m @ Mutation::Restore { .. },
+    } = &c.kind
+    else {
+        panic!()
+    };
+    let (op, body) = mutation_body(r, m);
+    assert_eq!(op.path, ops::FORGE_ITEMS_BY_WORK_ID_REVIEW_FILE_POST.path);
+    assert_eq!(
+        body,
+        json!({"path":"src/main.rs","expected_reviewed_oid":"head","attempt_id":"attempt"})
+    );
+    apply(
+        &mut w,
+        Update {
+            command: c,
+            result: Ok(json!({"path":"src/main.rs"})),
+        },
+    );
+    let s = w.resource::<State>().unwrap();
+    assert!(s.message.starts_with("Restored src/main.rs"));
+    assert!(s.open_code.is_none(), "Handed to Code, never left pending");
+}
+
+#[test]
+fn symbols_toggle_per_file() {
+    let mut w = seeded();
+    act(&mut w, Action::Symbols("src/main.rs".into()));
+    assert!(
+        w.resource::<State>()
+            .unwrap()
+            .symbols
+            .contains("src/main.rs")
+    );
+    act(&mut w, Action::Symbols("src/main.rs".into()));
+    assert!(w.resource::<State>().unwrap().symbols.is_empty());
 }

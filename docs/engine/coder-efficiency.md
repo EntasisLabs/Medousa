@@ -423,9 +423,10 @@ when those changes matter; digest preconditions still protect mutations.
 
 On Unix, agent-created workshop sessions run a quiet POSIX shell with terminal
 echo and canonical line buffering disabled. Pagers and automatic color are
-disabled for both one-shot and sustained agent commands. Sessions initialize
-the configured Bash/Zsh login environment once to preserve tool and version-manager
-PATH entries, then switch to the quiet command shell. Other Unix shells use the
+disabled for both one-shot and sustained agent commands. Bash and Zsh start in
+noninteractive login mode so Coder inherits tool paths exported by login profiles
+and skips interactive startup hooks such as Zsh plugin update prompts. Sessions
+then switch to the quiet command shell. Other Unix shells use the
 daemon's inherited environment. Home's human-created Terminal sessions still
 use the configured login shell.
 
@@ -435,8 +436,9 @@ corrupt the persistent command shell. Coder can call the command tool directly;
 a readiness tool call is not required. The first readiness check can open a shell.
 Repeated checks reuse the current turn’s preferred idle shell, including when
 multiple checks arrive together. Startup observes retained output from
-sequence zero and waits for the shell's readiness marker. Slow login initialization
-does not kill the session; cancellation remains owned by the turn.
+sequence zero and waits up to 30 seconds for the shell's readiness marker. If
+startup stalls, the tool reports a startup error and requests termination of
+that shell before returning. This deadline applies only to shell startup.
 
 `cognition_coder_shell_run.wait_ms` is an observation window (default and maximum
 15 seconds), not a command lifetime. When it expires, the command keeps running

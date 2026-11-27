@@ -633,9 +633,18 @@ fn settings_visual_acceptance() {
             let mut c = world_event(1, "control_acquired", "");
             c.recorded_at_ms = now - 3 * 86_400_000;
             s.world = Some(Ok(vec![
-                world::Item { event: a, evidence: true },
-                world::Item { event: b, evidence: false },
-                world::Item { event: c, evidence: false },
+                world::Item {
+                    event: a,
+                    evidence: true,
+                },
+                world::Item {
+                    event: b,
+                    evidence: false,
+                },
+                world::Item {
+                    event: c,
+                    evidence: false,
+                },
             ]));
             s.redraw = true;
         });

@@ -94,6 +94,11 @@ enum Mutation {
         anchor: String,
     },
     Resolve(String),
+    /// Put one file back to its baseline in the reviewed branch.
+    Restore {
+        path: String,
+        oid: String,
+    },
 }
 #[derive(Clone, Debug)]
 pub struct Command {
@@ -117,6 +122,9 @@ enum Action {
     Summary,
     Changes,
     About,
+    OpenInCode(String),
+    Restore(String),
+    Symbols(String),
     Filter(u8),
     Approve,
     Request,
@@ -149,6 +157,10 @@ struct State {
     review: Value,
     file: Option<(String, Value)>,
     expanded: HashSet<String>,
+    /// Files whose changed-symbol list is open.
+    symbols: HashSet<String>,
+    /// (work, path) to show in Code once this review's state is stored.
+    open_code: Option<(String, String)>,
     context: HashSet<String>,
     context_cache: HashMap<String, Option<Value>>,
     file_cache: HashMap<String, Value>,
@@ -415,6 +427,15 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             Action::CollapseAll => s.expanded.clear(),
             Action::Changes => s.changes = true,
             Action::About => s.about = !s.about,
+            Action::OpenInCode(path) if known_file(&s, &path) => {
+                if let Some(work) = s.work.clone() { s.open_code = Some((work, path)); }
+            }
+            Action::Restore(path) if ready(&s) && known_file(&s, &path) => {
+                if let Some(oid) = s.file_cache.get(&path).and_then(|v| v["reviewed_oid"].as_str()).filter(|o| !o.is_empty()) {
+                    s.confirmation = Some(Mutation::Restore { path: path.clone(), oid: oid.to_owned() });
+                }
+            }
+            Action::Symbols(path) => { if !s.symbols.remove(&path) { s.symbols.insert(path); } }
             Action::Filter(filter) => s.filter = filter,
             Action::Summary => { s.changes = false; save_draft(&mut s); s.file = None; load_draft(&mut s); }
             Action::Side => s.draft.old = !s.draft.old,
@@ -446,7 +467,11 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
     }
     view::render(w, &mut s);
     s.redraw = false;
+    let open = s.open_code.take();
     w.insert_resource(s);
+    if let Some((work, path)) = open {
+        crate::code::open_file(w, &work, &path);
+    }
     true
 }
 fn ready(s: &State) -> bool {
@@ -463,6 +488,8 @@ fn mutation_allowed(s: &State, m: &Mutation) -> bool {
             allowed(&s.review, "apply") && s.review["decision"]["id"].as_str() == Some(id)
         }
         Mutation::Comment { .. } => comment_valid(s),
+        // As medousa-home: the daemon checks the reviewed blob before writing.
+        Mutation::Restore { path, .. } => known_file(s, path),
         Mutation::Resolve(id) => {
             allowed(&s.review, "review")
                 && s.review["comments"].as_array().is_some_and(|a| {
@@ -585,6 +612,10 @@ fn mutation_body(r: &Revision, m: &Mutation) -> (ops::Operation, Value) {
         Mutation::Resolve(_) => (
             ops::FORGE_ITEMS_BY_WORK_ID_REVIEW_COMMENTS_BY_COMMENT_ID_PATCH,
             json!({"resolve":true}),
+        ),
+        Mutation::Restore { path, oid } => (
+            ops::FORGE_ITEMS_BY_WORK_ID_REVIEW_FILE_POST,
+            json!({"path":path,"expected_reviewed_oid":oid,"attempt_id":r.attempt}),
         ),
     }
 }
@@ -711,9 +742,14 @@ pub fn apply(w: &mut World, u: Update) {
                 s.message = "Sealed diff identity mismatch. No file was substituted.".into();
             }
         }
-        (Kind::Mutate { mutation, .. }, Ok(_)) => {
+        (Kind::Mutate { mutation, .. }, Ok(v)) => {
             s.confirmation = None;
             s.message = "Action accepted. Refreshing review…".into();
+            if let (Mutation::Restore { path, .. }, Some(work)) = (&mutation, s.work.clone()) {
+                let path = v["path"].as_str().unwrap_or(path).to_owned();
+                s.message = format!("Restored {path} to before this change. Refreshing review…");
+                s.open_code = Some((work, path));
+            }
             if matches!(mutation, Mutation::Comment { .. } | Mutation::Request(_)) {
                 s.draft.body.clear();
                 save_draft(&mut s);
@@ -738,7 +774,11 @@ pub fn apply(w: &mut World, u: Update) {
     load_next_file(&mut s);
     view::render(w, &mut s);
     s.redraw = false;
+    let open = s.open_code.take();
     w.insert_resource(s);
+    if let Some((work, path)) = open {
+        crate::code::open_file(w, &work, &path);
+    }
 }
 fn file_matches(v: &Value, r: &Revision, path: &str) -> bool {
     v["work_id"].as_str() == Some(&r.work)

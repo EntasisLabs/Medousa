@@ -1,7 +1,7 @@
 use super::*;
 use crate::native_style as visual;
 use rndr_ui::{
-    Typography, UiId,
+    Token, Typography, UiId,
     controls::{self, ButtonProps, NavigationMeta},
     text,
 };
@@ -53,6 +53,138 @@ fn heading(w: &mut World, p: Entity, s: &str) {
     let e = text(w, p, s, Typography::Emphasis).unwrap();
     w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
     w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Wrap;
+}
+/// Label in an explicit type role and tone (an app UiStyle outranks recipes).
+fn styled(w: &mut World, p: Entity, s: &str, typography: Typography, tone: Token) -> Entity {
+    let e = text(w, p, s, typography).unwrap();
+    w.insert(
+        e,
+        rndr_ui::UiStyle {
+            typography: Some(typography),
+            foreground: Some(tone.into()),
+            ..Default::default()
+        },
+    );
+    e
+}
+/// Measured width, so short metadata never ellipsizes beside a filling label.
+fn fitted(w: &mut World, e: Entity, max: f32) {
+    w.get_mut::<Layout>(e).unwrap().width = Size::Hug;
+    w.insert(
+        e,
+        visual::FitLabel {
+            label: e,
+            extra: 0.,
+            min: 0.,
+            max,
+        },
+    );
+}
+/// One non-wrapping line, children centered on the cross axis.
+fn line(w: &mut World, p: Entity, gap: f32) -> Entity {
+    let e = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap,
+            ..Layout::row()
+        },
+    );
+    w.insert(
+        e,
+        Align {
+            justify: Justify::Start,
+            items: Items::Center,
+        },
+    );
+    e
+}
+/// Keeps trailing metadata clear of the overlay scrollbar.
+fn gutter(w: &mut World, p: Entity) {
+    panel(
+        w,
+        p,
+        Layout {
+            width: Size::Px(12.),
+            height: Size::Px(1.),
+            ..Layout::row()
+        },
+    );
+}
+/// Icon glyph in its own face: the shared icon recipe centres a glyph's
+/// parent, which must not be the surrounding line.
+fn glyph(w: &mut World, p: Entity, icon: Icon, tone: Token) -> Entity {
+    let face = panel(
+        w,
+        p,
+        Layout {
+            width: Size::Px(visual::ACTION_ICON),
+            height: Size::Px(visual::ACTION_ICON),
+            ..Layout::row()
+        },
+    );
+    styled(w, face, &icon.scalar().to_string(), Typography::Label, tone);
+    face
+}
+/// medousa-home's path-based change kinds, in display order.
+const KINDS: [(&str, Icon); 5] = [
+    ("Code", Icon::Code),
+    ("Tests", Icon::CheckCheck),
+    ("CI", Icon::Settings),
+    ("Docs", Icon::Book),
+    ("Other", Icon::File),
+];
+/// Index into [`KINDS`]; precedence matches `reviewChangeKind` in medousa-home.
+pub(super) fn change_kind(path: &str) -> usize {
+    let p = path.replace('\\', "/").to_lowercase();
+    let (dirs, name) = p.rsplit_once('/').unwrap_or(("", &p));
+    let dirs: Vec<&str> = dirs.split('/').filter(|d| !d.is_empty()).collect();
+    let in_dir = |names: &[&str]| dirs.iter().any(|d| names.contains(d));
+    let (base, ext) = name.rsplit_once('.').unwrap_or((name, ""));
+    let stem = name.split('.').next().unwrap_or(name);
+    if in_dir(&[".circleci", ".buildkite", "ci"])
+        || p.starts_with(".github/workflows/")
+        || p.starts_with(".github/actions/")
+        || p.contains("/.github/workflows/")
+        || p.contains("/.github/actions/")
+        || name.starts_with(".gitlab-ci")
+        || name.starts_with("azure-pipelines")
+        || name == "jenkinsfile"
+        || name == ".travis.yml"
+    {
+        return 2;
+    }
+    if in_dir(&[
+        "test",
+        "tests",
+        "__tests__",
+        "spec",
+        "specs",
+        "fixtures",
+        "__snapshots__",
+    ]) || ["test", "tests", "spec", "specs"].contains(&base)
+        || name.starts_with("test_")
+        || ["test", "tests", "spec", "specs"]
+            .iter()
+            .any(|t| base.ends_with(&format!(".{t}")) || base.ends_with(&format!("_{t}")))
+    {
+        return 1;
+    }
+    if in_dir(&["doc", "docs", "documentation"])
+        || ["md", "mdx", "rst", "adoc"].contains(&ext)
+        || ["readme", "changelog", "license", "contributing"].contains(&stem)
+    {
+        return 3;
+    }
+    const CODE: &[&str] = &[
+        "rs", "js", "jsx", "ts", "tsx", "mjs", "cjs", "mts", "cts", "svelte", "vue", "py", "go",
+        "java", "kt", "swift", "c", "h", "cpp", "hpp", "cxx", "hxx", "cs", "rb", "php", "sh",
+        "bash", "zsh", "sql", "graphql", "gr", "css", "scss", "sass", "less", "html", "ex", "exs",
+        "erl", "clj", "dart", "lua", "r", "m", "mm", "zig", "wasm",
+    ];
+    if CODE.contains(&ext) { 0 } else { 4 }
 }
 fn clear(w: &mut World, p: Entity) {
     if w.resource::<Focus>()
@@ -109,6 +241,181 @@ fn nav(w: &mut World, p: Entity, s: &mut State, label: &str, a: Action, selected
     };
     w.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
     s.actions.insert(id, a);
+}
+/// medousa-home's file row: chevron, file glyph, bold name, quiet folder,
+/// then coloured line counts. One navigation control toggles the diff.
+fn file_header(w: &mut World, p: Entity, s: &mut State, file: &Value, open: bool) {
+    let path = string(file, "path");
+    let (dir, name) = path.rsplit_once('/').unwrap_or(("", &path));
+    let id = next();
+    let mut props = ButtonProps::new(name, HostIntent::Command(id));
+    props.enabled = s.mutation_pending.is_none();
+    let h =
+        controls::NavigationRow::mount(w, p, UiId(id), props, NavigationMeta::default()).unwrap();
+    s.actions.insert(id, Action::ToggleFile(path.clone()));
+    *w.get_mut::<Layout>(h.root).unwrap() = Layout {
+        width: Size::Fill,
+        height: Size::Px(36.),
+        ..Layout::column()
+    };
+    w.insert(
+        h.root,
+        Semantics {
+            name: Some(format!(
+                "{} {path}",
+                if open { "Collapse" } else { "Expand" }
+            )),
+            ..Default::default()
+        },
+    );
+    let Some(face) = w.get::<Parent>(h.label).map(|p| p.entity) else {
+        return;
+    };
+    if let Some(l) = w.get_mut::<Layout>(face) {
+        l.axis = Axis::Row;
+        l.gap = 6.;
+    }
+    w.insert(
+        face,
+        Align {
+            justify: Justify::Start,
+            items: Items::Center,
+        },
+    );
+    w.insert(
+        h.label,
+        rndr_ui::UiStyle {
+            typography: Some(Typography::Emphasis),
+            foreground: Some(Token::Text.into()),
+            ..Default::default()
+        },
+    );
+    fitted(w, h.label, 360.);
+    let chevron = glyph(
+        w,
+        face,
+        if open {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        },
+        Token::Tertiary,
+    );
+    let icon = glyph(w, face, Icon::FileCode, Token::Tertiary);
+    // Leading glyphs go before the label; RNDR appends children.
+    if let Some(children) = w.get_mut::<Children>(face) {
+        children.list.retain(|e| *e != chevron && *e != icon);
+        children.list.splice(0..0, [chevron, icon]);
+    }
+    let folder = styled(w, face, dir, Typography::Caption, Token::Secondary);
+    w.get_mut::<Layout>(folder).unwrap().width = Size::Fill;
+    w.get_mut::<Label>(folder).unwrap().overflow = TextOverflow::Ellipsis;
+    let added = file["lines_added"].as_u64().unwrap_or(0);
+    let removed = file["lines_removed"].as_u64().unwrap_or(0);
+    if added > 0 || removed > 0 {
+        for (value, tone) in [
+            (format!("+{added}"), Token::SuccessText),
+            (format!("−{removed}"), Token::DangerText),
+        ] {
+            let e = styled(w, face, &value, Typography::Caption, tone);
+            fitted(w, e, 80.);
+        }
+    }
+}
+/// "No checks ran" is already the Checks panel's state, not an issue.
+fn routine_issue(issue: &str) -> bool {
+    let issue = issue.to_lowercase();
+    issue.contains("no project check") || issue.contains("project checks haven")
+}
+/// medousa-home's short symbol kinds.
+fn short_kind(kind: &str) -> &'static str {
+    let raw = kind.to_lowercase();
+    if ["fn", "function", "method"].iter().any(|k| raw.contains(k)) {
+        "fn"
+    } else if ["struct", "class", "type"].iter().any(|k| raw.contains(k)) {
+        "type"
+    } else if ["trait", "interface"].iter().any(|k| raw.contains(k)) {
+        "trait"
+    } else if raw.contains("mod") {
+        "mod"
+    } else if raw.contains("enum") {
+        "enum"
+    } else if raw.contains("const") || raw.contains("static") {
+        "const"
+    } else {
+        "sym"
+    }
+}
+/// Collapsible "Changed symbols · N" list from the daemon's per-file scopes.
+fn symbols(w: &mut World, p: Entity, s: &mut State, file: &Value, path: &str) {
+    let scopes = file["scopes"].as_array().cloned().unwrap_or_default();
+    if scopes.is_empty() {
+        return;
+    }
+    let open = s.symbols.contains(path);
+    let id = next();
+    let label = format!(
+        "{}  Changed symbols · {}",
+        if open {
+            Icon::ChevronDown.scalar()
+        } else {
+            Icon::ChevronRight.scalar()
+        },
+        scopes.len()
+    );
+    let h = visual::document_action(w, p, id, &label, true);
+    w.insert(
+        h.label,
+        rndr_ui::UiStyle {
+            typography: Some(Typography::Caption),
+            foreground: Some(Token::Secondary.into()),
+            ..Default::default()
+        },
+    );
+    s.actions.insert(id, Action::Symbols(path.to_owned()));
+    if !open {
+        return;
+    }
+    let list = column(w, p);
+    w.get_mut::<Layout>(list).unwrap().gap = 2.;
+    for scope in &scopes {
+        let row = line(w, list, 8.);
+        w.get_mut::<Layout>(row).unwrap().height = Size::Px(24.);
+        gutter(w, row);
+        let kind = styled(
+            w,
+            row,
+            short_kind(&string(scope, "kind")),
+            Typography::Code,
+            Token::Tertiary,
+        );
+        w.get_mut::<Layout>(kind).unwrap().width = Size::Px(40.);
+        let full = string(scope, "label");
+        let name = full.rsplit("::").next().unwrap_or(&full).trim().to_owned();
+        let e = styled(
+            w,
+            row,
+            if name.is_empty() { &full } else { &name },
+            Typography::Secondary,
+            Token::Text,
+        );
+        w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+        w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Ellipsis;
+        for (value, tone) in [
+            (
+                format!("+{}", scope["lines_added"].as_u64().unwrap_or(0)),
+                Token::SuccessText,
+            ),
+            (
+                format!("−{}", scope["lines_removed"].as_u64().unwrap_or(0)),
+                Token::DangerText,
+            ),
+        ] {
+            let e = styled(w, row, &value, Typography::Caption, tone);
+            fitted(w, e, 80.);
+        }
+        gutter(w, row);
+    }
 }
 fn phase_label(phase: &str) -> &str {
     match phase {
@@ -362,7 +669,8 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         p,
         &format!("Forge  /  {}", phase_label(&string(&review, "human_phase"))),
     );
-    let tabs = row(w, p);
+    let tabs = line(w, p, 6.);
+    w.get_mut::<Align>(tabs).unwrap().items = Items::End;
     tab(w, tabs, s, "Summary", Action::Summary, !s.changes);
     let files = review["changed_files"]
         .as_array()
@@ -376,19 +684,49 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         Action::Changes,
         s.changes,
     );
+    panel(
+        w,
+        tabs,
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(1.),
+            ..Layout::row()
+        },
+    );
+    let executor = review["candidates"]
+        .as_array()
+        .and_then(|a| a.iter().find(|c| c["attempt_id"] == review["attempt_id"]))
+        .map(|c| string(c, "executor"))
+        .unwrap_or_default();
+    let e = styled(
+        w,
+        tabs,
+        &format!(
+            "Revision {}{}{}",
+            review["attempt_seq"],
+            if executor.is_empty() { "" } else { " · " },
+            executor
+        ),
+        Typography::Caption,
+        Token::Secondary,
+    );
+    fitted(w, e, 320.);
+    gutter(w, tabs);
     visual::rule(w, p);
     if s.changes {
-        heading(w, p, &string(&review, "title"));
-        let tools = row(w, p);
-        caption(
+        let tools = line(w, p, 4.);
+        let count = styled(
             w,
-            p,
+            tools,
             &format!(
                 "{} changed file{}",
                 files.len(),
                 if files.len() == 1 { "" } else { "s" }
             ),
+            Typography::Caption,
+            Token::Tertiary,
         );
+        w.get_mut::<Layout>(count).unwrap().width = Size::Fill;
         button(
             w,
             tools,
@@ -398,28 +736,38 @@ pub(super) fn render(w: &mut World, s: &mut State) {
             !busy && s.read_pending.is_none(),
         );
         button(w, tools, s, "Collapse all", Action::CollapseAll, !busy);
+        gutter(w, tools);
         // One full-width stream. File headers remain ordinary navigation controls
         // (keyboard/semantics included); each bounded diff owns its two-axis port.
+        let list = column(w, p);
+        w.get_mut::<Layout>(list).unwrap().gap = 0.;
         for file in &files {
             let path = string(file, "path");
             let open = s.expanded.contains(&path);
-            let section = column(w, p);
+            let section = column(w, list);
+            w.get_mut::<Layout>(section).unwrap().gap = if open { 8. } else { 0. };
             visual::rule(w, section);
-            let header = row(w, section);
-            nav(
-                w,
-                header,
-                s,
-                &format!(
-                    "{}  {}    +{}  −{}",
-                    if open { "−" } else { "+" },
-                    path,
-                    file["lines_added"].as_u64().unwrap_or(0),
-                    file["lines_removed"].as_u64().unwrap_or(0)
+            let header = line(w, section, 2.);
+            file_header(w, header, s, file, open);
+            for (icon, label, action, enabled) in [
+                (
+                    Icon::FileCode,
+                    "Open in Code",
+                    Action::OpenInCode(path.clone()),
+                    !busy,
                 ),
-                Action::ToggleFile(path.clone()),
-                false,
-            );
+                (
+                    Icon::Undo2,
+                    "Restore before this change…",
+                    Action::Restore(path.clone()),
+                    usable && s.file_cache.contains_key(&path),
+                ),
+            ] {
+                let id = next();
+                visual::icon_action(w, header, id, icon, label, enabled);
+                s.actions.insert(id, action);
+            }
+            gutter(w, header);
             if !open {
                 continue;
             }
@@ -455,6 +803,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                             "Truncated diff · only part of this file is shown.",
                         );
                     }
+                    symbols(w, section, s, file, &path);
                     // Build the bounded sealed context once per revision/file,
                     // not on every form edit or accordion redraw.
                     let available = s
@@ -569,137 +918,323 @@ pub(super) fn render(w: &mut World, s: &mut State) {
             },
         );
         let article = column(w, content);
-        let title = text(w, article, &string(&review, "title"), Typography::Heading).unwrap();
+        w.get_mut::<Layout>(article).unwrap().gap = 14.;
+        let title = text(w, article, &string(&review, "title"), Typography::Title).unwrap();
         w.get_mut::<Layout>(title).unwrap().width = Size::Fill;
         w.get_mut::<Label>(title).unwrap().overflow = TextOverflow::Wrap;
         let candidate = review["candidates"]
             .as_array()
             .and_then(|a| a.iter().find(|c| c["attempt_id"] == review["attempt_id"]));
         let author = candidate.map(|c| string(c, "executor")).unwrap_or_default();
-        caption(
+        let byline = line(w, article, 10.);
+        w.insert(byline, Wrap { line_gap: 6. });
+        if !author.is_empty() {
+            glyph(w, byline, Icon::User, Token::Tertiary);
+            let e = styled(w, byline, &author, Typography::Caption, Token::Secondary);
+            fitted(w, e, 240.);
+        }
+        let e = styled(
             w,
-            article,
-            &format!(
-                "{}{}Revision {}",
-                author,
-                if author.is_empty() { "" } else { " · " },
-                review["attempt_seq"]
-            ),
+            byline,
+            &format!("Revision {}", review["attempt_seq"]),
+            Typography::Caption,
+            Token::Secondary,
         );
-        if let Some(candidate) = candidate {
-            let branch = string(candidate, "branch");
-            if !branch.is_empty() {
-                caption(w, article, &branch);
+        fitted(w, e, 120.);
+        if let Some(branch) = candidate
+            .map(|c| string(c, "branch"))
+            .filter(|b| !b.is_empty())
+        {
+            let chip = panel(
+                w,
+                byline,
+                Layout {
+                    width: Size::Hug,
+                    height: Size::Hug,
+                    padding: 4.,
+                    ..Layout::row()
+                },
+            );
+            visual::plane(w, chip, visual::raised());
+            let e = styled(w, chip, &branch, Typography::Code, Token::Secondary);
+            fitted(w, e, 320.);
+            w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Ellipsis;
+        }
+        let outcome = string(synthesis, "outcome");
+        if !outcome.trim().is_empty() && outcome.trim() != string(&review, "title").trim() {
+            let section = column(w, article);
+            w.get_mut::<Layout>(section).unwrap().gap = 6.;
+            heading(w, section, "Summary");
+            reading(w, section, outcome.trim());
+        }
+        let attention: Vec<String> = synthesis["unresolved_issues"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .filter(|i| !routine_issue(i))
+            .map(str::to_owned)
+            .chain(
+                synthesis["issues"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|issue| !routine_issue(&string(issue, "message")))
+                    .map(|issue| {
+                        format!(
+                            "{}{}",
+                            if issue["blocks_approval"] == true {
+                                "Blocks approval · "
+                            } else {
+                                ""
+                            },
+                            string(issue, "message")
+                        )
+                    }),
+            )
+            .collect();
+        if !attention.is_empty() {
+            let section = column(w, article);
+            w.get_mut::<Layout>(section).unwrap().gap = 6.;
+            let head = line(w, section, 6.);
+            glyph(w, head, Icon::CircleAlert, Token::WarningText);
+            let e = styled(
+                w,
+                head,
+                "Needs attention",
+                Typography::Emphasis,
+                Token::WarningText,
+            );
+            w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+            for issue in &attention {
+                reading(w, section, &format!("•  {issue}"));
             }
         }
-        reading(w, article, &string(synthesis, "outcome"));
-        heading(w, article, "Changed areas");
+        let areas_section = column(w, article);
+        w.get_mut::<Layout>(areas_section).unwrap().gap = 0.;
+        heading(w, areas_section, "Changed areas");
         let mut areas = std::collections::BTreeMap::<String, usize>::new();
         for file in &files {
             let path = string(file, "path");
             let area = path
                 .split_once('/')
-                .map_or("Root files".into(), |(a, _)| format!("{a}/"));
+                .map_or(String::new(), |(a, _)| a.into());
             *areas.entry(area).or_default() += 1;
         }
-        for (area, count) in areas {
-            visual::rule(w, article);
-            let area_row = column(w, article);
-            w.get_mut::<Layout>(area_row).unwrap().gap = 2.;
-            button(w, area_row, s, &area, Action::Changes, !busy);
-            let paths = files
+        let mut areas: Vec<_> = areas.into_iter().collect();
+        areas.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        if areas.is_empty() {
+            caption(w, areas_section, "No file changes in this revision.");
+        }
+        for (directory, count) in areas {
+            let label = if directory.is_empty() {
+                "Repository root".to_owned()
+            } else {
+                format!("{directory}/")
+            };
+            let area_row = line(w, areas_section, 12.);
+            w.get_mut::<Layout>(area_row).unwrap().padding = 10.;
+            let copy = panel(
+                w,
+                area_row,
+                Layout {
+                    width: Size::Fill,
+                    height: Size::Hug,
+                    gap: 3.,
+                    ..Layout::column()
+                },
+            );
+            let name = styled(w, copy, &label, Typography::Label, Token::Text);
+            w.get_mut::<Layout>(name).unwrap().width = Size::Fill;
+            let names: Vec<_> = files
                 .iter()
                 .filter_map(|f| f["path"].as_str())
-                .filter(|path| {
-                    if area == "Root files" {
-                        !path.contains('/')
+                .filter_map(|path| {
+                    if directory.is_empty() {
+                        (!path.contains('/')).then_some(path)
                     } else {
-                        path.starts_with(&area)
+                        path.strip_prefix(&format!("{directory}/"))
                     }
                 })
                 .take(3)
-                .collect::<Vec<_>>()
-                .join(", ");
-            let preview = text(w, area_row, &paths, Typography::Caption).unwrap();
-            w.get_mut::<Layout>(preview).unwrap().width = Size::Fill;
-            w.get_mut::<Label>(preview).unwrap().overflow = TextOverflow::Ellipsis;
-            caption(
+                .collect();
+            let mut preview = names.join(", ");
+            if count > names.len() {
+                preview.push_str(&format!("  +{} more", count - names.len()));
+            }
+            let e = styled(w, copy, &preview, Typography::Caption, Token::Secondary);
+            w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+            w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Ellipsis;
+            let e = styled(
                 w,
                 area_row,
-                &format!(
-                    "{count} changed {}",
-                    if count == 1 { "file" } else { "files" }
-                ),
+                &format!("{count} {}", if count == 1 { "file" } else { "files" }),
+                Typography::Caption,
+                Token::Secondary,
             );
+            fitted(w, e, 80.);
+            let id = next();
+            visual::icon_action(
+                w,
+                area_row,
+                id,
+                Icon::ArrowUpRight,
+                &format!("Browse {label} changes"),
+                !busy,
+            );
+            s.actions.insert(id, Action::Changes);
+            visual::rule(w, areas_section);
         }
-        visual::rule(w, article);
-        heading(w, article, "Review status");
-        reading(w, article, &string(synthesis, "status_summary"));
-        caption(w, article, &string(synthesis, "recommended_next_action"));
+        let status = string(synthesis, "status_summary");
+        let next_action = string(synthesis, "recommended_next_action");
+        if !status.is_empty() || !next_action.is_empty() {
+            let section = column(w, article);
+            w.get_mut::<Layout>(section).unwrap().gap = 6.;
+            heading(w, section, "Review status");
+            reading(w, section, &status);
+            caption(w, section, &next_action);
+        }
         if let Some(rationale) = review["decision"]["rationale"]
             .as_str()
             .filter(|s| !s.is_empty())
         {
-            heading(w, article, "Review decision");
-            reading(w, article, rationale);
+            let section = column(w, article);
+            w.get_mut::<Layout>(section).unwrap().gap = 6.;
+            heading(w, section, "Review decision");
+            reading(w, section, rationale);
         }
         let meta = column(w, content);
+        w.get_mut::<Layout>(meta).unwrap().gap = 14.;
         if wide {
-            w.get_mut::<Layout>(meta).unwrap().width = Size::Px(224.);
+            w.get_mut::<Layout>(meta).unwrap().width = Size::Px(240.);
         }
-        caption(w, meta, "Changes");
-        let added: u64 = files.iter().filter_map(|f| f["lines_added"].as_u64()).sum();
-        let removed: u64 = files
-            .iter()
-            .filter_map(|f| f["lines_removed"].as_u64())
-            .sum();
-        heading(
+        // Changes by kind, as medousa-home's typed breakdown.
+        let changes = column(w, meta);
+        w.get_mut::<Layout>(changes).unwrap().gap = 4.;
+        let head = line(w, changes, 8.);
+        let e = styled(w, head, "Changes", Typography::Caption, Token::Tertiary);
+        w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+        let e = styled(
             w,
-            meta,
-            &format!("{} files   +{added}  −{removed}", files.len()),
+            head,
+            &format!(
+                "{} {}",
+                files.len(),
+                if files.len() == 1 { "file" } else { "files" }
+            ),
+            Typography::Caption,
+            Token::Tertiary,
         );
+        fitted(w, e, 90.);
+        let mut kinds = [(0usize, 0u64, 0u64); 5];
+        for file in &files {
+            let kind = &mut kinds[change_kind(&string(file, "path"))];
+            kind.0 += 1;
+            kind.1 += file["lines_added"].as_u64().unwrap_or(0);
+            kind.2 += file["lines_removed"].as_u64().unwrap_or(0);
+        }
+        for ((label, icon), (count, added, removed)) in KINDS.iter().zip(kinds) {
+            if count == 0 {
+                continue;
+            }
+            let kind_row = line(w, changes, 8.);
+            w.get_mut::<Layout>(kind_row).unwrap().height = Size::Px(26.);
+            glyph(w, kind_row, *icon, Token::Tertiary);
+            let e = styled(w, kind_row, label, Typography::Secondary, Token::Text);
+            w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+            for (value, tone) in [
+                (count.to_string(), Token::Tertiary),
+                (format!("+{added}"), Token::SuccessText),
+                (format!("−{removed}"), Token::DangerText),
+            ] {
+                let e = styled(w, kind_row, &value, Typography::Caption, tone);
+                fitted(w, e, 80.);
+            }
+        }
         visual::rule(w, meta);
-        caption(w, meta, "Checks");
-        if synthesis["verification"].is_object() {
-            let v = &synthesis["verification"];
-            heading(
-                w,
-                meta,
-                if v["success"] == true {
-                    "Passed"
-                } else {
-                    "Not passed"
-                },
-            );
-            caption(w, meta, &string(v, "label"));
+        let checks = column(w, meta);
+        w.get_mut::<Layout>(checks).unwrap().gap = 6.;
+        styled(w, checks, "Checks", Typography::Caption, Token::Tertiary);
+        let v = &synthesis["verification"];
+        let (icon, tone, state) = if !v.is_object() {
+            (Icon::Circle, Token::Secondary, "No checks recorded")
+        } else if v["success"] == true {
+            (Icon::CircleCheck, Token::SuccessText, "Check passed")
+        } else {
+            (Icon::CircleAlert, Token::DangerText, "Check failed")
+        };
+        let status_row = line(w, checks, 6.);
+        glyph(w, status_row, icon, tone);
+        let e = styled(w, status_row, state, Typography::Secondary, tone);
+        w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+        if v.is_object() {
             caption(
                 w,
-                meta,
-                &v["command"]
-                    .as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(Value::as_str)
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    })
-                    .unwrap_or_default(),
+                checks,
+                &format!(
+                    "{}{}",
+                    string(v, "label"),
+                    v["exit_code"]
+                        .as_i64()
+                        .map(|c| format!(" · exit {c}"))
+                        .unwrap_or_default()
+                ),
             );
-        } else {
-            caption(w, meta, "No checks recorded");
+            let command = v["command"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            if !command.is_empty() {
+                let e = styled(w, checks, &command, Typography::Code, Token::Secondary);
+                w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+                w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Wrap;
+            }
         }
-        visual::rule(w, meta);
-        caption(w, meta, "Risk");
-        heading(w, meta, &string(synthesis, "risk"));
-        caption(w, meta, &string(synthesis, "risk_summary"));
-        visual::rule(w, meta);
-        caption(w, meta, "Candidate");
+        let risk = string(synthesis, "risk");
+        if !risk.is_empty() {
+            visual::rule(w, meta);
+            let section = column(w, meta);
+            w.get_mut::<Layout>(section).unwrap().gap = 6.;
+            styled(w, section, "Risk", Typography::Caption, Token::Tertiary);
+            let (label, tone) = match risk.as_str() {
+                "high" => ("High".to_owned(), Token::DangerText),
+                "attention" => ("Needs attention".to_owned(), Token::WarningText),
+                "medium" => ("Medium".to_owned(), Token::WarningText),
+                other => {
+                    let mut chars = other.chars();
+                    let first = chars.next().map(|c| c.to_uppercase().collect::<String>());
+                    (first.unwrap_or_default() + chars.as_str(), Token::Text)
+                }
+            };
+            let e = styled(w, section, &label, Typography::Secondary, tone);
+            w.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+            let summary = string(synthesis, "risk_summary");
+            if !summary.is_empty() {
+                caption(w, section, &summary);
+            }
+        }
+        gutter(w, content);
         let candidates = review["candidates"].as_array().cloned().unwrap_or_default();
         if candidates.len() > 1 {
+            visual::rule(w, meta);
+            let section = column(w, meta);
+            w.get_mut::<Layout>(section).unwrap().gap = 2.;
+            styled(
+                w,
+                section,
+                "Revisions",
+                Typography::Caption,
+                Token::Tertiary,
+            );
             for c in candidates {
                 button(
                     w,
-                    meta,
+                    section,
                     s,
                     &format!(
                         "Revision {}{}",
@@ -714,30 +1249,6 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                     !busy && s.read_pending.is_none(),
                 );
             }
-        } else {
-            caption(w, meta, &format!("Revision {}", review["attempt_seq"]));
-        }
-        for issue in synthesis["unresolved_issues"]
-            .as_array()
-            .into_iter()
-            .flatten()
-        {
-            caption(w, p, issue.as_str().unwrap_or("Review issue"));
-        }
-        for issue in synthesis["issues"].as_array().into_iter().flatten() {
-            caption(
-                w,
-                p,
-                &format!(
-                    "{}{}",
-                    if issue["blocks_approval"] == true {
-                        "Blocks approval · "
-                    } else {
-                        ""
-                    },
-                    string(issue, "message")
-                ),
-            );
         }
         if review["base_advanced"] == true {
             caption(
@@ -853,6 +1364,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                 Mutation::Request(_) => "Request changes to this evidence?",
                 Mutation::Comment { .. } => "Post this anchored comment?",
                 Mutation::Resolve(_) => "Resolve this comment?",
+                Mutation::Restore { .. } => "Restore this file to before this change?",
             },
         );
         match &m {
@@ -868,6 +1380,13 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                 ..
             } => caption(w, form, &format!("{path} · {side}:{line} · {body}")),
             Mutation::Request(body) => caption(w, form, body),
+            Mutation::Restore { path, .. } => caption(
+                w,
+                form,
+                &format!(
+                    "{path} goes back to its starting version in the reviewed branch, then opens in Code."
+                ),
+            ),
             _ => {}
         }
         let bar = row(w, form);

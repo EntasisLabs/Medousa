@@ -461,12 +461,15 @@ async fn fork(client: &MedousaClient, source: &str) -> Result<Update, medousa_sd
 }
 
 // Deliberately log only operation names and elapsed time, never IDs, prompts,
-// credentials or server diagnostics.
+// credentials or server diagnostics. Debug builds only: history runs on every
+// idle refresh and stream settle.
 fn timing(operation: &str, started: std::time::Instant) {
-    eprintln!(
-        "native backend {operation} elapsed_ms={}",
-        started.elapsed().as_millis()
-    );
+    if cfg!(debug_assertions) {
+        eprintln!(
+            "native backend {operation} elapsed_ms={}",
+            started.elapsed().as_millis()
+        );
+    }
 }
 
 async fn history(client: &MedousaClient, id: &str) -> Result<Update, medousa_sdk::SdkError> {
