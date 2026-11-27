@@ -697,32 +697,45 @@ pub fn sync(w: &mut World) {
         }
     } else {
         crate::artifact_preview::close_inline(w);
-        let empty = column(w, detail, true);
-        w.insert(
-            empty,
-            Align {
-                items: Items::Center,
-                justify: Justify::Center,
-            },
-        );
-        caption(
+        let l = visual::landing(
             w,
-            empty,
-            "A home for the things you make",
-            Typography::Reading,
+            detail,
+            Icon::Layers,
+            "Artifacts",
+            "Every page Medousa has made for you, across this workshop's conversations.",
         );
-        paragraph(
-            w,
-            empty,
-            "Browse HTML artifacts from every conversation in this workshop.",
-            Typography::Secondary,
-        );
-        paragraph(
-            w,
-            empty,
-            "Select an artifact to preview, revisit its chat, or save a copy.",
-            Typography::Caption,
-        );
+        let id = next();
+        visual::landing_tile(w, l.actions, id, Icon::RefreshCw, "Refresh", s.connected);
+        s.actions.insert(id, Action::Refresh);
+        // While searching, results belong to the sidebar list alone.
+        let browsing = s.query.trim().is_empty();
+        let mut recent: Vec<_> = s.rows.iter().filter(|_| browsing).collect();
+        recent.sort_by_key(|r| std::cmp::Reverse(r.stored_at_utc));
+        let recent: Vec<_> = recent
+            .into_iter()
+            .take(6)
+            .map(|r| {
+                (
+                    r.session_id.clone(),
+                    r.artifact_id.clone(),
+                    r.label.clone(),
+                    visual::relative_day(r.stored_at_utc),
+                )
+            })
+            .collect();
+        if !recent.is_empty() {
+            visual::landing_section(w, l.list, "Recent");
+        }
+        for (session, artifact, label, when) in recent {
+            let id = next();
+            let title = if label.trim().is_empty() {
+                "Untitled artifact".into()
+            } else {
+                label
+            };
+            visual::landing_row(w, l.list, id, &title, Some(when));
+            s.actions.insert(id, Action::Select(session, artifact));
+        }
     }
     if !s.notice.is_empty() {
         paragraph(w, detail, &s.notice, Typography::Secondary);

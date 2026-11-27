@@ -1556,3 +1556,83 @@ fn tool_thread_visual_acceptance() {
         .unwrap();
     }
 }
+
+#[test]
+#[ignore = "Landing states of each destination, Parley/GPU offscreen"]
+fn destination_landing_visual_acceptance() {
+    use crate::surfaces::SurfaceId;
+    let mut app = app();
+    app.world_mut().insert_resource(Viewport::new(1200., 800.));
+    app.world_mut()
+        .insert_resource(rndr_ui::InteractionMotion::snap());
+    app.world_mut()
+        .insert_resource(Arc::new(rndr_render::ParleyText::new()) as Arc<dyn TextEngine>);
+    publish_system_appearance(
+        app.world_mut(),
+        SystemAppearance {
+            dark: Some(true),
+            ..Default::default()
+        },
+    );
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    for (surface, name) in [
+        (SurfaceId::Code, "code"),
+        (SurfaceId::Reviews, "reviews"),
+        (SurfaceId::Create, "create"),
+        (SurfaceId::Terminal, "terminal"),
+        (SurfaceId::Artifacts, "artifacts"),
+    ] {
+        crate::surfaces::select(app.world_mut(), surface);
+        for _ in 0..10 {
+            app.update();
+        }
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, 1200, 800, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-landing-{name}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
+}
+
+/// Settle `app` in dark mode and save `verification/{name}.png` at 1200×800.
+pub(crate) fn render_dark(app: &mut App, name: &str) {
+    app.world_mut().insert_resource(Viewport::new(1200., 800.));
+    app.world_mut()
+        .insert_resource(rndr_ui::InteractionMotion::snap());
+    app.world_mut()
+        .insert_resource(Arc::new(rndr_render::ParleyText::new()) as Arc<dyn TextEngine>);
+    publish_system_appearance(
+        app.world_mut(),
+        SystemAppearance {
+            dark: Some(true),
+            ..Default::default()
+        },
+    );
+    for _ in 0..10 {
+        app.update();
+    }
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    let (_, image) = rndr_paint::frame_with_snapshot_frame(app, |world, frame| {
+        exporter
+            .render_frame(Some(world), frame, 1200, 800, 1.)
+            .unwrap()
+    });
+    image::save_buffer(
+        format!("verification/{name}.png"),
+        &image.rgba,
+        image.width,
+        image.height,
+        image::ColorType::Rgba8,
+    )
+    .unwrap();
+}

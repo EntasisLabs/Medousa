@@ -586,7 +586,24 @@ impl Component for DocumentSidebar {}
 pub struct ReadingDocument;
 impl Component for ReadingDocument {}
 
+/// Bounds a landing column to the pane it sits in; see [`landing`].
+pub struct LandingColumn;
+impl Component for LandingColumn {}
+
 pub fn document_layouts(world: &mut World) {
+    for entity in world.entities_with::<LandingColumn>() {
+        let available = world
+            .get::<Parent>(entity)
+            .and_then(|p| world.get::<Rect>(p.entity))
+            .map_or(LANDING_WIDTH, |r| r.w - 48.);
+        let width = Size::Px(available.clamp(240., LANDING_WIDTH));
+        if world
+            .get::<Layout>(entity)
+            .is_some_and(|l| l.width != width)
+        {
+            world.get_mut::<Layout>(entity).unwrap().width = width;
+        }
+    }
     // Sidebar widths belong to `crate::sidebars`: remembered, draggable.
     for entity in world
         .query::<ReadingDocument>()
@@ -781,6 +798,10 @@ mod tests {
 
 /// Size every icon-only label as an action icon. Controls mount glyphs at
 /// body-text size; one late pass keeps every view's actions consistent.
+/// Overrides [`ACTION_ICON`] for one glyph, such as a landing's badge.
+pub struct IconSize(pub f32);
+impl Component for IconSize {}
+
 pub fn action_icons(world: &mut World) {
     let icons: Vec<Entity> = world
         .query::<Label>()
@@ -860,10 +881,11 @@ pub fn action_icons(world: &mut World) {
                 }
             }
         }
+        let size = world.get::<IconSize>(entity).map_or(ACTION_ICON, |s| s.0);
         // One em square: some glyphs measure wider than they draw, and the
         // sprite is drawn from the label's leading edge. Its face centres it.
         if let Some(layout) = world.get_mut::<Layout>(entity) {
-            let em = Size::Px(ACTION_ICON);
+            let em = Size::Px(size);
             if layout.width != em || layout.height != em {
                 layout.width = em;
                 layout.height = em;
@@ -877,13 +899,13 @@ pub fn action_icons(world: &mut World) {
         // Centred on a one-em line, as the rail's icons are: the glyph sits in
         // the middle of its face and the face stays square, not text-tall.
         let fit = |style: &mut TextStyle| {
-            style.size = ACTION_ICON;
+            style.size = size;
             style.align = TextAlign::Center;
             style.line_height = Some(1.);
         };
         match world.get_mut::<TextStyle>(entity) {
             Some(style)
-                if style.size != ACTION_ICON
+                if style.size != size
                     || style.align != TextAlign::Center
                     || style.line_height != Some(1.) =>
             {
@@ -901,4 +923,298 @@ pub fn action_icons(world: &mut World) {
             }
         }
     }
+}
+
+/// The widest a destination's landing column grows.
+pub const LANDING_WIDTH: f32 = 560.;
+
+/// A destination's landing: what the place is for, what you can do right now
+/// ([`landing_tile`]s in `actions`), and what you were last working on
+/// ([`landing_section`] + [`landing_row`]s in `list`). One recipe, so every
+/// view's first screen reads as the same product.
+pub struct Landing {
+    pub root: Entity,
+    pub actions: Entity,
+    pub list: Entity,
+}
+
+fn node(world: &mut World, parent: Entity, layout: Layout) -> Entity {
+    let e = world.spawn((layout,));
+    set_parent(world, e, parent);
+    e
+}
+
+pub fn landing(
+    world: &mut World,
+    parent: Entity,
+    icon: Icon,
+    title: &str,
+    purpose: &str,
+) -> Landing {
+    let root = node(
+        world,
+        parent,
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            padding: 24.,
+            ..Layout::column()
+        },
+    );
+    world.insert(
+        root,
+        Align {
+            items: Items::Center,
+            justify: Justify::Center,
+        },
+    );
+    world.insert(root, Scroll::default());
+    let column = node(
+        world,
+        root,
+        Layout {
+            width: Size::Px(LANDING_WIDTH),
+            gap: 10.,
+            ..Layout::column()
+        },
+    );
+    world.insert(column, LandingColumn);
+    world.insert(
+        column,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
+    // Icon badge: the view's rail glyph on a soft raised square.
+    let badge = node(
+        world,
+        column,
+        Layout {
+            width: Size::Px(56.),
+            height: Size::Px(56.),
+            ..Layout::column()
+        },
+    );
+    world.insert(
+        badge,
+        Align {
+            items: Items::Center,
+            justify: Justify::Center,
+        },
+    );
+    plane(world, badge, raised());
+    world.insert(badge, Radius(16.));
+    let glyph = world.spawn((
+        Layout {
+            width: Size::Px(26.),
+            height: Size::Px(26.),
+            ..Layout::column()
+        },
+        Label::new(icon.scalar().to_string()),
+        LabelBox {
+            inset_x: 0.,
+            inset_y: 0.,
+            min_height: 0.,
+        },
+        ResolvedColor,
+    ));
+    set_parent(world, glyph, badge);
+    world.insert(glyph, IconSize(26.));
+    node(
+        world,
+        column,
+        Layout {
+            height: Size::Px(4.),
+            ..Layout::column()
+        },
+    );
+    let heading = rndr_ui::text(world, column, title, Typography::Title).unwrap();
+    world.get_mut::<Label>(heading).unwrap().overflow = TextOverflow::Ellipsis;
+    world.get_mut::<Layout>(heading).unwrap().width = Size::Hug;
+    let lead = rndr_ui::text(world, column, purpose, Typography::Secondary).unwrap();
+    world.get_mut::<Label>(lead).unwrap().overflow = TextOverflow::Wrap;
+    world.insert(
+        lead,
+        FitLabel {
+            label: lead,
+            extra: 0.,
+            min: 0.,
+            max: LANDING_WIDTH,
+        },
+    );
+    world.insert(
+        lead,
+        UiStyle {
+            foreground: Some(secondary().into()),
+            ..Default::default()
+        },
+    );
+    node(
+        world,
+        column,
+        Layout {
+            height: Size::Px(12.),
+            ..Layout::column()
+        },
+    );
+    let actions = node(
+        world,
+        column,
+        Layout {
+            gap: 10.,
+            ..Layout::row()
+        },
+    );
+    world.insert(actions, Wrap { line_gap: 10. });
+    let list = node(
+        world,
+        column,
+        Layout {
+            width: Size::Fill,
+            gap: 2.,
+            ..Layout::column()
+        },
+    );
+    Landing {
+        root,
+        actions,
+        list,
+    }
+}
+
+/// An action you can take from a landing: icon square over a caption.
+pub fn landing_tile(
+    world: &mut World,
+    parent: Entity,
+    id: u64,
+    icon: Icon,
+    label: &str,
+    enabled: bool,
+) -> rndr_ui::controls::ControlHandle {
+    use rndr_ui::controls::{ButtonProps, ButtonVariant, HostIntent, IconButton};
+    let tile = node(
+        world,
+        parent,
+        Layout {
+            width: Size::Px(104.),
+            gap: 6.,
+            ..Layout::column()
+        },
+    );
+    world.insert(
+        tile,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
+    let mut props = ButtonProps::new(label, HostIntent::Command(id));
+    props.variant = ButtonVariant::Secondary;
+    props.enabled = enabled;
+    let h = IconButton::icon(world, tile, rndr_ui::UiId(id), icon, label, props).unwrap();
+    world.insert(h.label, LabelBox::CONTENT);
+    // Larger than the 32pt action square on purpose: a destination's first move.
+    *world.get_mut::<Layout>(h.root).unwrap() = Layout {
+        width: Size::Px(52.),
+        height: Size::Px(52.),
+        ..Layout::row()
+    };
+    world.insert(h.root, Radius(14.));
+    let caption = rndr_ui::text(world, tile, label, Typography::Caption).unwrap();
+    world.get_mut::<Label>(caption).unwrap().overflow = TextOverflow::Ellipsis;
+    world.insert(
+        caption,
+        FitLabel {
+            label: caption,
+            extra: 0.,
+            min: 0.,
+            max: 104.,
+        },
+    );
+    world.insert(
+        caption,
+        UiStyle {
+            foreground: Some(secondary().into()),
+            ..Default::default()
+        },
+    );
+    h
+}
+
+/// Heading over a landing list ("Recent", "Active", …), with breathing room above.
+pub fn landing_section(world: &mut World, list: Entity, title: &str) {
+    node(
+        world,
+        list,
+        Layout {
+            height: Size::Px(20.),
+            ..Layout::column()
+        },
+    );
+    let e = rndr_ui::text(world, list, title, Typography::Secondary).unwrap();
+    world.get_mut::<Layout>(e).unwrap().width = Size::Fill;
+    world.insert(
+        e,
+        Padding {
+            left: 8.,
+            bottom: 4.,
+            ..Padding::default()
+        },
+    );
+    section_heading(world, e);
+}
+
+/// One thing to reopen from a landing: title, trailing metadata, fill-only hover.
+pub fn landing_row(
+    world: &mut World,
+    list: Entity,
+    id: u64,
+    title: &str,
+    meta: Option<String>,
+) -> rndr_ui::controls::ControlHandle {
+    use rndr_ui::controls::{
+        ButtonProps, HostIntent, NavigationMeta, NavigationRow, QuietSelection,
+    };
+    let h = NavigationRow::mount(
+        world,
+        list,
+        rndr_ui::UiId(id),
+        ButtonProps::new(title, HostIntent::Command(id)),
+        NavigationMeta {
+            secondary: meta,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    world.insert(
+        h.root,
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(ROW_HEIGHT),
+            padding: 0.,
+            ..Layout::column()
+        },
+    );
+    world.insert(h.root, QuietSelection);
+    world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
+    trailing_meta(world, h);
+    h
+}
+
+/// "Today", "Yesterday", "3 days ago" or a date, for landing row metadata.
+pub fn relative_day(when: chrono::DateTime<chrono::Utc>) -> String {
+    let days = (chrono::Utc::now().date_naive() - when.date_naive()).num_days();
+    match days {
+        ..=0 => "Today".into(),
+        1 => "Yesterday".into(),
+        2..=6 => format!("{days} days ago"),
+        _ => when.format("%b %-d").to_string(),
+    }
+}
+/// [`relative_day`] for an RFC 3339 timestamp; empty when it doesn't parse.
+pub fn relative_day_str(when: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(when)
+        .map(|t| relative_day(t.with_timezone(&chrono::Utc)))
+        .unwrap_or_default()
 }

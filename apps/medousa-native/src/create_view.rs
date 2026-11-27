@@ -88,8 +88,6 @@ pub(super) fn mount(w: &mut World, root: Entity, slot_id: u64) -> Parts {
         Layout {
             width: Size::Fill,
             height: Size::Fill,
-            padding: 24.,
-            gap: 12.,
             ..Layout::column()
         },
     );
@@ -260,30 +258,46 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         w.insert(s.editor, Hidden);
         w.remove::<Hidden>(s.empty);
         let empty = s.empty;
-        let title = text(w, empty, "Create", Typography::Title).unwrap();
-        w.insert(title, AlignSelf(Items::Center));
-        let hint = if s.open.is_some() {
-            "Opening…"
-        } else {
-            "Open a project, or start one from a template."
-        };
-        let hint = text(w, empty, hint, Typography::Secondary).unwrap();
-        w.insert(hint, AlignSelf(Items::Center));
-        if s.open.is_none() {
-            let row = panel(
-                w,
-                empty,
-                Layout {
-                    width: Size::Hug,
-                    height: Size::Hug,
-                    gap: 6.,
-                    ..Layout::row()
-                },
-            );
-            w.insert(row, Wrap { line_gap: 6. });
-            w.insert(row, AlignSelf(Items::Center));
+        let opening = s.open.is_some();
+        let landing = visual::landing(
+            w,
+            empty,
+            Icon::PenTool,
+            "Create",
+            if opening {
+                "Opening…"
+            } else {
+                "Sketch, mark up and compose on a canvas you and Medousa share."
+            },
+        );
+        if !opening {
             for starter in Starter::ALL {
-                button(w, row, s, starter.label(), Action::New(starter), !creating);
+                let id = next();
+                visual::landing_tile(
+                    w,
+                    landing.actions,
+                    id,
+                    starter.icon(),
+                    starter.label(),
+                    !creating,
+                );
+                s.actions.insert(id, Action::New(starter));
+            }
+            let mut recent = s.projects.clone();
+            recent.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+            if !recent.is_empty() {
+                visual::landing_section(w, landing.list, "Recent");
+            }
+            for p in recent.into_iter().take(5) {
+                let id = next();
+                let title = if p.title.trim().is_empty() {
+                    "Untitled canvas"
+                } else {
+                    p.title.as_str()
+                };
+                let meta = Some(visual::relative_day_str(&p.updated_at)).filter(|m| !m.is_empty());
+                visual::landing_row(w, landing.list, id, title, meta);
+                s.actions.insert(id, Action::Open(p.id.clone()));
             }
         }
     }

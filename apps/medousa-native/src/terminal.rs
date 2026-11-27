@@ -525,13 +525,8 @@ pub fn mount_view(w: &mut World, parent: Entity) {
     let tabs = column(w, main);
     w.get_mut::<Layout>(tabs).unwrap().height = Size::Hug;
     let body = column(w, main);
-    let empty = text(
-        w,
-        body,
-        "Open a shell from the sidebar, or choose an active session.",
-        Typography::Label,
-    )
-    .unwrap();
+    // Landing shown while no shell is open; rebuilt with the sidebar.
+    let empty = column(w, body);
     w.insert_resource(ViewState(Some(View {
         sidebar,
         header,
@@ -1047,6 +1042,75 @@ fn sidebar_row(w: &mut World, parent: Entity) -> Entity {
     set_parent(w, row, parent);
     row
 }
+/// Start a shell, or pick up one that's still running, without the sidebar.
+fn landing(w: &mut World, d: &mut View, available: bool) {
+    for child in children_of(w, d.empty) {
+        despawn(w, child);
+    }
+    let purpose = if available {
+        "Shells run in your workshop and keep running when you step away."
+    } else {
+        "Terminal needs a local, signed-in workshop connection."
+    };
+    let l = visual::landing(w, d.empty, Icon::Terminal, "Terminal", purpose);
+    let room = available && d.panes.len() < 32;
+    visual::landing_tile(w, l.actions, GENERAL, Icon::Plus, "New shell", room);
+    visual::landing_tile(
+        w,
+        l.actions,
+        REFRESH,
+        Icon::RefreshCw,
+        "Refresh",
+        d.discovery.is_none(),
+    );
+    let sessions: Vec<_> = d
+        .sessions
+        .iter()
+        .filter(|s| active_human(s))
+        .cloned()
+        .collect();
+    let mut shown = 0;
+    for session in &sessions {
+        let Some(shell) = session["session_id"].as_str() else {
+            continue;
+        };
+        if shown == 0 {
+            visual::landing_section(w, l.list, "Still running");
+        }
+        let work = session["work_id"].as_str().unwrap_or_default();
+        let place = d
+            .projects
+            .iter()
+            .find(|p| p["id"].as_str() == Some(work))
+            .and_then(|p| p["title"].as_str())
+            .unwrap_or("Workshop")
+            .to_owned();
+        let id = next();
+        d.actions
+            .insert(id, Action::Attach(work.into(), shell.into()));
+        let label = shell_name(d, Some(shell));
+        visual::landing_row(w, l.list, id, &label, Some(place));
+        shown += 1;
+        if shown == 5 {
+            break;
+        }
+    }
+    let mut shown = 0;
+    for project in d.projects.iter().filter(|p| open_project(p)).take(5) {
+        let work = project["id"].as_str().unwrap();
+        let title = project["title"].as_str().unwrap_or(work).to_owned();
+        if shown == 0 {
+            visual::landing_section(w, l.list, "Open a shell in an undertaking");
+        }
+        let id = next();
+        d.actions.insert(id, Action::NewWork(work.into()));
+        let h = visual::landing_row(w, l.list, id, &title, Some("New shell".into()));
+        if !room {
+            w.insert(h.root, Hidden);
+        }
+        shown += 1;
+    }
+}
 fn render(w: &mut World, d: &mut View) {
     for parent in [d.header, d.sidebar] {
         for child in children_of(w, parent) {
@@ -1158,6 +1222,7 @@ fn render(w: &mut World, d: &mut View) {
     if count == 0 {
         text(w, d.sidebar, "No open undertakings", Typography::Caption).unwrap();
     }
+    landing(w, d, available);
     let p = d.selected.and_then(|id| d.panes.get(&id));
     if let Some(p) = p {
         text(

@@ -1805,3 +1805,34 @@ fn workspace_reparents_complete_note_without_losing_draft_or_document() {
     assert_eq!(n.core.get("a.md").unwrap().content, "unsaved draft");
     assert!(n.core.get("a.md").unwrap().dirty);
 }
+
+#[test]
+#[ignore = "Notes landing with recent notes, Parley/GPU offscreen"]
+fn notes_landing_visual_acceptance() {
+    let mut app = crate::ui::app();
+    app.world_mut().insert_resource(Viewport::new(1200., 800.));
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+    let w = app.world_mut();
+    let now = chrono::Utc::now();
+    w.resource_mut::<Notes>().unwrap().list = [
+        ("Medousa backlog — Encrypted secret sharing", 0),
+        ("Workspace redesign notes", 0),
+        ("What Makes a Great Code Editor", 1),
+        ("Chinese Elm — Indoor Bonsai Care Guide", 4),
+        ("Fleet recovery and retry repair", 9),
+    ]
+    .iter()
+    .enumerate()
+    .map(|(i, (title, days))| {
+        let mut note = response(&format!("Backlog/note-{i}.md"), "", Some("v1")).note;
+        note.title = (*title).into();
+        let mut v = serde_json::from_value::<VaultNoteSummary>(serde_json::to_value(note).unwrap())
+            .unwrap();
+        v.modified_at_utc = now - chrono::Duration::days(*days);
+        v
+    })
+    .collect();
+    w.resource_mut::<Notes>().unwrap().redraw = true;
+    crate::ui::visual_tests::render_dark(&mut app, "native-landing-notes");
+}

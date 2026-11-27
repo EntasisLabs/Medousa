@@ -227,10 +227,30 @@ pub struct LayoutPreset {
     pub theme: Option<EnvironmentTheme>,
 }
 
+/// Profile-scoped rail shortcuts shared by native and web shells. Bot identities
+/// remain daemon Bot IDs; names/avatars are resolved from the Bot service.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentNavigation {
+    /// Native shell order override; empty follows the shared active preset.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_order: Vec<String>,
+    /// Hidden native-only destinations (create/reviews/terminal).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_hidden: Vec<String>,
+    #[serde(default)]
+    pub bot_pins: Vec<String>,
+    #[serde(default)]
+    pub bot_accents: std::collections::BTreeMap<String, String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EnvironmentSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nav: Option<EnvironmentNavigation>,
     pub version: u32,
     pub profile_id: String,
     pub surfaces: Vec<SurfaceDef>,

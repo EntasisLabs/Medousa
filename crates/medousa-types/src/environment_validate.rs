@@ -24,6 +24,47 @@ const ALLOWED_MOBILE_TAB_SLUGS: &[&str] = &["home", "chat", "notes", "web"];
 
 pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
     let mut errors = Vec::new();
+    if let Some(nav) = &spec.nav {
+        let valid_id = |id: &str| {
+            !id.is_empty()
+                && id.len() <= 256
+                && id.trim() == id
+                && !id.chars().any(char::is_control)
+        };
+        let mut order_seen = std::collections::HashSet::new();
+        if nav.native_order.len() > 256
+            || nav
+                .native_order
+                .iter()
+                .any(|id| !valid_id(id) || !order_seen.insert(id))
+        {
+            errors.push("nav.nativeOrder requires at most 256 unique destination IDs".into());
+        }
+        let mut hidden_seen = std::collections::HashSet::new();
+        if nav.native_hidden.iter().any(|id| {
+            !matches!(id.as_str(), "create" | "reviews" | "terminal") || !hidden_seen.insert(id)
+        }) {
+            errors.push("nav.nativeHidden accepts only unique native-only destinations".into());
+        }
+        if nav.bot_pins.len() > 256 || nav.bot_accents.len() > 256 {
+            errors.push("nav supports at most 256 bot pins and accents".into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for id in &nav.bot_pins {
+            if !valid_id(id) || !seen.insert(id) {
+                errors.push("nav.botPins contains an invalid or duplicate Bot ID".into());
+            }
+        }
+        for (id, color) in &nav.bot_accents {
+            if !valid_id(id)
+                || color.len() != 7
+                || !color.starts_with('#')
+                || !color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
+            {
+                errors.push("nav.botAccents requires valid Bot IDs and #RRGGBB colors".into());
+            }
+        }
+    }
 
     if spec.version == 0 {
         errors.push("version must be >= 1".to_string());
@@ -357,6 +398,32 @@ mod tests {
     use crate::environment::{ComponentDef, ComponentType, SurfaceKind, activate_layout_preset};
     use crate::environment_default::default_environment_spec;
 
+    #[test]
+    fn bot_navigation_roundtrips_and_validates() {
+        let mut spec = crate::environment_default::default_environment_spec("personal");
+        let old = serde_json::to_value(&spec).unwrap();
+        assert!(old.get("nav").is_none());
+        spec.nav = Some(crate::environment::EnvironmentNavigation {
+            native_order: vec!["chat".into(), "terminal".into()],
+            native_hidden: vec!["reviews".into()],
+            bot_pins: vec!["bot-one".into()],
+            bot_accents: [("bot-one".into(), "#123aBc".into())].into_iter().collect(),
+        });
+        assert!(super::validate_environment_spec(&spec).is_empty());
+        let wire = serde_json::to_value(&spec).unwrap();
+        assert_eq!(wire["nav"]["botPins"], serde_json::json!(["bot-one"]));
+        let parsed: crate::environment::EnvironmentSpec = serde_json::from_value(wire).unwrap();
+        assert_eq!(parsed.nav.unwrap().bot_accents["bot-one"], "#123aBc");
+        spec.nav.as_mut().unwrap().bot_pins.push("bot-one".into());
+        assert!(!super::validate_environment_spec(&spec).is_empty());
+        spec.nav.as_mut().unwrap().bot_pins.pop();
+        spec.nav
+            .as_mut()
+            .unwrap()
+            .bot_accents
+            .insert("bot-one".into(), "var(--bad)".into());
+        assert!(!super::validate_environment_spec(&spec).is_empty());
+    }
     #[test]
     fn default_spec_is_valid() {
         let spec = default_environment_spec("personal");

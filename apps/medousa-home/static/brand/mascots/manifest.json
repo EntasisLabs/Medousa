@@ -1,7 +1,7 @@
 {
   "name": "Medousa Mascot Assets",
-  "version": "0.1.0",
-  "source": "character sheet supplied in ChatGPT conversation",
+  "version": "0.2.0",
+  "source": "User-supplied medousa-assets; clean artwork refreshed; legacy fx/atlas/Apple variants retained",
   "states": [
     "default",
     "happy",

@@ -1169,3 +1169,28 @@ fn canvas_controls_survive_a_sidebar_redraw() {
     click_named(&mut app, "Draw (P)");
     assert_eq!(editor(app.world()).tool(), Tool::Pen);
 }
+
+#[test]
+#[ignore = "Create landing with recent canvases, Parley/GPU offscreen"]
+fn create_landing_visual_acceptance() {
+    let mut app = app();
+    let w = app.world_mut();
+    let commands = take_commands(w);
+    let now = chrono::Utc::now();
+    let ago = |days: i64| (now - chrono::Duration::days(days)).to_rfc3339();
+    reply(
+        w,
+        &commands[0],
+        Ok(Response::Listed(CreativeListResponse {
+            projects: vec![
+                summary("a", "Launch board", true, &ago(0)),
+                summary("b", "Onboarding flow concept", false, &ago(1)),
+                summary("c", "Settings screenshot markup", false, &ago(3)),
+                summary("d", "", false, &ago(12)),
+            ],
+            next_cursor: None,
+        })),
+    );
+    sync(w);
+    crate::ui::visual_tests::render_dark(&mut app, "native-landing-create-recent");
+}

@@ -493,6 +493,12 @@ destination's current execution policy.
 | `apply_pending(profile_id?)` | `POST /v1/environment/spec/pending/apply` | `EnvironmentSpecResponse` |
 | `stream_spec(...)` | SSE `GET /v1/environment/spec/stream` | `EnvironmentStreamEvent` |
 
+`EnvironmentSpec.nav` is optional `EnvironmentNavigation` metadata shared by shells:
+ordered `botPins`, hex-color `botAccents`, and optional `nativeOrder`/`nativeHidden`
+for native-only rail destinations. Preserve it when replacing unrelated canvas
+configuration. See [the navigation contract](../engine/http-api.md#environment-canvas)
+for limits, profile/workshop scope, and the full-spec PUT concurrency caveat.
+
 Incremental patch ops (`remove_custom_surface`, `remove_component`, etc.) are agent-internal via `cognition_environment_patch`. SDK integrators use `put_spec` for full spec replace.
 
 ---

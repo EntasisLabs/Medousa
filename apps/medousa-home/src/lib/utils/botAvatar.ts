@@ -34,7 +34,13 @@ export const DEFAULT_BOT_AVATAR = "medousa:violet";
 
 export function botAvatar(value: string | null | undefined) {
   const ref = value?.trim() ?? "";
-  const mark = BOT_AVATARS.find((entry) => entry.id === ref);
+  // Native clients save catalog slugs; keep canonical web references stable.
+  const native = /^(jellyfish|seahorse|starfish)-(default|happy|chill|sweet|focus|sus)$/.exec(ref);
+  const body = native?.[1] === "jellyfish" ? "medousa" : native?.[1];
+  const canonical = native
+    ? `mascot:${body}${native[2] === "default" ? "" : `:${native[2]}`}`
+    : ref;
+  const mark = BOT_AVATARS.find((entry) => entry.id === canonical);
   // Keep existing emoji avatars readable; unrecognized references use the mark.
   const legacy = !mark && !ref.startsWith("medousa:") && !ref.startsWith("mascot:") && /\p{Extended_Pictographic}/u.test(ref)
     && [...ref].length <= 12 ? ref : null;

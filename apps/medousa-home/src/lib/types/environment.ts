@@ -129,7 +129,15 @@ export interface LayoutPreset {
   theme?: EnvironmentTheme | null;
 }
 
+export interface EnvironmentNavigation {
+  nativeOrder?: string[];
+  nativeHidden?: string[];
+  botPins: string[];
+  botAccents: Record<string, string>;
+}
+
 export interface EnvironmentSpec {
+  nav?: EnvironmentNavigation | null;
   version: number;
   profileId: string;
   surfaces: SurfaceDef[];

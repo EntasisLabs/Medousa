@@ -24,6 +24,43 @@ Switching to Notes, Code, or Reviews keeps chat tabs, split panes, unsent drafts
 background streams in this window. Returning restores the chat workspace. Chat
 send shortcuts do not send a message while another workspace is active.
 
+## Customize navigation and pin bots
+
+Press **+** on the navigation rail to open **Customize navigation**. Toggle
+supported app destinations, and use the up-arrow controls to change their order.
+The rail keeps the existing destination layout, with **+** above Settings.
+The shared destinations use the daemon's active environment preset; native-only
+Create, Reviews, and Terminal entries use explicitly native rail metadata in that
+same daemon profile, not a second device-local preference file.
+
+Under **Your bots**, choose **Pin** to add an individual bot avatar to the rail.
+Bot shortcuts are opt-in: no bot is pinned by default. A shortcut resumes that
+bot's canonical primary conversation through the Bot API, rather than creating a
+new ordinary chat on each click. **Unpin** removes the shortcut, not the bot or its
+history. Unavailable or archived bots do not appear as usable shortcuts.
+
+Choose **Create bot**, give it a name, description, bundled character avatar, and
+plain-language instructions. **Add to navigation** is optional. **Create & chat**
+creates an identity manuscript for those instructions and opens the bot's chat.
+This is a multi-step daemon operation: a failure may leave a manuscript behind;
+the error identifies it for recovery, and the app does not silently retry or
+pretend it rolled back the operation.
+
+In a bot's primary chat, its avatar/name and **Customize** control distinguish it
+from an ordinary conversation. The right-hand editor changes its name,
+description, character avatar, instructions, pin, and accent color without
+replacing the chat machinery. Profile changes use the bot's revision, preserving
+advanced capabilities and executor bindings. Instructions are stored in the
+primary manuscript's voice appendix; they do not replace its tools or task
+template. Unsaved editor drafts remain in this window and are parked by owning
+workshop when switching daemons; they are not restored after app restart.
+
+Pins and accents are saved in the daemon environment's optional navigation
+metadata and preserved by both native and Tauri. Saving requires the updated
+daemon; a running older daemon must be rebuilt/restarted before it can retain
+these new fields. Cross-device concurrent environment edits use the existing
+fresh-read/full-PUT API, which has no compare-and-swap guarantee.
+
 ## Arrange a mixed Workspace
 
 The **Workspace** home icon is the first destination in the navigation rail. Chat, Notes, Code,

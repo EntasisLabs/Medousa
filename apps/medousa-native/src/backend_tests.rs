@@ -1445,9 +1445,13 @@ async fn opening_other_and_same_session_preserves_follow_and_allows_parallel_sen
     wires.extend(open_wires("s", true));
     wires.push(admission_wire("tb"));
     wires.push(stream_wire("tb", "fatal"));
+    // Settlement confirms the exact prose emitted by stream_wire, not the
+    // unrelated assistant text used by the generic history fixture.
+    let mut settled = history_wire(true);
+    settled.body = settled.body.replace("unique assistant prose", "done");
     wires.extend([
         active_wire(false),
-        history_wire(true),
+        settled,
         active_wire(false),
         mode_wire("teacher"),
     ]);

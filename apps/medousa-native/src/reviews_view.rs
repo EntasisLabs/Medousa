@@ -197,6 +197,75 @@ fn clear(w: &mut World, p: Entity) {
         despawn(w, e);
     }
 }
+/// Nothing open: what's waiting for you, one click from reading it.
+fn landing(w: &mut World, p: Entity, s: &mut State, items: &[Value], busy: bool) {
+    let l = visual::landing(
+        w,
+        p,
+        Icon::CheckCheck,
+        "Reviews",
+        "Read what an undertaking changed and its checks, then approve and apply it.",
+    );
+    let id = next();
+    visual::landing_tile(
+        w,
+        l.actions,
+        id,
+        Icon::RefreshCw,
+        if s.queue_pending.is_some() {
+            "Refreshing…"
+        } else {
+            "Refresh"
+        },
+        !busy && s.queue_pending.is_none(),
+    );
+    s.actions.insert(id, Action::Refresh);
+    let mut any = false;
+    for (name, phases) in [
+        ("Ready for review", ["review", "needs_attention"]),
+        ("In progress", ["prepare", "work"]),
+    ] {
+        let rows: Vec<_> = items
+            .iter()
+            .filter(|i| phases.contains(&i["human_phase"].as_str().unwrap_or("prepare")))
+            .take(5)
+            .collect();
+        if rows.is_empty() {
+            continue;
+        }
+        any = true;
+        visual::landing_section(w, l.list, name);
+        for item in rows {
+            let id = next();
+            visual::landing_row(
+                w,
+                l.list,
+                id,
+                &string(item, "title"),
+                Some(phase_label(&string(item, "human_phase")).to_string()),
+            );
+            s.actions.insert(id, Action::Open(string(item, "id")));
+        }
+    }
+    if !any {
+        visual::landing_section(w, l.list, "Nothing waiting");
+        let note = text(
+            w,
+            l.list,
+            "When Medousa finishes an undertaking, it appears here to review.",
+            Typography::Secondary,
+        )
+        .unwrap();
+        w.insert(
+            note,
+            Padding {
+                left: 8.,
+                ..Padding::default()
+            },
+        );
+        w.get_mut::<Label>(note).unwrap().overflow = TextOverflow::Wrap;
+    }
+}
 fn button(w: &mut World, p: Entity, s: &mut State, label: &str, a: Action, enabled: bool) {
     let id = next();
     if matches!(label, "Approve" | "Confirm" | "Apply approved decision") {
@@ -654,12 +723,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         caption(w, p, "Loading sealed review…");
     }
     if s.review.is_null() {
-        heading(w, p, "Review the work, not a moving checkout");
-        caption(
-            w,
-            p,
-            "Choose an undertaking to read its outcome, checks and sealed changes. Approval and apply are separate actions.",
-        );
+        landing(w, p, s, &items, busy);
         return;
     }
     let review = s.review.clone();

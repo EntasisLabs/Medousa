@@ -131,6 +131,7 @@ struct Notes {
     notice: Option<Entity>,
     source: bool,
     editors: Option<Entity>,
+    landing: Option<Entity>,
     search: Option<Entity>,
     rows: Option<Entity>,
     library: Option<Entity>,
@@ -384,11 +385,9 @@ pub fn mount(world: &mut World, parent: Entity) {
     let find_tools = column(world, content, Size::Fill, Size::Hug);
     let notice = column(world, content, Size::Fill, Size::Hug);
     let editors = column(world, content, Size::Fill, Size::Fill);
-    caption(
-        world,
-        editors,
-        "Select a note to begin. Drafts stay here when you switch surfaces.",
-    );
+    // Shown instead of the editors while no note is open.
+    let landing = column(world, content, Size::Fill, Size::Fill);
+    world.insert(landing, Hidden);
     let status = column(world, content, Size::Fill, Size::Px(28.));
     world.get_mut::<Layout>(status).unwrap().padding = 6.;
     world.insert_resource(Notes {
@@ -400,6 +399,7 @@ pub fn mount(world: &mut World, parent: Entity) {
         tabs: Some(tabs),
         notice: Some(notice),
         editors: Some(editors),
+        landing: Some(landing),
         search: Some(search),
         rows: Some(rows),
         header: Some(header),
@@ -717,6 +717,80 @@ fn library_model(n: &mut Notes) -> (Vec<TreeNode>, Vec<NodeId>) {
     }
     (nodes, expanded)
 }
+/// No note open: write something new, or pick up where you left off.
+fn landing(world: &mut World, n: &mut Notes) {
+    let (Some(landing), Some(editors)) = (n.landing, n.editors) else {
+        return;
+    };
+    for child in children_of(world, landing) {
+        despawn(world, child);
+    }
+    let empty = n.views.is_empty();
+    for (e, shown) in [(landing, empty), (editors, !empty)] {
+        if shown {
+            world.remove::<Hidden>(e);
+        } else {
+            world.insert(e, Hidden);
+        }
+    }
+    if !empty {
+        return;
+    }
+    let l = visual::landing(
+        world,
+        landing,
+        Icon::Book,
+        "Notes",
+        "Your vault in Markdown. Write, link and search notes Medousa can read too.",
+    );
+    for (icon, label, action) in [
+        (
+            Icon::Plus,
+            "New note",
+            Action::Manage(management::Action::New),
+        ),
+        (Icon::Search, "Search", Action::SearchList),
+        (Icon::Folder, "Folders", Action::Browse(Browse::Folders)),
+        (Icon::RefreshCw, "Refresh", Action::Refresh),
+    ] {
+        let id = next();
+        let enabled = !matches!(action, Action::Refresh) || n.list_pending.is_none();
+        visual::landing_tile(world, l.actions, id, icon, label, enabled);
+        n.actions.insert(id, action);
+    }
+    // Recently opened first, then most recently changed.
+    let mut notes: Vec<_> = n.list.iter().collect();
+    let rank = |p: &str| n.recent.iter().position(|r| r == p).unwrap_or(usize::MAX);
+    notes.sort_by(|a, b| {
+        rank(&a.path)
+            .cmp(&rank(&b.path))
+            .then(b.modified_at_utc.cmp(&a.modified_at_utc))
+    });
+    let rows: Vec<_> = notes
+        .into_iter()
+        .take(6)
+        .map(|v| {
+            let title = if v.title.trim().is_empty() {
+                v.path.rsplit('/').next().unwrap_or(&v.path).to_owned()
+            } else {
+                v.title.clone()
+            };
+            (
+                v.path.clone(),
+                title,
+                visual::relative_day(v.modified_at_utc),
+            )
+        })
+        .collect();
+    if !rows.is_empty() {
+        visual::landing_section(world, l.list, "Recent");
+    }
+    for (path, title, when) in rows {
+        let id = next();
+        visual::landing_row(world, l.list, id, &title, Some(when));
+        n.actions.insert(id, Action::Open(path));
+    }
+}
 fn render(world: &mut World, n: &mut Notes) {
     crate::ui::chrome::clear_document_tabs(world, true);
     let (Some(rows), Some(toolbar)) = (n.rows, n.toolbar) else {
@@ -733,6 +807,7 @@ fn render(world: &mut World, n: &mut Notes) {
         }
     }
     n.actions.clear();
+    landing(world, n);
     sidebar_header(world, n, header);
     if n.list_pending.is_some() {
         caption(world, rows, "Loading vault notes…");
@@ -812,8 +887,8 @@ fn render(world: &mut World, n: &mut Notes) {
     } else {
         world.insert(formatting, Hidden);
     }
+    // Nothing open: the landing names the place; the toolbar stays empty.
     let Some(path) = n.selected.clone() else {
-        caption(world, toolbar, "Notes");
         return;
     };
     sync_rich(world, n, &path);

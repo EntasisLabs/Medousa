@@ -6,6 +6,8 @@ use rndr_core::*;
 use std::sync::{Arc, Mutex, mpsc};
 
 pub enum Command {
+    Bot(crate::bot_backend::Request),
+    Navigation(crate::nav_layout::Command),
     Preview(media_preview::Key),
     Artifact(crate::artifact_preview::Request),
     Library(crate::artifacts::Command),
@@ -30,6 +32,8 @@ struct Stamp {
     binding: crate::routing::Binding,
 }
 enum Update {
+    Bot(crate::bot_backend::Update),
+    Navigation(crate::nav_layout::Update),
     Note(crate::notes::NoteUpdate),
     Code(crate::code::CodeUpdate),
     Review(crate::reviews::Update),
@@ -104,6 +108,8 @@ impl Auxiliary {
                         return;
                     }
                     let result=match command {
+                    Command::Bot(c)=>Ok(Update::Bot(crate::bot_backend::execute(&client,c).await)),
+                    Command::Navigation(c)=>Ok(Update::Navigation(crate::nav_layout::execute(&client,c).await)),
                     Command::Library(c)=>Ok(Update::Library(crate::artifacts::execute(&client,c).await)),
                     Command::Artifact(c)=> { let _permit=previews.acquire_owned().await.expect("preview semaphore"); Ok(Update::Artifact(crate::artifact_preview::execute(&client,c).await)) },
                     Command::Preview(c)=> { let _permit=previews.acquire_owned().await.expect("preview semaphore"); Ok(Update::Preview(media_preview::execute(&client,c).await)) },
@@ -156,6 +162,8 @@ pub fn tick(world: &mut World) {
             }
         }
         match update {
+            Update::Bot(u) => crate::bots::apply(world, u),
+            Update::Navigation(u) => crate::bots::apply_nav(world, u),
             Update::PeerManagement(u) => crate::peer_management::apply(world, u),
             Update::Peers(u) => crate::peers::apply(world, u),
             Update::Workshop(u) => crate::ui::workshop_status::apply(world, u),
@@ -211,6 +219,42 @@ fn available(world: &World, view: crate::surfaces::SurfaceId) -> bool {
         })
 }
 pub fn dispatch(world: &mut World) {
+    for command in crate::bots::take_commands(world) {
+        if world
+            .resource::<crate::workshops::Workshops>()
+            .and_then(|s| s.auxiliaries.get(&command.binding.authority))
+            .is_some_and(|aux| !aux.tx.is_closed())
+        {
+            send(world, Command::Bot(command));
+        } else {
+            crate::bots::apply(
+                world,
+                crate::bot_backend::Update {
+                    binding: command.binding,
+                    result: Err("Workshop is disconnected. Reconnect and refresh Bots.".into()),
+                },
+            );
+        }
+    }
+    for command in crate::bots::take_nav_commands(world) {
+        if world
+            .resource::<crate::workshops::Workshops>()
+            .and_then(|s| s.auxiliaries.get(&command.authority))
+            .is_some_and(|aux| !aux.tx.is_closed())
+        {
+            send(world, Command::Navigation(command));
+        } else {
+            crate::bots::apply_nav(
+                world,
+                crate::nav_layout::Update {
+                    command,
+                    result: Err(
+                        "Workshop is disconnected. Reconnect and refresh navigation.".into(),
+                    ),
+                },
+            );
+        }
+    }
     // Preview lifetime is a UI concern, including when every source is offline.
     crate::artifact_preview::tick(world);
     if world
@@ -352,6 +396,17 @@ pub fn dispatch(world: &mut World) {
 pub(crate) fn send(world: &World, mut command: Command) {
     use crate::surfaces::SurfaceId as V;
     if let Some(s) = world.resource::<crate::workshops::Workshops>() {
+        let explicit_owner = match &command {
+            Command::Bot(c) => Some(c.binding.authority.clone()),
+            Command::Navigation(c) => Some(c.authority.clone()),
+            _ => None,
+        };
+        if let Some(owner) = explicit_owner {
+            if let Some(aux) = s.auxiliaries.get(&owner) {
+                let _ = aux.tx.send((None, command));
+            }
+            return;
+        }
         let view = match &command {
             Command::Library(_) => Some(V::Artifacts),
             Command::Note(_) => Some(V::Notes),

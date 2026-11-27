@@ -16,6 +16,7 @@ pub fn default_environment_spec(profile_id: impl Into<String>) -> EnvironmentSpe
     let profile_id = profile_id.into();
     let now = Utc::now();
     EnvironmentSpec {
+        nav: None,
         version: ENVIRONMENT_SPEC_VERSION,
         profile_id: profile_id.clone(),
         surfaces: default_surfaces(),

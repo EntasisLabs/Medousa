@@ -352,6 +352,7 @@ fn setup(world: &mut World) {
     let chat_root = crate::surfaces::mount(world, body);
     workshop_status::mount(world, crate::surfaces::rail(world).expect("rail"));
     crate::surfaces::settings_to_foot(world);
+    crate::bots::mount(world, root);
     command_palette::mount(world, chrome::band(world).expect("window band"));
     let (navigation_split, details_split) = workspace::mount(world, chat_root);
     let prefs = world.resource::<workspace::Workspace>().unwrap().prefs;
@@ -1429,7 +1430,8 @@ fn update(world: &mut World) {
         crate::multiplexer::focus_entity(world, intent.entity);
         let host = controls::host_intent(world, &intent);
         if host.as_ref().is_some_and(|h| {
-            crate::workshops::action(world, h)
+            crate::bots::action(world, h)
+                || crate::workshops::action(world, h)
                 || crate::surfaces::action(world, h)
                 || workshop_status::action(world, h)
                 || crate::multiplexer::action(world, h)
@@ -1557,6 +1559,7 @@ fn update(world: &mut World) {
     crate::create::sync(world);
     crate::settings::sync(world);
     crate::peers::sync(world);
+    crate::bots::sync(world);
     crate::multiplexer::sync(world);
     auxiliary::dispatch(world);
     // Every adapter above reads canonical SourceSession text/revision, not its
@@ -2649,7 +2652,7 @@ fn sync(world: &mut World) {
 
 #[cfg(test)]
 #[path = "ui_visual_tests.rs"]
-mod visual_tests;
+pub(crate) mod visual_tests;
 
 #[cfg(test)]
 mod tests {
@@ -4076,4 +4079,29 @@ fn runtime_error_current(world: &mut World, session: &str, error: String) {
     if m.chat.session() == Some(session) {
         m.chat.status = error;
     }
+}
+
+pub(crate) fn active_chat_session(world: &World) -> Option<String> {
+    world
+        .resource::<Model>()
+        .and_then(|m| m.chat.session().map(str::to_owned))
+}
+
+pub(crate) fn bot_identity_left(world: &World, width: f32) -> Option<f32> {
+    let ui = world.resource::<Ui>()?;
+    let bounds = world.get::<Rect>(ui.timeline)?;
+    (bounds.w >= width).then_some(bounds.x + (bounds.w - width) / 2.)
+}
+
+pub(crate) fn bot_composer_identity(world: &mut World, name: Option<&str>) {
+    let Some(editor) = world.resource::<Ui>().map(|ui| ui.composer.editor) else {
+        return;
+    };
+    world.insert(
+        editor,
+        Placeholder::new(
+            name.map(|n| format!("Message {n}…"))
+                .unwrap_or_else(|| "Message Medousa…".into()),
+        ),
+    );
 }

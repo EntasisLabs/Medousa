@@ -24,6 +24,16 @@ describe("Bot avatars", () => {
     expect(botAvatar("mascot:medousa")).toMatchObject({ mascot: "medousa", expression: "default" });
     expect(botAvatar("mascot:seahorse:focus")).toMatchObject({ mascot: "seahorse", expression: "focus" });
   });
+  it("resolves all native catalog slugs to matching canonical artwork", () => {
+    for (const body of BOT_MASCOT_BODIES) {
+      for (const expression of BOT_MASCOT_EXPRESSIONS) {
+        const nativeBody = body.id === "medousa" ? "jellyfish" : body.id;
+        expect(botAvatar(`${nativeBody}-${expression.id}`)).toMatchObject({
+          mascot: body.id, expression: expression.id, legacy: null,
+        });
+      }
+    }
+  });
   it("uses a local default for empty, unknown, or URL references", () => {
     for (const ref of [null, "", "medousa:future", "https://example.com/avatar.svg", "../../image.svg"]) {
       expect(botAvatar(ref)).toMatchObject({ id: DEFAULT_BOT_AVATAR, legacy: null });

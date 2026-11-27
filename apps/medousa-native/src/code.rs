@@ -184,6 +184,7 @@ enum ExplorerPicker {
 }
 #[derive(Default)]
 struct Code {
+    landing: Option<Entity>,
     repositories: HashMap<String, (String, String, String)>,
     explorer_picker: Option<ExplorerPicker>,
     explorer_context: Option<Entity>,
@@ -629,6 +630,9 @@ pub fn mount(w: &mut World, parent: Entity) {
     w.insert(panel, Scroll::default());
     let find_tools = column(w, content, Size::Fill, Size::Hug);
     let editors = column(w, content, Size::Fill, Size::Fill);
+    // Shown instead of the editors while no file is open.
+    let landing = column(w, content, Size::Fill, Size::Fill);
+    w.insert(landing, Hidden);
     // Editor status lives with the editor rather than in a window-wide bar,
     // and only while a file is open.
     let status_line = text(w, content, "", Typography::Caption).unwrap();
@@ -649,12 +653,8 @@ pub fn mount(w: &mut World, parent: Entity) {
         },
     );
     w.insert(status_line, Hidden);
-    caption(
-        w,
-        editors,
-        "Select a project and file. Drafts remain here while you switch surfaces.",
-    );
     w.insert_resource(Code {
+        landing: Some(landing),
         workbench: workbench::Workbench::new(panel),
         rows: Some(rows),
         explorer_filter: Some(filter),
@@ -971,6 +971,83 @@ fn render_explorer_context(w: &mut World, c: &mut Code) {
         button(w, parent, c, "Back to files", Action::ClosePicker, true);
     }
 }
+/// No file open: pick up a project, or jump straight to one of its files.
+fn landing(w: &mut World, c: &mut Code) {
+    let (Some(landing), Some(editors)) = (c.landing, c.editors) else {
+        return;
+    };
+    for child in children_of(w, landing) {
+        despawn(w, child);
+    }
+    let empty = c.views.is_empty();
+    for (e, shown) in [(landing, empty), (editors, !empty)] {
+        if shown {
+            w.remove::<Hidden>(e);
+        } else {
+            w.insert(e, Hidden);
+        }
+    }
+    if !empty {
+        return;
+    }
+    let project = c
+        .selected
+        .as_ref()
+        .and_then(|id| c.projects.iter().find(|p| &p.id == id))
+        .map(|p| p.title.clone());
+    let purpose = match &project {
+        Some(title) => format!("Open a file in {title}, or switch to another project."),
+        None => "Browse and edit your projects. Drafts stay put while you switch views.".into(),
+    };
+    let l = visual::landing(w, landing, Icon::Code, "Code", &purpose);
+    let mut tile = |w: &mut World, c: &mut Code, icon, label: &str, action, enabled| {
+        let id = next();
+        visual::landing_tile(w, l.actions, id, icon, label, enabled);
+        c.actions.insert(id, action);
+    };
+    tile(
+        w,
+        c,
+        Icon::FolderOpen,
+        "Choose project",
+        Action::ChooseProjects,
+        true,
+    );
+    if c.selected.is_some() {
+        tile(
+            w,
+            c,
+            Icon::GitBranch,
+            "Undertakings",
+            Action::ChooseUndertakings,
+            true,
+        );
+    }
+    tile(
+        w,
+        c,
+        Icon::RefreshCw,
+        "Refresh",
+        Action::Refresh,
+        !c.pending.contains_key("projects"),
+    );
+    if !c.projects.is_empty() {
+        visual::landing_section(w, l.list, "Projects");
+    }
+    for p in c.projects.clone().into_iter().take(6) {
+        let id = next();
+        let meta = if c.selected.as_ref() == Some(&p.id) {
+            Some("Current".to_string())
+        } else {
+            c.repositories
+                .get(&p.id)
+                .map(|r| r.2.clone())
+                .filter(|s| !s.is_empty())
+        };
+        visual::landing_row(w, l.list, id, &p.title, meta);
+        c.actions.insert(id, Action::Project(p.id));
+    }
+}
 fn render(w: &mut World, c: &mut Code) {
     crate::ui::chrome::clear_document_tabs(w, false);
     let (Some(rows), Some(toolbar)) = (c.rows, c.toolbar) else {
@@ -984,6 +1061,7 @@ fn render(w: &mut World, c: &mut Code) {
     }
     c.actions.clear();
     c.context_targets.clear();
+    landing(w, c);
     if let Some(actions) = c.explorer_actions {
         for child in children_of(w, actions) {
             despawn(w, child);

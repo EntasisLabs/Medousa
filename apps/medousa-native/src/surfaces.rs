@@ -337,10 +337,84 @@ pub fn settings_to_foot(world: &mut World) {
         return;
     };
     let (rail, tile) = (host.rail, host.tiles[SurfaceId::Settings.index()]);
+    set_parent(world, tile, rail);
     if let Some(children) = world.get_mut::<Children>(rail) {
         children.list.retain(|e| *e != tile);
         children.list.push(tile);
     }
+}
+/// Native-supported destinations; persisted IDs match the shared environment.
+pub(crate) const DESTINATIONS: [(SurfaceId, &str, &str); 11] = [
+    (SurfaceId::Workspace, "home", "Workspace"),
+    (SurfaceId::Chat, "chat", "Chat"),
+    (SurfaceId::Notes, "notes", "Notes"),
+    (SurfaceId::Code, "code", "Code"),
+    (SurfaceId::Terminal, "terminal", "Terminal"),
+    (SurfaceId::Create, "create", "Create"),
+    (SurfaceId::Reviews, "reviews", "Reviews"),
+    (SurfaceId::Calendar, "calendar", "Calendar"),
+    (SurfaceId::Peers, "peers", "Peers"),
+    (SurfaceId::Artifacts, "artifacts", "Artifacts"),
+    (SurfaceId::Settings, "settings", "Settings"),
+];
+pub(crate) fn configure_rail(world: &mut World, ordered: &[(String, bool)]) {
+    let Some(host) = world.resource::<SurfaceHost>() else {
+        return;
+    };
+    let tiles = host.tiles;
+    let rail = host.rail;
+    let active = host.active;
+    let mut order = Vec::new();
+    for (id, visible) in ordered {
+        if let Some((surface, _, _)) = DESTINATIONS.iter().find(|(_, key, _)| key == id) {
+            let tile = tiles[surface.index()];
+            if *visible || *surface == SurfaceId::Settings {
+                world.remove::<Hidden>(tile);
+                if !order.contains(&tile) {
+                    order.push(tile);
+                }
+            } else {
+                world.insert(tile, Hidden);
+                if *surface == active {
+                    select(
+                        world,
+                        if *surface == SurfaceId::Chat {
+                            SurfaceId::Workspace
+                        } else {
+                            SurfaceId::Chat
+                        },
+                    );
+                    // Composition/dirty guards can defer a remote visibility change.
+                    // Never strand the active view without its navigation affordance.
+                    if self::active(world) == *surface {
+                        world.remove::<Hidden>(tile);
+                    }
+                }
+            }
+        }
+    }
+    // Unknown/unsupported entries remain in the daemon document, not this rail.
+    if let Some(children) = world.get_mut::<Children>(rail) {
+        let existing = children.list.clone();
+        let mut destinations: Vec<_> = existing
+            .iter()
+            .copied()
+            .filter(|e| tiles.contains(e))
+            .collect();
+        destinations.sort_by_key(|e| order.iter().position(|v| v == e).unwrap_or(usize::MAX));
+        let mut iter = destinations.into_iter();
+        children.list = existing
+            .into_iter()
+            .map(|e| {
+                if tiles.contains(&e) {
+                    iter.next().unwrap()
+                } else {
+                    e
+                }
+            })
+            .collect();
+    }
+    settings_to_foot(world);
 }
 /// A destination's retained root.
 pub fn root(world: &World, surface: SurfaceId) -> Option<Entity> {
@@ -487,7 +561,11 @@ pub fn chrome(world: &mut World) {
     let Some(host) = world.resource::<SurfaceHost>() else {
         return;
     };
-    let active = host.active.index();
+    let active = if host.active == SurfaceId::Chat && crate::bots::has_active_identity(world) {
+        SURFACE_COUNT // The bot owns this selection; don't also highlight general Chat.
+    } else {
+        host.active.index()
+    };
     let tiles = host.tiles;
     let buttons = host.buttons;
     let rail = host.rail;
@@ -1106,6 +1184,29 @@ mod tests {
         select(app.world_mut(), SurfaceId::Notes);
         select(app.world_mut(), SurfaceId::Code);
         assert!(crate::code::take_commands(app.world_mut()).is_empty());
+    }
+    #[test]
+    fn destination_visibility_is_controlled_only_by_navigation_preferences() {
+        let mut app = app();
+        let host = app.world().resource::<SurfaceHost>().unwrap();
+        for tile in host.tiles {
+            assert_eq!(app.world().get::<Parent>(tile).unwrap().entity, host.rail);
+            assert!(!app.world().has::<Hidden>(tile));
+        }
+        select(app.world_mut(), SurfaceId::Notes);
+        configure_rail(
+            app.world_mut(),
+            &[("notes".into(), false), ("code".into(), true)],
+        );
+        let host = app.world().resource::<SurfaceHost>().unwrap();
+        assert!(
+            app.world()
+                .has::<Hidden>(host.tiles[SurfaceId::Notes.index()])
+        );
+        assert!(
+            !app.world()
+                .has::<Hidden>(host.tiles[SurfaceId::Code.index()])
+        );
     }
     #[test]
     fn rail_is_fixed_width_and_does_not_fetch_notes_until_selected() {

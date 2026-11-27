@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BotNavShortcuts from "./BotNavShortcuts.svelte";
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import { loadReviewsPanel, loadCreatePanel } from "$lib/runtime/viewLoaders";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
@@ -79,7 +80,6 @@
     peersActivity?: number;
     activeProfileLabel?: string;
   }
-
   let {
     active,
     onSelect,
@@ -89,7 +89,6 @@
     peersActivity = 0,
     activeProfileLabel = "Personal",
   }: Props = $props();
-
   const mode = $derived(layout.shellSidebarMode);
   /** List hosted in the rail — may differ from main `active` content surface. */
   const viewSurface = $derived(layout.shellSidebarViewSurface ?? active);
@@ -869,6 +868,7 @@
               {/if}
               {@render railDest(item, index)}
             {/each}
+            <BotNavShortcuts editing={railLayoutEditing} {onSelect} />
             {#if railLayoutEditing && railDragId !== null}
               <div
                 class="workshop-rail-drop-end"

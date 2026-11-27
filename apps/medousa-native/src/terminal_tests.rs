@@ -832,13 +832,16 @@ fn sidebar_only_offers_running_sessions_and_open_undertakings() {
     d.redraw = true;
     tick(w);
     let d = w.resource::<ViewState>().unwrap().0.as_ref().unwrap();
-    assert_eq!(
-        d.actions
-            .values()
-            .filter(|a| matches!(a, Action::Attach(_, _)))
-            .count(),
-        1
-    );
+    // The sidebar and the landing offer the same running shells; count shells.
+    let offered: std::collections::HashSet<_> = d
+        .actions
+        .values()
+        .filter_map(|a| match a {
+            Action::Attach(work, shell) => Some((work.clone(), shell.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(offered.len(), 1);
     let id = *d
         .actions
         .iter()

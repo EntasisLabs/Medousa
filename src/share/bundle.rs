@@ -157,6 +157,7 @@ impl ShareBundle {
         }
         if let Some(environment) = &self.environment {
             let spec = EnvironmentSpec {
+                nav: None,
                 version: 1,
                 profile_id: "share-preview".to_string(),
                 surfaces: environment.surfaces.clone(),

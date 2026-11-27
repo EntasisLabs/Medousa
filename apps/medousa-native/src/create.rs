@@ -62,6 +62,15 @@ impl Starter {
             Starter::Composition => "Image composition",
         }
     }
+    pub(crate) fn icon(self) -> Icon {
+        match self {
+            Starter::Blank => Icon::Square,
+            Starter::Screenshot => Icon::Camera,
+            Starter::Diagram => Icon::Shapes,
+            Starter::Concept => Icon::Frame,
+            Starter::Composition => Icon::Image,
+        }
+    }
     fn title(self) -> &'static str {
         match self {
             Starter::Blank => "Untitled canvas",

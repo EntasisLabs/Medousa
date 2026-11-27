@@ -352,6 +352,28 @@ See [artifacts.md](artifacts.md), [runtime-config.md](runtime-config.md).
 | POST | `/v1/environment/spec/pending/apply` | `environment().apply_pending` |
 | GET (SSE) | `/v1/environment/spec/stream` | `environment().stream_spec` |
 
+Navigation preferences live in the optional profile-scoped `EnvironmentSpec.nav`
+object, persisted and streamed with the spec, not in a device-local preference file:
+
+```json
+{"nav":{"botPins":["bot-id"],"botAccents":{"bot-id":"#6588CC"},"nativeOrder":["home","terminal","chat"],"nativeHidden":["reviews"]}}
+```
+
+`botPins` is an ordered list of daemon Bot IDs (off by default); shells resolve
+current names/avatars through the Bot service and open the Bot's canonical session.
+`botAccents` contains optional `#RRGGBB` colors, retained when a Bot is unpinned.
+Both collections are limited to 256 entries. Shared app destination visibility/order
+continues to use the active layout preset's `surfaces` list. `nativeOrder` is an
+optional native-shell order override; `nativeHidden` may hide native-only Create,
+Reviews, and Terminal destinations where no shared surface exists. These fields do
+not register fictitious shared surfaces or components. Web shells preserve them.
+
+Clients should read the current spec before editing and preserve unrelated fields.
+The full-spec PUT has **no compare-and-swap precondition**; simultaneous writers can
+still conflict. Serialize local mutations per workshop/profile and refresh before
+retrying a save whose acknowledgment was lost. Never carry an asynchronous result
+across workshop/profile switches.
+
 Patch ops (`remove_custom_surface`, `remove_component`, etc.) are **agent-tool only** via `cognition_environment_patch`. Integrators replace the full spec with `PUT /v1/environment/spec` (same as Home).
 
 ---

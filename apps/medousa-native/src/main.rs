@@ -1,3 +1,7 @@
+mod bots;
+mod bot_backend;
+mod bot_assets;
+mod nav_layout;
 mod approvals;
 mod artifact_preview;
 mod artifacts;

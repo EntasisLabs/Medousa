@@ -1679,42 +1679,9 @@ fn tile_label(group: &str) -> String {
 }
 /// Icon over a caption; opens the picker on that kind.
 fn launcher_tile(w: &mut World, s: &mut State, p: Entity, icon: Icon, label: &str, action: Action) {
-    let tile = panel(
-        w,
-        p,
-        Layout {
-            width: Size::Px(72.),
-            gap: 4.,
-            ..Layout::column()
-        },
-    );
-    w.insert(
-        tile,
-        Align {
-            items: Items::Center,
-            ..Align::default()
-        },
-    );
     s.next += 1;
     let id = s.next;
-    let mut props = ButtonProps::new(label, HostIntent::Command(id));
-    props.variant = controls::ButtonVariant::Secondary;
-    let h = controls::IconButton::icon(w, tile, UiId(id), icon, label, props).unwrap();
-    w.insert(h.label, LabelBox::CONTENT);
-    *w.get_mut::<Layout>(h.root).unwrap() = Layout {
-        width: Size::Px(44.),
-        height: Size::Px(44.),
-        ..Layout::row()
-    };
-    w.insert(h.root, Radius(10.));
-    let caption = text(w, tile, label, Typography::Caption).unwrap();
-    w.insert(
-        caption,
-        UiStyle {
-            foreground: Some(crate::native_style::secondary().into()),
-            ..Default::default()
-        },
-    );
+    crate::native_style::landing_tile(w, p, id, icon, label, true);
     s.group_actions.insert(id, action);
 }
 /// Pane-owned actions outlive catalog re-renders; topology rebuilds replace them.
