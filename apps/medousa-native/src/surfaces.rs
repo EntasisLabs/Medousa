@@ -115,7 +115,7 @@ struct SurfaceHost {
     tiles: [Entity; SURFACE_COUNT],
     buttons: [controls::ControlHandle; SURFACE_COUNT],
     icons: [Entity; SURFACE_COUNT],
-    icon_keys: [Option<(u32, [u8; 4])>; SURFACE_COUNT],
+    icon_keys: [Option<(u32, [u8; 4], bool)>; SURFACE_COUNT],
     focus: [Option<Entity>; SURFACE_COUNT],
 }
 fn panel(world: &mut World, parent: Entity, layout: Layout) -> Entity {
@@ -484,7 +484,9 @@ pub fn chrome(world: &mut World) {
         }
         let ink = if pressed && theme.contrast == Contrast::High {
             Token::Canvas
-        } else if i == active || hovered || pressed {
+        } else if i == active {
+            Token::Accent
+        } else if hovered || pressed {
             crate::native_style::text()
         } else {
             crate::native_style::secondary()
@@ -506,13 +508,14 @@ pub fn chrome(world: &mut World) {
         let color = crate::native_style::color(world, ink);
         let rgba =
             [color.r, color.g, color.b, color.a].map(|v| (v.clamp(0., 1.) * 255.).round() as u8);
-        if icon_keys[i] != Some((px, rgba)) {
-            let raster = nav_raster(i, px, rgba);
-            let id = nav_image_id(i, px, rgba);
+        let filled = i == active;
+        if icon_keys[i] != Some((px, rgba, filled)) {
+            let raster = nav_raster(i, px, rgba, filled);
+            let id = nav_image_id(i, px, rgba, filled);
             rndr_render::load_rgba(world, id, raster.width, raster.height, raster.rgba)
                 .expect("valid bundled nav raster");
             world.get_mut::<ImageView>(icons[i]).unwrap().image = id;
-            world.resource_mut::<SurfaceHost>().unwrap().icon_keys[i] = Some((px, rgba));
+            world.resource_mut::<SurfaceHost>().unwrap().icon_keys[i] = Some((px, rgba, filled));
         }
         debug_assert!(world.has::<ImageView>(icons[i]));
         if let Some(semantics) = world.get_mut::<Semantics>(buttons[i].root) {
@@ -528,29 +531,50 @@ pub fn chrome(world: &mut World) {
 
 // The GPU caches textures by identity, so appearance and DPI variants need
 // distinct IDs (re-uploading changed pixels under the same ID stays stale).
-fn nav_image_id(index: usize, px: u32, rgba: [u8; 4]) -> u64 {
+fn nav_image_id(index: usize, px: u32, rgba: [u8; 4], filled: bool) -> u64 {
     0x5355_0000_0000_0000
+        | ((filled as u64) << 46)
         | ((index as u64) << 42)
         | ((px as u64) << 32)
         | u32::from_be_bytes(rgba) as u64
 }
-fn nav_raster(index: usize, px: u32, rgba: [u8; 4]) -> rndr_render::Raster {
-    let source = [
-        include_str!("nav_icons/message-circle.svg"),
-        include_str!("nav_icons/book.svg"),
-        include_str!("nav_icons/code.svg"),
-        include_str!("nav_icons/pen-tool.svg"),
-        include_str!("nav_icons/reviews.svg"),
-        include_str!("nav_icons/calendar.svg"),
-        include_str!("nav_icons/users.svg"),
-        include_str!("nav_icons/settings.svg"),
-        include_str!("nav_icons/artifacts.svg"),
-    ][index];
+fn nav_raster(index: usize, px: u32, rgba: [u8; 4], filled: bool) -> rndr_render::Raster {
+    let source = if filled {
+        [
+            include_str!("nav_icons/message-circle-filled.svg"),
+            include_str!("nav_icons/book-filled.svg"),
+            include_str!("nav_icons/code-filled.svg"),
+            include_str!("nav_icons/pen-tool-filled.svg"),
+            include_str!("nav_icons/reviews-filled.svg"),
+            include_str!("nav_icons/calendar-filled.svg"),
+            include_str!("nav_icons/users-filled.svg"),
+            include_str!("nav_icons/settings-filled.svg"),
+            include_str!("nav_icons/artifacts-filled.svg"),
+        ][index]
+    } else {
+        [
+            include_str!("nav_icons/message-circle.svg"),
+            include_str!("nav_icons/book.svg"),
+            include_str!("nav_icons/code.svg"),
+            include_str!("nav_icons/pen-tool.svg"),
+            include_str!("nav_icons/reviews.svg"),
+            include_str!("nav_icons/calendar.svg"),
+            include_str!("nav_icons/users.svg"),
+            include_str!("nav_icons/settings.svg"),
+            include_str!("nav_icons/artifacts.svg"),
+        ][index]
+    };
     let color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
-    let svg = source.replace("currentColor", &color).replace(
-        "fill=\"none\"",
-        &format!("opacity=\"{}\" fill=\"none\"", rgba[3] as f32 / 255.),
+    let mut svg = source.replace("currentColor", &color);
+    let root_end = svg
+        .find("<svg")
+        .and_then(|i| svg[i..].find('>').map(|j| i + j + 1))
+        .unwrap();
+    svg.insert_str(
+        root_end,
+        &format!("<g opacity=\"{}\">", rgba[3] as f32 / 255.),
     );
+    svg = svg.replace("</svg>", "</g></svg>");
     rndr_render::decode_svg(svg.as_bytes(), px, px).expect("valid bundled nav SVG")
 }
 
@@ -581,6 +605,96 @@ mod tests {
         input.pointer.pressed = pressed;
         input.pointer.down = pressed;
         input.pointer.released = released;
+    }
+    #[test]
+    fn active_nav_alone_is_solid_and_uses_the_theme_accent() {
+        let mut app = app();
+        for contrast in [Contrast::Standard, Contrast::High] {
+            app.world_mut().resource_mut::<UiTheme>().unwrap().contrast = contrast;
+            for surface in [
+                SurfaceId::Chat,
+                SurfaceId::Notes,
+                SurfaceId::Code,
+                SurfaceId::Create,
+                SurfaceId::Reviews,
+                SurfaceId::Calendar,
+                SurfaceId::Peers,
+                SurfaceId::Settings,
+                SurfaceId::Artifacts,
+            ] {
+                select(app.world_mut(), surface);
+                for _ in 0..3 {
+                    app.update();
+                }
+                let host = app.world().resource::<SurfaceHost>().unwrap();
+                for i in 0..SURFACE_COUNT {
+                    let (px, rgba, filled) = host.icon_keys[i].unwrap();
+                    assert_eq!(filled, i == surface.index());
+                    if filled {
+                        let color = crate::native_style::color(app.world(), Token::Accent);
+                        assert_eq!(
+                            rgba,
+                            [color.r, color.g, color.b, color.a]
+                                .map(|v| (v.clamp(0., 1.) * 255.).round() as u8)
+                        );
+                    }
+                    assert_eq!(
+                        app.world().get::<ImageView>(host.icons[i]).unwrap().image,
+                        nav_image_id(i, px, rgba, filled)
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn solid_nav_geometry_and_texture_identity_are_distinct_even_with_equal_colors() {
+        for i in 0..SURFACE_COUNT {
+            for px in [20, 30, 40, 60] {
+                let color = [80, 160, 240, 255];
+                let outline = nav_raster(i, px, color, false);
+                let solid = nav_raster(i, px, color, true);
+                assert_ne!(outline.rgba, solid.rgba, "surface {i}");
+                assert_ne!(
+                    nav_image_id(i, px, color, false),
+                    nav_image_id(i, px, color, true)
+                );
+                let ink = |r: &rndr_render::Raster| {
+                    r.rgba.chunks_exact(4).map(|p| p[3] as u64).sum::<u64>()
+                };
+                assert!(
+                    ink(&solid) > ink(&outline),
+                    "solid surface {i} must have more ink"
+                );
+                let translucent = nav_raster(i, px, [80, 160, 240, 80], true);
+                assert!(translucent.rgba.chunks_exact(4).all(|p| p[3] <= 80));
+            }
+        }
+    }
+    #[test]
+    #[ignore = "Solid/outline companion atlas visual acceptance"]
+    fn solid_nav_atlas_visual_acceptance() {
+        let mut atlas = image::RgbaImage::from_pixel(648, 160, image::Rgba([28, 30, 35, 255]));
+        for i in 0..SURFACE_COUNT {
+            for (row, filled) in [false, true].into_iter().enumerate() {
+                let color = if filled {
+                    [100, 160, 255, 255]
+                } else {
+                    [185, 190, 200, 255]
+                };
+                let r = nav_raster(i, 40, color, filled);
+                let icon = image::RgbaImage::from_raw(r.width, r.height, r.rgba).unwrap();
+                image::imageops::overlay(
+                    &mut atlas,
+                    &icon,
+                    i as i64 * 72 + 16,
+                    row as i64 * 72 + 16,
+                );
+            }
+        }
+        std::fs::create_dir_all("verification").unwrap();
+        atlas
+            .save("verification/native-nav-solid-atlas.png")
+            .unwrap();
     }
     #[test]
     fn nav_icons_are_twenty_points_centered_in_equal_targets() {
@@ -646,9 +760,9 @@ mod tests {
             app.update();
             let host = app.world().resource::<SurfaceHost>().unwrap();
             for i in 0..SURFACE_COUNT {
-                let (px, rgba) = host.icon_keys[i].unwrap();
+                let (px, rgba, filled) = host.icon_keys[i].unwrap();
                 assert_eq!(px, (NAV_ICON * scale).ceil() as u32);
-                let raster = nav_raster(i, px, rgba);
+                let raster = nav_raster(i, px, rgba, filled);
                 assert_eq!((raster.width, raster.height), (px, px));
                 assert!(
                     raster.rgba.chunks_exact(4).any(|p| p[3] > 0 && p[3] < 255),
@@ -656,7 +770,7 @@ mod tests {
                 );
                 assert_eq!(
                     app.world().get::<ImageView>(host.icons[i]).unwrap().image,
-                    nav_image_id(i, px, rgba)
+                    nav_image_id(i, px, rgba, filled)
                 );
             }
             let id = app.world().get::<ImageView>(host.icons[0]).unwrap().image;

@@ -60,7 +60,8 @@ selected mode. Its choices update when the owning workshop's catalog finishes
 loading. Runtimes needing installation or sign-in appear under **Needs setup**.
 Runtime changes are disabled during a turn; a failed selection never silently
 sends the message through Medousa instead. Conversation tabs use selected fill
-without an accent underline, while retaining keyboard focus rings.
+without an accent underline, while retaining keyboard focus rings. The active
+sidebar workspace uses a solid, theme-accent icon; inactive icons remain outlined.
 
 For Medousa's own runtime, select the model name below the composer, choose a
 **provider**, then choose one of that provider's models. **All providers** goes
