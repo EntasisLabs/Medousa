@@ -215,6 +215,7 @@ struct Code {
     open_tabs: Vec<Key>,
     buffers: HashMap<Key, Buffer>,
     views: HashMap<Key, View>,
+    workspace_visible: HashSet<Key>,
     sessions: HashMap<String, Session>,
     pending: HashMap<String, u64>,
     queue: Vec<CodeCommand>,
@@ -1330,13 +1331,81 @@ fn render(w: &mut World, c: &mut Code) {
                 w.insert(bar.root, Hidden);
             }
         }
-        if selected.as_ref() == Some(key) {
+        if selected.as_ref() == Some(key) || c.workspace_visible.contains(key) {
             w.remove::<Hidden>(v.handle.root);
         } else {
             w.insert(v.handle.root, Hidden);
         }
     }
 }
+/// A source pane retains its undertaking identity, document and editor history.
+#[derive(Clone, Debug)]
+pub struct WorkspaceItem {
+    pub work: String,
+    pub path: String,
+    pub title: String,
+    pub entity: Entity,
+    pub dirty: bool,
+}
+pub fn workspace_items(w: &World) -> Vec<WorkspaceItem> {
+    let Some(c) = w.resource::<Code>() else {
+        return Vec::new();
+    };
+    c.open_tabs
+        .iter()
+        .filter_map(|key| {
+            let view = c.views.get(key)?;
+            let buffer = c.buffers.get(key)?;
+            Some(WorkspaceItem {
+                work: key.0.clone(),
+                path: key.1.clone(),
+                title: key.1.rsplit('/').next().unwrap_or(&key.1).into(),
+                entity: view.handle.root,
+                dirty: buffer.dirty(),
+            })
+        })
+        .collect()
+}
+/// Host-owned placement, independent of the canonical source selection.
+pub fn workspace_show(w: &mut World, keys: &[(String, String)]) {
+    let Some(state) = w.resource_mut::<Code>() else {
+        return;
+    };
+    let mut c = std::mem::take(state);
+    c.workspace_visible = keys
+        .iter()
+        .filter(|k| c.views.contains_key(*k))
+        .cloned()
+        .collect();
+    let selected = c.key();
+    for (key, view) in &c.views {
+        if selected.as_ref() == Some(key) || c.workspace_visible.contains(key) {
+            w.remove::<Hidden>(view.handle.root);
+        } else {
+            w.insert(view.handle.root, Hidden);
+        }
+    }
+    *w.resource_mut::<Code>().unwrap() = c;
+}
+pub fn workspace_focus(w: &mut World, work: &str, path: &str) -> bool {
+    if w.resource::<Code>().is_some_and(|c| composing(w, c)) {
+        return false;
+    }
+    let Some(c) = w.resource_mut::<Code>() else {
+        return false;
+    };
+    let key = (work.to_owned(), path.to_owned());
+    if !c.views.contains_key(&key) || !c.open_tabs.contains(&key) {
+        return false;
+    }
+    if c.key().as_ref() != Some(&key) {
+        c.selected = Some(work.into());
+        c.current.insert(work.into(), path.into());
+        c.redraw = true;
+    }
+    true
+}
+
 /// Called only when the effective theme changes, including retained hidden files.
 pub fn refresh_appearance(w: &mut World) {
     let views = w
@@ -1373,7 +1442,7 @@ pub fn sync(w: &mut World) {
             c.redraw = true;
         }
     }
-    if crate::surfaces::active(w) == crate::surfaces::SurfaceId::Code {
+    if crate::surfaces::effective(w) == crate::surfaces::SurfaceId::Code {
         context_events(w, &mut c);
     }
     for event in events::<TabStripEvent>(w).to_vec() {
@@ -1645,7 +1714,7 @@ pub fn keyboard(w: &mut World) {
     if crate::terminal::focused(w) {
         return;
     }
-    if crate::surfaces::active(w) != crate::surfaces::SurfaceId::Code
+    if crate::surfaces::effective(w) != crate::surfaces::SurfaceId::Code
         || w.resource::<Code>().is_none_or(|c| composing(w, c))
         || w.resource::<Input>()
             .is_some_and(|i| !i.ime_preedit.is_empty() || !i.ime_commit.is_empty())
@@ -1719,11 +1788,18 @@ pub fn shortcut(w: &mut World, command: &str) -> bool {
 /// nothing changes here either.
 pub(crate) fn open_file(w: &mut World, work: &str, path: &str) {
     crate::surfaces::select(w, crate::surfaces::SurfaceId::Code);
-    if crate::surfaces::active(w) != crate::surfaces::SurfaceId::Code {
+    if crate::surfaces::effective(w) != crate::surfaces::SurfaceId::Code {
         return;
     }
+    let _ = workspace_open(w, work, path);
+}
+/// Reopen exactly this undertaking file, retaining all other buffers and navigation.
+pub(crate) fn workspace_open(w: &mut World, work: &str, path: &str) -> bool {
+    if work.is_empty() || path.is_empty() || !can_deactivate(w) {
+        return false;
+    }
     let Some(mut c) = w.resource_mut::<Code>().map(std::mem::take) else {
-        return;
+        return false;
     };
     if c.selected.as_deref() != Some(work) {
         c.selected = Some(work.to_owned());
@@ -1743,6 +1819,7 @@ pub(crate) fn open_file(w: &mut World, work: &str, path: &str) {
     c.redraw = true;
     *w.resource_mut::<Code>().unwrap() = c;
     sync(w);
+    true
 }
 /// Link lines are one-based, while the retained workbench jump is zero-based.
 /// Keep a jump pending when the daemon load has not produced a view yet.
@@ -1751,7 +1828,7 @@ pub(crate) fn open_location(w: &mut World, work: &str, path: &str, line: Option<
         return;
     }
     open_file(w, work, path);
-    if crate::surfaces::active(w) != crate::surfaces::SurfaceId::Code {
+    if crate::surfaces::effective(w) != crate::surfaces::SurfaceId::Code {
         return;
     }
     if let Some(line) = line {
@@ -2238,3 +2315,21 @@ pub fn apply(w: &mut World, u: CodeUpdate) {
 #[cfg(test)]
 #[path = "code_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod workspace_open_tests {
+    use super::*;
+    #[test]
+    fn workspace_open_exact_file_without_navigation() {
+        let mut app = crate::ui::app();
+        app.update();
+        let w = app.world_mut();
+        let before = crate::surfaces::active(w);
+        assert!(workspace_open(w, "exact-work", "src/exact.rs"));
+        assert_eq!(crate::surfaces::active(w), before);
+        let c = w.resource::<Code>().unwrap();
+        assert_eq!(c.selected.as_deref(), Some("exact-work"));
+        assert!(c.queue.iter().any(|c| matches!(&c.operation, Operation::Load((work, path)) if work == "exact-work" && path == "src/exact.rs")));
+        assert!(!workspace_open(w, "", "src/exact.rs"));
+    }
+}

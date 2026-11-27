@@ -98,6 +98,7 @@ enum Browse {
 mod sidebar;
 use sidebar::{Picker, open_picker, sidebar_header};
 struct View {
+    root: Entity,
     document: DocumentId,
     captured_revision: Option<Revision>,
     handle: EditorSurfaceHandle,
@@ -139,6 +140,7 @@ struct Notes {
     expanded: std::collections::HashSet<String>,
     core: VaultBufferCore,
     views: HashMap<String, View>,
+    workspace_visible: std::collections::HashSet<String>,
     tab_order: Vec<String>,
     selected: Option<String>,
     actions: HashMap<u64, Action>,
@@ -815,6 +817,11 @@ fn render(world: &mut World, n: &mut Notes) {
         return;
     };
     sync_rich(world, n, &path);
+    for visible in n.workspace_visible.clone() {
+        if visible != path {
+            sync_rich(world, n, &visible);
+        }
+    }
     // Writing gets a compact row of format glyphs; quote, undo and redo sit
     // in the "…" menu, and the editor keeps its own undo keys.
     if n.live {
@@ -967,25 +974,35 @@ fn render(world: &mut World, n: &mut Notes) {
     if let Some(error) = n.errors.get(&path) {
         caption(world, notice, error);
     }
+    sync_visibility(world, n);
+}
+
+fn sync_visibility(world: &mut World, n: &Notes) {
     for (p, v) in &n.views {
+        let visible = n.workspace_visible.contains(p) || n.selected.as_ref() == Some(p);
+        if visible {
+            world.remove::<Hidden>(v.root);
+        } else {
+            world.insert(v.root, Hidden);
+        }
         if let Some(bar) = v.find {
-            if *p == path && n.source && v.find_open {
+            if visible && n.source && v.find_open {
                 world.remove::<Hidden>(bar.root);
             } else {
                 world.insert(bar.root, Hidden);
             }
         }
-        if *p == path && n.source {
+        if visible && n.source {
             world.remove::<Hidden>(v.handle.root);
         } else {
             world.insert(v.handle.root, Hidden);
         }
-        if *p == path && n.live {
+        if visible && n.live {
             world.remove::<Hidden>(v.rich.root);
         } else {
             world.insert(v.rich.root, Hidden);
         }
-        if *p == path && !n.source && !n.live {
+        if visible && !n.source && !n.live {
             world.remove::<Hidden>(v.preview);
             if let Some(b) = n.core.get(p) {
                 let source = document_body(&b.content);
@@ -999,6 +1016,68 @@ fn render(world: &mut World, n: &mut Notes) {
         }
     }
 }
+
+/// A retained note pane. Reparent `entity`, never recreate its editors.
+#[derive(Clone, Debug)]
+pub struct WorkspaceItem {
+    pub path: String,
+    pub title: String,
+    pub entity: Entity,
+    pub dirty: bool,
+}
+pub fn workspace_items(world: &World) -> Vec<WorkspaceItem> {
+    let Some(n) = world.resource::<Notes>() else {
+        return Vec::new();
+    };
+    n.tab_order
+        .iter()
+        .filter_map(|path| {
+            let view = n.views.get(path)?;
+            let buffer = n.core.get(path)?;
+            Some(WorkspaceItem {
+                path: path.clone(),
+                title: buffer.title.clone(),
+                entity: view.root,
+                dirty: buffer.dirty,
+            })
+        })
+        .collect()
+}
+/// Empty placement restores dedicated Notes visibility. The host owns reparenting.
+pub fn workspace_show(world: &mut World, paths: &[String]) {
+    let Some(state) = world.resource_mut::<Notes>() else {
+        return;
+    };
+    let mut n = std::mem::take(state);
+    n.workspace_visible = paths
+        .iter()
+        .filter(|p| n.views.contains_key(*p))
+        .cloned()
+        .collect();
+    sync_visibility(world, &n);
+    *world.resource_mut::<Notes>().unwrap() = n;
+}
+/// Change command context without changing navigation or replacing a document.
+pub fn workspace_focus(world: &mut World, path: &str) -> bool {
+    if world
+        .resource::<Notes>()
+        .is_some_and(|n| !can_deactivate_views(world, n))
+    {
+        return false;
+    }
+    let Some(n) = world.resource_mut::<Notes>() else {
+        return false;
+    };
+    if !n.views.contains_key(path) {
+        return false;
+    }
+    if n.selected.as_deref() != Some(path) {
+        n.selected = Some(path.into());
+        n.redraw = true;
+    }
+    true
+}
+
 pub(crate) fn link_notice(world: &mut World, path: &str, message: &str) {
     if let Some(n) = world.resource_mut::<Notes>() {
         n.errors.insert(path.into(), message.into());
@@ -1039,17 +1118,28 @@ pub(crate) fn selected_path_fixture(world: &World) -> Option<String> {
 }
 pub(crate) fn open_path(world: &mut World, path: String, heading: Option<String>) {
     crate::surfaces::select(world, crate::surfaces::SurfaceId::Notes);
-    if crate::surfaces::active(world) != crate::surfaces::SurfaceId::Notes {
+    if crate::surfaces::effective(world) != crate::surfaces::SurfaceId::Notes {
         return;
     }
+    let _ = open_path_retained(world, path, heading);
+}
+/// Request an exact existing note without selecting the dedicated Notes view.
+/// The caller must verify the workshop binding before entering this loader.
+pub(crate) fn workspace_open(world: &mut World, path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    open_path_retained(world, path.to_owned(), None)
+}
+fn open_path_retained(world: &mut World, path: String, heading: Option<String>) -> bool {
     let Some(mut n) = world.resource_mut::<Notes>().map(std::mem::take) else {
-        return;
+        return false;
     };
     capture(world, &mut n);
     capture_rich(world, &mut n);
-    if !can_deactivate_views(world, &n) {
+    if !can_deactivate_views(world, &n) || n.management.pending.is_some() && !n.initializing {
         *world.resource_mut::<Notes>().unwrap() = n;
-        return;
+        return false;
     }
     n.pending_heading = heading.filter(|h| !h.is_empty()).map(|h| (path.clone(), h));
     if n.pending_heading.is_some() {
@@ -1064,6 +1154,7 @@ pub(crate) fn open_path(world: &mut World, path: String, heading: Option<String>
         open_note(world, &mut n, path);
     }
     *world.resource_mut::<Notes>().unwrap() = n;
+    true
 }
 fn open_note(world: &mut World, n: &mut Notes, path: String) {
     if n.management.pending.is_some() {
@@ -1347,7 +1438,7 @@ pub fn tick(world: &mut World) {
 }
 /// Consume only Notes primary-F presses. Keep arrival order for other widgets.
 pub fn keyboard(world: &mut World) {
-    if crate::surfaces::active(world) != crate::surfaces::SurfaceId::Notes
+    if crate::surfaces::effective(world) != crate::surfaces::SurfaceId::Notes
         || !can_deactivate(world)
         || world
             .resource::<Input>()
@@ -1399,18 +1490,25 @@ pub fn shortcut(world: &mut World, command: &str) -> bool {
     let Some(n) = world.resource::<Notes>() else {
         return false;
     };
-    if command != "find"
+    if !matches!(command, "find" | "save" | "write" | "read" | "source")
         || !can_deactivate_views(world, n)
         || !n.selected.as_ref().is_some_and(|p| n.views.contains_key(p))
     {
         return false;
     }
+    let requested = match command {
+        "save" => Action::Save,
+        "write" => Action::Write,
+        "read" => Action::Read,
+        "source" => Action::ToggleSource,
+        _ => Action::Find,
+    };
     let id = next();
     world
         .resource_mut::<Notes>()
         .unwrap()
         .actions
-        .insert(id, Action::Find);
+        .insert(id, requested);
     action(world, &HostIntent::Command(id))
 }
 
@@ -1465,7 +1563,8 @@ pub fn action(world: &mut World, host: &HostIntent) -> bool {
         Action::Find => {
             if can_deactivate_views(world, &n) {
                 if let Some(v) = n.selected.as_ref().and_then(|p| n.views.get_mut(p)) {
-                    if let Some(parent) = n.find_tools {
+                    if n.find_tools.is_some() {
+                        let parent = v.root;
                         if v.find.is_none() {
                             v.find = rndr_ui::source_tools::FindBar::mount(
                                 world,
@@ -1764,9 +1863,10 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                                 despawn(world, child);
                             }
                         }
+                        let root = column(world, parent, Size::Fill, Size::Fill);
                         let handle = EditorSurface::mount(
                             world,
-                            parent,
+                            root,
                             UiId(next()),
                             EditorSurfaceProps::new(document, format!("Edit note {path}")),
                         )
@@ -1795,7 +1895,7 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                             world,
                             document_body(&n.core.get(&path).unwrap().content),
                         );
-                        set_parent(world, preview, parent);
+                        set_parent(world, preview, root);
                         world.insert(preview, visual::ReadingDocument);
                         world.insert(
                             preview,
@@ -1818,7 +1918,7 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                             .open(document_body(&n.core.get(&path).unwrap().content));
                         let rich = MarkdownSurface::mount(
                             world,
-                            parent,
+                            root,
                             UiId(next()),
                             MarkdownSurfaceProps::new(rich_document, format!("Write note {path}")),
                         )
@@ -1827,6 +1927,7 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                         n.views.insert(
                             path.clone(),
                             View {
+                                root,
                                 document,
                                 captured_revision: None,
                                 handle,
@@ -1876,3 +1977,29 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
 #[cfg(test)]
 #[path = "notes_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod workspace_open_tests {
+    use super::*;
+    #[test]
+    fn workspace_open_exact_note_without_navigation() {
+        let mut app = crate::ui::app();
+        app.update();
+        let w = app.world_mut();
+        let before = crate::surfaces::active(w);
+        // Bypass the asynchronous identity handshake for this loader unit test.
+        let n = w.resource_mut::<Notes>().unwrap();
+        n.initializing = false;
+        n.management.pending = None;
+        assert!(workspace_open(w, "folder/exact.md"));
+        assert_eq!(crate::surfaces::active(w), before);
+        let n = w.resource::<Notes>().unwrap();
+        assert_eq!(n.selected.as_deref(), Some("folder/exact.md"));
+        assert!(
+            n.queue
+                .iter()
+                .any(|c| matches!(&c.operation, Operation::Load(p) if p == "folder/exact.md"))
+        );
+        assert!(!workspace_open(w, ""));
+    }
+}

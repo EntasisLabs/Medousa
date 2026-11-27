@@ -35,7 +35,7 @@ pub(crate) mod collaboration;
 #[path = "command_palette.rs"]
 mod command_palette;
 #[path = "conversations.rs"]
-mod conversations;
+pub(crate) mod conversations;
 #[path = "model_picker.rs"]
 mod model_picker;
 #[path = "workshop_status.rs"]
@@ -1319,10 +1319,11 @@ fn update(world: &mut World) {
         apply_reply(world, reply);
     }
     crate::navigation::tick(world);
+    crate::multiplexer::input(world);
     crate::terminal::tick(world);
     refresh_idle_chat(world);
     crate::surfaces::remember_focus(world);
-    let chat_active = crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat;
+    let chat_active = crate::surfaces::effective(world) == crate::surfaces::SurfaceId::Chat;
     if chat_active {
         conversations::focus_from_input(world);
     }
@@ -1379,16 +1380,21 @@ fn update(world: &mut World) {
         composer_file_drops(world);
     }
     // Canonical FindBar consumes its source-edit intents before app routing.
-    if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Code {
+    if crate::surfaces::effective(world) == crate::surfaces::SurfaceId::Code {
         crate::code::keyboard(world);
+    }
+    if crate::surfaces::effective(world) == crate::surfaces::SurfaceId::Notes {
+        crate::notes::keyboard(world);
     }
     rndr_ui::source_tools::apply_find_bars(world);
     for intent in take_action_intents(world) {
+        crate::multiplexer::focus_entity(world, intent.entity);
         let host = controls::host_intent(world, &intent);
         if host.as_ref().is_some_and(|h| {
             crate::workshops::action(world, h)
                 || crate::surfaces::action(world, h)
                 || workshop_status::action(world, h)
+                || crate::multiplexer::action(world, h)
         }) {
             continue;
         }
@@ -1398,7 +1404,7 @@ fn update(world: &mut World) {
             crate::sidebars::toggle(world);
             continue;
         }
-        match crate::surfaces::active(world) {
+        match crate::surfaces::effective(world) {
             crate::surfaces::SurfaceId::Notes => {
                 if let Some(host) = host {
                     crate::notes::action(world, &host);
@@ -1453,6 +1459,7 @@ fn update(world: &mut World) {
                 }
                 continue;
             }
+            crate::surfaces::SurfaceId::Workspace => continue,
             crate::surfaces::SurfaceId::Chat => {}
         }
         conversations::focus_entity(world, intent.entity);
@@ -1476,7 +1483,7 @@ fn update(world: &mut World) {
             }
         }
     }
-    if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat
+    if crate::surfaces::effective(world) == crate::surfaces::SurfaceId::Chat
         && events::<Submitted>(world)
             .iter()
             .any(|s| s.entity == ui.search)
@@ -1498,7 +1505,10 @@ fn update(world: &mut World) {
     }
     // Hidden chat transport/model updates above remain live; presentation catches
     // up on return instead of reconciling all chat controls on every Code keystroke.
-    if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat {
+    if matches!(
+        crate::surfaces::active(world),
+        crate::surfaces::SurfaceId::Chat | crate::surfaces::SurfaceId::Workspace
+    ) {
         conversations::sync_all(world);
     }
     crate::notes::tick(world);
@@ -1509,6 +1519,7 @@ fn update(world: &mut World) {
     crate::create::sync(world);
     crate::settings::sync(world);
     crate::peers::sync(world);
+    crate::multiplexer::sync(world);
     auxiliary::dispatch(world);
     // Every adapter above reads canonical SourceSession text/revision, not its
     // notification queue. Acknowledge after capture, including parked drafts:
@@ -2259,6 +2270,21 @@ fn restore_history_model(m: &mut Model) {
 
 fn sync(world: &mut World) {
     let ui = *world.resource::<Ui>().unwrap();
+    // The same retained chat can now live in a narrow split group. Fitted
+    // greeting text must wrap inside that pane, not its former window width.
+    if let Some(width) = world
+        .get::<Rect>(ui.empty_presence)
+        .map(|r| r.w)
+        .filter(|w| *w > 0.)
+    {
+        for entity in children_of(world, ui.empty_presence) {
+            if let Some(fit) = world.get_mut::<visual::FitLabel>(entity) {
+                if fit.min == 0. && fit.label == entity {
+                    fit.max = width.clamp(1., 360.);
+                }
+            }
+        }
+    }
     // Borrow presentation data, temporarily moving only the core adapter. RNDR
     // World deliberately has no resource removal API. No parallel state owner.
     let (chat, loading, models, selected, sessions, modes, mode, depth, document, connected) = {

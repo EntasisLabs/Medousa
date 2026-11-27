@@ -1,4 +1,4 @@
-# Native workspace: Chat, Notes, Code, Reviews, and Calendar
+# Native workspace: focused views and mixed desktops
 
 The native app in `apps/medousa-native` is the RNDR desktop implementation under
 active development. It is separate from the older `apps/rndr-home` preview and
@@ -23,6 +23,55 @@ belongs to Chat; it is not the app-level navigation.
 Switching to Notes, Code, or Reviews keeps chat tabs, split panes, unsent drafts, undo history and
 background streams in this window. Returning restores the chat workspace. Chat
 send shortcuts do not send a message while another workspace is active.
+
+## Arrange a mixed Workspace
+
+The **Workspace** home icon is the first destination in the navigation rail. Chat, Notes, Code,
+Terminal, Reviews, and Create remain focused views; opening Workspace does not
+turn their navigation sidebars into nested panes.
+
+Workspace's sidebar lists **virtual desktops** and the resources currently open
+in this window. Choose a resource to open its existing identity in the focused
+tab group. **New chat** and **New shell** create through their normal authenticated
+connections; **Browse** goes to a focused view to create or open other content,
+then return to Workspace and select that resource. Importing does not copy a
+conversation, note, file, review, canvas, or shell.
+
+- Edit the name field, then use **New desktop** or **Rename desktop**. Desktops
+  can also be duplicated or deleted; deleting one removes its arrangement, not
+  its resources.
+- Use **Split right** / **Split down** to add groups, or drag a tab to a group's
+  edge to split. Drag tabs within or between groups to reorder or move them.
+  Groups can mix chat, shell, note, code, review, and Create tabs. Split sashes
+  resize nested groups. **Zoom / restore pane** temporarily expands the focused
+  group without changing the arrangement.
+- Select **Save arrangement** to save geometry under the name field's value.
+  Saved layouts are reusable split/group arrangements, not copies of resources;
+  applying one retains the desktop's current tabs.
+- Keyboard and composer actions follow the focused content pane, not the rail
+  icon. Active input-method composition prevents switching or rearranging its
+  editor. Hidden desktops retain live conversations, shell connections, drafts,
+  editor buffers, undo history, and scroll in this window.
+
+Desktop names, resource references, tab groups, splits, ratios, zoom, and layout
+templates restore from the device-local `native-desktops.json` preference file.
+This file contains no document bodies or credentials. Writes are coalesced and
+atomic; a failed write is reported with a retry action. Closing a tab only removes
+its Workspace reference; it does not kill a shell or discard an unsaved buffer.
+Draft text itself is not restored from this layout file after an app restart.
+
+Saved references reopen only through the exact owning workshop and existing
+resource loaders. A disconnected workshop, unavailable reference, or an unbound
+new-chat/new-shell draft remains explicit rather than creating a replacement or
+opening a same-named file elsewhere. **Open resource** retries. If that content
+kind is bound to another workshop, first choose the owning workshop in its focused
+view and return; existing unsaved-edit guards still apply.
+
+Create and Reviews currently expose their canonical open document/review, rather
+than multiple independent simultaneous editors of that kind. Switching that
+canonical resource does not retarget an older Workspace tab; its reference remains
+available for reopening. This is the initial mixed-workspace implementation, not
+complete behavioral parity with every Tauri multiplexer feature.
 
 ## Write a message and choose a model
 

@@ -865,3 +865,91 @@ fn sidebar_only_offers_running_sessions_and_open_undertakings() {
     action(w, &HostIntent::Command(id));
     assert_eq!(opens.try_recv().unwrap().work, "one");
 }
+
+#[test]
+fn workspace_reparents_live_panes_and_routes_only_focused_input() {
+    let (mut app, mut opens, updates) = fixture();
+    let w = app.world_mut();
+    let first_id = workspace_new(w).unwrap();
+    let mut first = opens.try_recv().unwrap();
+    assert!(first.work.is_empty() && first.create);
+    connected(&updates, &first);
+    tick(w);
+    let second_id = workspace_attach(w, "two".into(), "known".into()).unwrap();
+    let mut second = opens.try_recv().unwrap();
+    assert!(!second.create && second.session.as_deref() == Some("known"));
+    fact(
+        &updates,
+        &second,
+        Fact::Connected {
+            session: "known".into(),
+            cwd: "/two".into(),
+        },
+    );
+    tick(w);
+    assert_eq!(
+        workspace_attach(w, "two".into(), "known".into()),
+        Some(second_id)
+    );
+    assert!(opens.try_recv().is_err());
+    assert_eq!(workspace_selected(w), Some(second_id));
+    let panes = workspace_panes(w);
+    assert_eq!(
+        panes.iter().map(|p| p.0).collect::<Vec<_>>(),
+        [first_id, second_id]
+    );
+    assert_eq!(panes[0].1, "Shell 1");
+    assert_eq!(panes[1].4.as_deref(), Some("known"));
+    let (one, two) = (panes[0].2, panes[1].2);
+    let group = w.spawn((Layout::row(),));
+    set_parent(w, one, group);
+    set_parent(w, two, group);
+    crate::surfaces::select(w, crate::surfaces::SurfaceId::Chat);
+    workspace_show(w, &[first_id, second_id, u64::MAX]);
+    tick(w);
+    for e in [one, two] {
+        assert!(!w.has::<Hidden>(e));
+        assert!(w.has::<CapturesKeys>(e));
+    }
+    while first.frames.try_recv().is_ok() {}
+    while second.frames.try_recv().is_ok() {}
+    w.resource_mut::<Focus>().unwrap().entity = Some(one);
+    rndr_term::write_terminal(w, one, b"focused\r");
+    rndr_term::write_terminal(w, two, b"not-focused\r");
+    tick(w);
+    assert!(matches!(first.frames.try_recv(), Ok(Frame::Input(b)) if b == b"focused\r"));
+    assert!(second.frames.try_recv().is_err());
+    workspace_show(w, &[second_id]);
+    tick(w);
+    assert!(w.has::<Hidden>(one));
+    assert!(!w.has::<CapturesKeys>(one));
+    assert_ne!(w.resource::<Focus>().unwrap().entity, Some(one));
+    fact(
+        &updates,
+        &first,
+        Fact::Output(b"retained output\r\n".to_vec()),
+    );
+    tick(w);
+    assert!(first.cancelled.try_recv().is_err());
+    workspace_restore(w);
+    crate::surfaces::select(w, crate::surfaces::SurfaceId::Terminal);
+    tick(w);
+    assert!(w.has::<Hidden>(one));
+    assert!(!w.has::<Hidden>(two));
+    assert_eq!(workspace_panes(w)[0].2, one);
+    assert!(opens.try_recv().is_err());
+    assert!(second.cancelled.try_recv().is_err());
+    assert!(!can_rebind(w));
+}
+
+#[test]
+fn workspace_api_is_safe_without_mounted_terminal_or_service() {
+    let mut w = World::new();
+    assert!(workspace_panes(&w).is_empty());
+    assert!(workspace_selected(&w).is_none());
+    assert!(workspace_owner(&w).is_none());
+    assert!(workspace_new(&mut w).is_none());
+    assert!(workspace_attach(&mut w, "one".into(), "known".into()).is_none());
+    workspace_show(&mut w, &[1]);
+    workspace_restore(&mut w);
+}

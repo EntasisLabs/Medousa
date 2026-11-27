@@ -276,6 +276,52 @@ pub(crate) fn can_rebind(w: &mut World) -> bool {
     w.insert_resource(s);
     safe
 }
+/// Current review's retained detail + decision form (not its queue sidebar).
+pub(crate) fn workspace_item(w: &World) -> Option<(String, Entity)> {
+    let s = w.resource::<State>()?;
+    let detail = s.detail?;
+    Some((s.work.clone()?, w.get::<Parent>(detail)?.entity))
+}
+/// Reviews owns one retained detail form; refuse switching while a decision is pending.
+pub(crate) fn workspace_open(w: &mut World, work_id: &str) -> bool {
+    if work_id.is_empty() || w.resource::<State>().is_none() {
+        return false;
+    }
+    if w.resource::<State>()
+        .is_some_and(|s| s.work.as_deref() == Some(work_id))
+    {
+        return true;
+    }
+    if !can_rebind(w) {
+        return false;
+    }
+    let mut s = std::mem::take(w.resource_mut::<State>().unwrap());
+    capture(w, &mut s);
+    open_review(&mut s, work_id.to_owned());
+    w.insert_resource(s);
+    true
+}
+fn open_review(s: &mut State, work: String) {
+    save_draft(s);
+    s.changes = false;
+    s.about = false;
+    s.work = Some(work.clone());
+    s.review = Value::Null;
+    s.file = None;
+    clear_files(s);
+    s.confirmation = None;
+    s.uncertain = false;
+    s.message.clear();
+    load_draft(s);
+    s.read_pending = Some(enqueue(
+        s,
+        Kind::Review {
+            work,
+            attempt: None,
+        },
+    ));
+    s.redraw = true;
+}
 pub fn mount(w: &mut World, parent: Entity) {
     view::mount(w, parent);
 }
@@ -333,9 +379,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
         match a {
             Action::Refresh => refresh(&mut s),
             Action::Open(work) => {
-                save_draft(&mut s); s.changes = false; s.about = false; s.work = Some(work.clone()); s.review = Value::Null; s.file = None; clear_files(&mut s);
-                s.file_pending = None; s.confirmation = None; s.uncertain = false; s.message.clear(); load_draft(&mut s);
-                s.read_pending = Some(enqueue(&mut s,Kind::Review { work,attempt:None }));
+                open_review(&mut s, work);
             }
             Action::Candidate(attempt) => {
                 if let Some(work) = s.work.clone() {
@@ -702,4 +746,29 @@ fn file_matches(v: &Value, r: &Revision, path: &str) -> bool {
         && v["path"].as_str() == Some(path)
         && v["baseline_oid"].as_str() == Some(&r.baseline)
         && v["reviewed_oid"].as_str() == Some(&r.head)
+}
+
+#[cfg(test)]
+mod workspace_open_tests {
+    use super::*;
+    #[test]
+    fn workspace_open_exact_review_without_navigation_and_preserves_draft() {
+        let mut app = crate::ui::app();
+        app.update();
+        let w = app.world_mut();
+        let before = crate::surfaces::active(w);
+        assert!(workspace_open(w, "exact-work"));
+        assert_eq!(crate::surfaces::active(w), before);
+        assert!(w.resource::<State>().unwrap().commands.iter().any(
+            |c| matches!(&c.kind, Kind::Review { work, attempt: None } if work == "exact-work")
+        ));
+        w.resource_mut::<State>().unwrap().draft.body = "unsubmitted decision".into();
+        // No mounted body exists until render, so capture leaves the draft intact.
+        assert!(!workspace_open(w, "different-work"));
+        assert_eq!(
+            w.resource::<State>().unwrap().work.as_deref(),
+            Some("exact-work")
+        );
+        assert!(workspace_open(w, "exact-work"));
+    }
 }

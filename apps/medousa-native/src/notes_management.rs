@@ -147,9 +147,8 @@ pub(super) fn clean(n: &Notes, path: &str) -> bool {
 fn forget(w: &mut World, n: &mut Notes, path: &str) {
     n.tab_order.retain(|p| p != path);
     if let Some(v) = n.views.remove(path) {
-        despawn(w, v.handle.root);
-        despawn(w, v.preview);
-        despawn(w, v.rich.root);
+        // All three retained views belong to this wrapper (possibly parked by Workspace).
+        despawn(w, v.root);
         if let Some(bar) = v.find {
             despawn(w, bar.root);
         }

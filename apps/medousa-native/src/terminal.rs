@@ -15,7 +15,7 @@ use rndr_ui::{
 };
 use serde_json::{Value, json};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
 };
 use tokio::sync::{mpsc, oneshot};
@@ -475,6 +475,7 @@ struct View {
     panes: HashMap<u64, Pane>,
     order: Vec<u64>,
     selected: Option<u64>,
+    workspace_visible: HashSet<u64>,
     work: Option<String>,
     projects: Vec<Value>,
     sessions: Vec<Value>,
@@ -541,6 +542,7 @@ pub fn mount_view(w: &mut World, parent: Entity) {
         panes: HashMap::new(),
         order: Vec::new(),
         selected: None,
+        workspace_visible: HashSet::new(),
         work: None,
         projects: Vec::new(),
         sessions: Vec::new(),
@@ -602,6 +604,91 @@ pub fn open_work(w: &mut World, work: String) {
         d.work = Some(work);
         d.redraw = true;
     }
+}
+/// Retained shell attachments in tab order: id, friendly title, entity, work, session.
+/// Entities may be reparented; the transport and terminal emulator remain owned here.
+pub fn workspace_panes(w: &World) -> Vec<(u64, String, Entity, String, Option<String>)> {
+    let Some(d) = w.resource::<ViewState>().and_then(|s| s.0.as_ref()) else {
+        return Vec::new();
+    };
+    d.order
+        .iter()
+        .filter_map(|id| {
+            d.panes.get(id).map(|p| {
+                (
+                    *id,
+                    p.name.clone(),
+                    p.entity,
+                    p.work.clone(),
+                    p.session.clone(),
+                )
+            })
+        })
+        .collect()
+}
+pub fn workspace_selected(w: &World) -> Option<u64> {
+    w.resource::<ViewState>()?.0.as_ref()?.selected
+}
+/// All retained terminals share this binding; source changes are guarded by can_rebind.
+pub fn workspace_owner(w: &World) -> Option<String> {
+    crate::workshops::binding(w, crate::surfaces::SurfaceId::Terminal).map(|b| b.authority)
+}
+/// Declare visible Workspace panes before tick. Pass [] when leaving Workspace.
+/// The caller owns placement and must keep these entities alive when rebuilding groups.
+pub fn workspace_show(w: &mut World, ids: &[u64]) {
+    if let Some(d) = w.resource_mut::<ViewState>().and_then(|s| s.0.as_mut()) {
+        d.workspace_visible = ids
+            .iter()
+            .copied()
+            .filter(|id| d.panes.contains_key(id))
+            .collect();
+    }
+}
+/// Restore focused Terminal ownership without detaching or clearing emulator state.
+pub fn workspace_restore(w: &mut World) {
+    if let Some(d) = w.resource::<ViewState>().and_then(|s| s.0.as_ref()) {
+        let body = d.body;
+        let entities: Vec<_> = d.panes.values().map(|p| p.entity).collect();
+        for entity in entities {
+            set_parent(w, entity, body);
+        }
+    }
+    workspace_show(w, &[]);
+}
+/// Explicitly create a daemon-root shell; never implicitly select an undertaking.
+pub fn workspace_new(w: &mut World) -> Option<u64> {
+    let mut d = w.resource_mut::<ViewState>()?.0.take()?;
+    let before = d.order.len();
+    new_shell(w, &mut d, String::new());
+    let id = (d.order.len() > before).then_some(d.selected).flatten();
+    w.resource_mut::<ViewState>().unwrap().0 = Some(d);
+    id
+}
+/// Attach a known shell, reusing an existing attachment without reconnecting it.
+/// The daemon's normal human-shell validation remains authoritative.
+pub fn workspace_attach(w: &mut World, work: String, session: String) -> Option<u64> {
+    if session.is_empty() {
+        return None;
+    }
+    let mut d = w.resource_mut::<ViewState>()?.0.take()?;
+    let existing = d
+        .panes
+        .iter()
+        .find(|(_, p)| p.work == work && p.session.as_ref() == Some(&session))
+        .map(|(id, _)| *id);
+    let id = if let Some(id) = existing {
+        d.selected = Some(id);
+        d.redraw = true;
+        Some(id)
+    } else if d.panes.len() < 32 && w.resource::<Service>().is_some_and(|s| !s.tx.is_closed()) {
+        let id = add_tab(w, &mut d, work, Some(session));
+        connect(w, &mut d, id, false);
+        Some(id)
+    } else {
+        None
+    };
+    w.resource_mut::<ViewState>().unwrap().0 = Some(d);
+    id
 }
 // Retain names across refresh and detach; catalog order is not shell identity.
 fn shell_name(d: &mut View, session: Option<&str>) -> String {
@@ -701,6 +788,7 @@ fn close(w: &mut World, d: &mut View, id: u64) {
         despawn(w, p.entity);
     }
     d.order.retain(|i| *i != id);
+    d.workspace_visible.remove(&id);
     if d.selected == Some(id) {
         d.selected = d.order.last().copied();
     }
@@ -887,16 +975,23 @@ pub fn tick(w: &mut World) {
         d.catalog_dirty = false;
     }
     for (id, p) in &mut d.panes {
-        let show = d.selected == Some(*id);
+        let workspace = !active && d.workspace_visible.contains(id);
+        let show = if active {
+            d.selected == Some(*id)
+        } else {
+            workspace
+        };
+        let interactive = show && (active || workspace);
         if show {
             w.remove::<Hidden>(p.entity);
         } else {
             w.insert(p.entity, Hidden);
         }
-        input_enabled(w, p.entity, active && show && p.connected);
+        input_enabled(w, p.entity, interactive && p.connected);
+        let focused = w.resource::<Focus>().and_then(|f| f.entity) == Some(p.entity);
         // Hidden/off-surface input is drained and dropped, never replayed.
         let bytes = rndr_term::take_terminal_bytes(w, p.entity).unwrap_or_default();
-        if p.connected && active && show {
+        if p.connected && interactive {
             let mut failed = false;
             let size = w.get::<MonoGrid>(p.entity).map(|g| (g.cols, g.rows));
             if size != p.size
@@ -907,7 +1002,7 @@ pub fn tick(w: &mut World) {
                     p.size = size;
                 }
             }
-            if !bytes.is_empty() {
+            if !bytes.is_empty() && (active || focused) {
                 failed |= p
                     .frames
                     .as_ref()

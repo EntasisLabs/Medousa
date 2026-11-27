@@ -610,6 +610,7 @@ pub fn polish(world: &mut World) {
         crate::surfaces::SurfaceId::Code => "Code",
         crate::surfaces::SurfaceId::Artifacts => "Artifacts",
         crate::surfaces::SurfaceId::Terminal => "Terminal",
+        crate::surfaces::SurfaceId::Workspace => "Workspace",
         _ => "Medousa",
     }
     .into();

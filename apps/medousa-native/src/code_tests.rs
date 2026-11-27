@@ -1550,3 +1550,38 @@ fn navigation_code_line_jump_applies_after_load_and_preserves_source() {
     assert_eq!(doc.text(), "α\nsecond\nthird");
     assert!(!c.buffers[&key].dirty());
 }
+
+#[test]
+fn workspace_reparents_source_without_losing_draft_or_work_identity() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "one", "src/a.rs", "saved", "v1");
+    let k = key("one", "src/a.rs");
+    edit(w, &k, "unsaved draft");
+    load(w, "two", "src/a.rs", "other work", "v2");
+    let items = workspace_items(w);
+    assert_eq!(items.len(), 2);
+    let item = items.iter().find(|i| i.work == "one").unwrap();
+    assert_eq!(item.path, "src/a.rs");
+    assert_eq!(item.title, "a.rs");
+    assert!(item.dirty);
+    let entity = item.entity;
+    let document = w.resource::<Code>().unwrap().views[&k].document;
+    let home = w.resource::<Code>().unwrap().editors.unwrap();
+    let workspace = w.spawn((Layout::column(),));
+    set_parent(w, entity, workspace);
+    workspace_show(w, &[k.clone()]);
+    sync(w);
+    assert!(!w.has::<Hidden>(entity));
+    assert!(workspace_focus(w, "one", "src/a.rs"));
+    assert!(!workspace_focus(w, "missing", "src/a.rs"));
+    workspace_show(w, &[]);
+    set_parent(w, entity, home);
+    sync(w);
+    let c = w.resource::<Code>().unwrap();
+    assert_eq!(c.key(), Some(k.clone()));
+    assert_eq!(c.views[&k].handle.root, entity);
+    assert_eq!(c.views[&k].document, document);
+    assert_eq!(c.buffers[&k].content, "unsaved draft");
+    assert!(c.buffers[&k].dirty());
+}

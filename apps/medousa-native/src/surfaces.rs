@@ -23,7 +23,8 @@ const CREATE: u64 = 0x5355_0007;
 const SETTINGS: u64 = 0x5355_0008;
 const ARTIFACTS: u64 = 0x5355_0009;
 const TERMINAL: u64 = 0x5355_000a;
-const SURFACE_COUNT: usize = 10;
+const WORKSPACE: u64 = 0x5355_000b;
+const SURFACE_COUNT: usize = 11;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SurfaceId {
     Chat,
@@ -36,6 +37,7 @@ pub enum SurfaceId {
     Settings,
     Artifacts,
     Terminal,
+    Workspace,
 }
 impl SurfaceId {
     pub(crate) fn index(self) -> usize {
@@ -50,6 +52,7 @@ impl SurfaceId {
             Self::Settings => 7,
             Self::Artifacts => 8,
             Self::Terminal => 9,
+            Self::Workspace => 10,
         }
     }
 }
@@ -178,6 +181,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         (SETTINGS, Icon::Settings, "Settings"),
         (ARTIFACTS, Icon::Code, "Artifacts"),
         (TERMINAL, Icon::Code, "Terminal"),
+        (WORKSPACE, Icon::Code, "Workspace"),
     ] {
         let tile = panel(
             world,
@@ -259,6 +263,12 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             + 1;
         children.list.insert(after_code, terminal);
     }
+    // Workspace is the home destination visually; stable surface indices stay unchanged.
+    if let Some(children) = world.get_mut::<Children>(rail) {
+        let workspace = tiles[SurfaceId::Workspace.index()];
+        children.list.retain(|e| *e != workspace);
+        children.list.insert(0, workspace);
+    }
     // Do not imply unavailable destinations or settings with dead controls.
     let content = panel(
         world,
@@ -280,6 +290,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         "Settings",
         "Artifacts",
         "Terminal",
+        "Workspace",
     ]
     .map(|name| {
         let entity = panel(
@@ -303,6 +314,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     crate::settings::mount(world, roots[7]);
     crate::artifacts::mount(world, roots[8]);
     crate::terminal::mount_view(world, roots[9]);
+    crate::multiplexer::mount(world, roots[10]);
     for root in &roots[1..] {
         world.insert(*root, Hidden);
     }
@@ -335,6 +347,14 @@ pub fn root(world: &World, surface: SurfaceId) -> Option<Entity> {
     world
         .resource::<SurfaceHost>()
         .map(|h| h.roots[surface.index()])
+}
+/// Action context is the focused content, never the navigation destination.
+pub fn effective(world: &World) -> SurfaceId {
+    if active(world) == SurfaceId::Workspace {
+        crate::multiplexer::focused_surface(world).unwrap_or(SurfaceId::Workspace)
+    } else {
+        active(world)
+    }
 }
 /// The destination rail, once mounted.
 pub fn rail(world: &World) -> Option<Entity> {
@@ -394,10 +414,12 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Settings => !crate::settings::can_deactivate(world),
         SurfaceId::Artifacts => crate::artifacts::composing(world),
         SurfaceId::Terminal => false,
+        SurfaceId::Workspace => !crate::multiplexer::can_deactivate(world),
     };
     if composing {
         return;
     }
+    crate::multiplexer::leaving(world, target);
     remember_focus(world);
     let host = world.resource::<SurfaceHost>().unwrap();
     let roots = host.roots;
@@ -427,6 +449,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Settings => crate::settings::activate(world),
         SurfaceId::Artifacts => crate::artifacts::activate(world),
         SurfaceId::Terminal => crate::terminal::activate(world),
+        SurfaceId::Workspace => crate::multiplexer::activate(world),
     }
     frame_wake(world).wake();
 }
@@ -442,6 +465,7 @@ pub fn action(world: &mut World, intent: &HostIntent) -> bool {
         HostIntent::Command(SETTINGS) => SurfaceId::Settings,
         HostIntent::Command(ARTIFACTS) => SurfaceId::Artifacts,
         HostIntent::Command(TERMINAL) => SurfaceId::Terminal,
+        HostIntent::Command(WORKSPACE) => SurfaceId::Workspace,
         _ => return false,
     };
     select(world, target);
@@ -578,6 +602,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4], filled: bool) -> rndr_render
             include_str!("nav_icons/settings-filled.svg"),
             include_str!("nav_icons/artifacts-filled.svg"),
             include_str!("nav_icons/terminal-filled.svg"),
+            include_str!("nav_icons/workspace-filled.svg"),
         ][index]
     } else {
         [
@@ -591,6 +616,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4], filled: bool) -> rndr_render
             include_str!("nav_icons/settings.svg"),
             include_str!("nav_icons/artifacts.svg"),
             include_str!("nav_icons/terminal.svg"),
+            include_str!("nav_icons/workspace.svg"),
         ][index]
     };
     let color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
@@ -736,6 +762,14 @@ mod tests {
             }
             let w = app.world();
             let host = w.resource::<SurfaceHost>().unwrap();
+            let rail_order = children_of(w, host.rail);
+            assert_eq!(rail_order[0], host.tiles[SurfaceId::Workspace.index()]);
+            let home = w.get::<Rect>(rail_order[0]).unwrap();
+            let chat = w.get::<Rect>(host.tiles[SurfaceId::Chat.index()]).unwrap();
+            assert!(
+                home.y < chat.y,
+                "Workspace must be the first nav destination"
+            );
             for (i, button) in host.buttons.iter().enumerate() {
                 let tile = w.get::<Rect>(host.tiles[i]).unwrap();
                 let rect = w.get::<Rect>(button.root).unwrap();
@@ -765,7 +799,8 @@ mod tests {
                             "Peers",
                             "Settings",
                             "Artifacts",
-                            "Terminal"
+                            "Terminal",
+                            "Workspace"
                         ][i]
                     )
                 );

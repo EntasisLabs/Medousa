@@ -23,6 +23,7 @@ struct Deck {
     shell: ShellCore,
     parked: HashMap<u64, Parked>,
     next: u64,
+    workspace_visible: Vec<u64>,
     split: SplitSashHandle,
     parents: [Entity; 2],
     bodies: [Entity; 2],
@@ -121,6 +122,7 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> Entity {
         shell: ShellCore::new("native-local"),
         parked: HashMap::new(),
         next: 1,
+        workspace_visible: Vec::new(),
         split,
         parents,
         bodies,
@@ -134,6 +136,93 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> Entity {
         empty,
     });
     bodies[0]
+}
+/// A retained chat view; the mixed workspace borrows its entity, never its model.
+#[derive(Clone, Debug)]
+pub(crate) struct WorkspaceChat {
+    pub route: u64,
+    pub session: Option<String>,
+    pub owner: String,
+    pub title: String,
+    pub entity: Entity,
+}
+pub(crate) fn workspace_items(world: &World) -> Vec<WorkspaceChat> {
+    let Some(deck) = world.resource::<Deck>() else {
+        return Vec::new();
+    };
+    let item = |route, m: &Model, ui: &Ui| {
+        let session = m
+            .chat
+            .session()
+            .map(str::to_owned)
+            .or_else(|| m.requested_session.clone());
+        let title = session
+            .as_ref()
+            .and_then(|s| m.sessions.iter().find(|row| &row.0 == s))
+            .map(|row| row.1.clone())
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| {
+                if session.is_some() {
+                    "Untitled chat"
+                } else {
+                    "New chat"
+                }
+                .into()
+            });
+        WorkspaceChat {
+            route,
+            session,
+            owner: m.owner.clone(),
+            title,
+            entity: ui.content,
+        }
+    };
+    let mut items: Vec<_> = deck
+        .parked
+        .iter()
+        .filter(|(r, _)| !deck.closed.contains(r))
+        .map(|(r, p)| item(*r, &p.model, &p.ui))
+        .collect();
+    if let (Some(m), Some(ui)) = (world.resource::<Model>(), world.resource::<Ui>())
+        && !deck.closed.contains(&m.generation)
+    {
+        items.push(item(m.generation, m, ui));
+    }
+    items.sort_by_key(|i| i.route);
+    items
+}
+pub(crate) fn workspace_focus(world: &mut World, route: u64) -> bool {
+    if !workspace_items(world).iter().any(|i| i.route == route) {
+        return false;
+    }
+    if current(world) != route {
+        focus(world, route);
+    }
+    if current(world) == route
+        && !snapshot(world)
+            .layout
+            .tabs
+            .iter()
+            .any(|tab| tab.id() == id(route))
+    {
+        register(world);
+    }
+    current(world) == route
+}
+pub(crate) fn workspace_new(world: &mut World) {
+    open(world, None);
+}
+/// Visibility and parent ownership remain with the mixed workspace coordinator.
+pub(crate) fn workspace_show(world: &mut World, routes: &[u64]) {
+    let known = workspace_items(world);
+    let visible = routes
+        .iter()
+        .copied()
+        .filter(|r| known.iter().any(|i| i.route == *r))
+        .collect();
+    if let Some(deck) = world.resource_mut::<Deck>() {
+        deck.workspace_visible = visible;
+    }
 }
 /// Swap the synchronous projection context, not UI entities or documents.
 fn swap(world: &mut World, target: u64) -> bool {
@@ -167,6 +256,40 @@ fn swap(world: &mut World, target: u64) -> bool {
         .parked
         .insert(old, Parked { model, ui });
     true
+}
+pub(crate) fn workspace_can_deactivate(world: &World) -> bool {
+    let Some(docs) = world.resource::<SourceDocuments>() else {
+        return true;
+    };
+    let current = world
+        .resource::<Model>()
+        .is_some_and(|m| docs.get(m.document).is_some_and(|d| d.is_composing()));
+    !current
+        && world.resource::<Deck>().is_none_or(|deck| {
+            deck.parked
+                .values()
+                .all(|p| docs.get(p.model.document).is_none_or(|d| !d.is_composing()))
+        })
+}
+pub(crate) fn workspace_open(world: &mut World, owner: &str, session: &str) -> bool {
+    if session.starts_with("pending:") || !workspace_can_deactivate(world) {
+        return false;
+    }
+    if let Some(item) = workspace_items(world)
+        .into_iter()
+        .find(|i| i.owner == owner && i.session.as_deref() == Some(session))
+    {
+        return workspace_focus(world, item.route);
+    }
+    // The normal opener uses the authoritative session catalog. Never let its
+    // lookup choose another daemon when a persisted reference names an owner.
+    if crate::workshops::owner(world, Some(session)).as_deref() != Some(owner) {
+        return false;
+    }
+    open(world, Some(session.into()));
+    workspace_items(world)
+        .iter()
+        .any(|i| i.owner == owner && i.session.as_deref() == Some(session))
 }
 fn composing(world: &World) -> bool {
     let m = world.resource::<Model>().unwrap();
@@ -270,7 +393,7 @@ pub(super) fn focus_entity(world: &mut World, mut entity: Entity) {
 /// Resolve only visible composer cards, never an offscreen retained tab.
 /// Path-only native drops intentionally target the currently focused chat.
 pub(super) fn drop_target(world: &World, point: Option<[f32; 2]>) -> Option<Entity> {
-    if crate::surfaces::active(world) != crate::surfaces::SurfaceId::Chat {
+    if crate::surfaces::effective(world) != crate::surfaces::SurfaceId::Chat {
         return None;
     }
     let current = world.resource::<Ui>()?;
@@ -852,21 +975,32 @@ pub(super) fn sync_all(world: &mut World) {
         register(world);
     }
     let old = current(world);
-    let routes: Vec<_> = snapshot(world)
-        .layout
-        .groups
-        .iter()
-        .filter_map(|g| g.active_tab_id.as_deref().and_then(route))
-        .filter(|r| *r != old)
-        .collect();
+    let workspace = crate::surfaces::active(world) == crate::surfaces::SurfaceId::Workspace;
+    let routes: Vec<_> = if workspace {
+        world.resource::<Deck>().unwrap().workspace_visible.clone()
+    } else {
+        snapshot(world)
+            .layout
+            .groups
+            .iter()
+            .filter_map(|g| g.active_tab_id.as_deref().and_then(route))
+            .collect()
+    };
+    let mut painted = std::collections::HashSet::new();
     // Paint each retained view against its own context; focused shared chrome
     // is deliberately painted last. No editor or timeline is remounted.
     for r in routes {
-        swap(world, r);
-        sync(world);
+        if r != old && painted.insert(r) && swap(world, r) {
+            sync(world);
+        }
     }
     swap(world, old);
     sync(world);
+    // The coordinator owns mixed-layout parents and visibility, including chats
+    // which are not selected in the focused Chat surface's ShellCore topology.
+    if workspace {
+        return;
+    }
     let snap = snapshot(world);
     let empty = world.resource::<Deck>().unwrap().empty;
     let no_tabs = snap.layout.tabs.is_empty()
@@ -1117,6 +1251,97 @@ mod tests {
             .text()
             .to_string()
     }
+    #[test]
+    fn workspace_catalog_and_focus_keep_canonical_drafts_and_entities() {
+        let mut app = fixture();
+        let a = loaded(&mut app, "a");
+        text(app.world_mut(), "draft a");
+        let root_a = app.world().resource::<Ui>().unwrap().content;
+        let b = loaded(&mut app, "b");
+        text(app.world_mut(), "draft b");
+        let root_b = app.world().resource::<Ui>().unwrap().content;
+        let items = workspace_items(app.world());
+        assert_eq!(items.iter().find(|i| i.route == a).unwrap().entity, root_a);
+        assert_eq!(
+            items
+                .iter()
+                .find(|i| i.route == b)
+                .unwrap()
+                .session
+                .as_deref(),
+            Some("b")
+        );
+        assert!(workspace_focus(app.world_mut(), a));
+        assert_eq!(draft(app.world()), "draft a");
+        assert_eq!(app.world().resource::<Ui>().unwrap().content, root_a);
+        assert!(!workspace_focus(app.world_mut(), u64::MAX));
+        assert_eq!(current(app.world()), a);
+        assert!(workspace_focus(app.world_mut(), b));
+        assert_eq!(draft(app.world()), "draft b");
+        assert_eq!(app.world().resource::<Ui>().unwrap().content, root_b);
+        workspace_new(app.world_mut());
+        let new = current(app.world());
+        let items = workspace_items(app.world());
+        let draft_item = items.iter().find(|i| i.route == new).unwrap();
+        assert_eq!(draft_item.title, "New chat");
+        assert!(draft_item.session.is_none());
+    }
+
+    #[test]
+    fn workspace_sync_does_not_reclaim_borrowed_roots_or_visibility() {
+        use crate::surfaces::{self, SurfaceId};
+        let mut app = fixture();
+        let a = loaded(&mut app, "a");
+        let view_a = *app.world().resource::<Ui>().unwrap();
+        let b = loaded(&mut app, "b");
+        let view_b = *app.world().resource::<Ui>().unwrap();
+        let original_a = app.world().get::<Parent>(view_a.content).unwrap().entity;
+        let original_b = app.world().get::<Parent>(view_b.content).unwrap().entity;
+        let topology = snapshot(app.world()).layout;
+        surfaces::select(app.world_mut(), SurfaceId::Workspace);
+        let host = container(app.world_mut(), None, Layout::row());
+        for root in [view_a.content, view_b.content] {
+            set_parent(app.world_mut(), root, host);
+            app.world_mut().remove::<Hidden>(root);
+        }
+        workspace_show(app.world_mut(), &[a, b, a, u64::MAX]);
+        reply(
+            app.world_mut(),
+            Reply {
+                generation: a,
+                update: Update::Notice("Background workspace update".into()),
+            },
+        );
+        sync_all(app.world_mut());
+        assert_eq!(current(app.world()), b);
+        assert_eq!(snapshot(app.world()).layout, topology);
+        for root in [view_a.content, view_b.content] {
+            assert_eq!(app.world().get::<Parent>(root).unwrap().entity, host);
+            assert!(!app.world().has::<Hidden>(root));
+        }
+        assert_eq!(
+            app.world().get::<Label>(view_a.status).unwrap().text,
+            "Background workspace update"
+        );
+        // Hidden mixed tabs stay hidden too, even when they are the canonical
+        // current chat. The mixed coordinator remains the only visibility owner.
+        app.world_mut().insert(view_b.content, Hidden);
+        workspace_show(app.world_mut(), &[a]);
+        sync_all(app.world_mut());
+        assert!(app.world().has::<Hidden>(view_b.content));
+        set_parent(app.world_mut(), view_a.content, original_a);
+        set_parent(app.world_mut(), view_b.content, original_b);
+        workspace_show(app.world_mut(), &[]);
+        surfaces::select(app.world_mut(), SurfaceId::Chat);
+        sync_all(app.world_mut());
+        assert_eq!(
+            app.world().get::<Parent>(view_b.content).unwrap().entity,
+            original_b
+        );
+        assert!(!app.world().has::<Hidden>(view_b.content));
+        assert!(app.world().has::<Hidden>(view_a.content));
+    }
+
     #[test]
     fn background_initial_runtime_creation_does_not_open_menu_over_another_tab() {
         let mut app = fixture();

@@ -1744,3 +1744,44 @@ fn navigation_heading_scrolls_to_offscreen_duplicate_in_preview() {
         body
     );
 }
+
+#[test]
+fn workspace_reparents_complete_note_without_losing_draft_or_document() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "saved", Some("v1"));
+    edit(w, "a.md", "unsaved draft");
+    load(w, "b.md", "other", Some("v2"));
+    let items = workspace_items(w);
+    let item = items.iter().find(|i| i.path == "a.md").unwrap();
+    assert!(item.dirty);
+    let entity = item.entity;
+    let view = &w.resource::<Notes>().unwrap().views["a.md"];
+    let document = view.document;
+    let source = view.handle.root;
+    let rich = view.rich.root;
+    let preview = view.preview;
+    assert!(children_of(w, entity).contains(&source));
+    assert!(children_of(w, entity).contains(&rich));
+    assert!(children_of(w, entity).contains(&preview));
+    let home = w.resource::<Notes>().unwrap().editors.unwrap();
+    let workspace = w.spawn((Layout::column(),));
+    set_parent(w, entity, workspace);
+    workspace_show(w, &["a.md".into(), "b.md".into()]);
+    tick(w);
+    assert!(!w.has::<Hidden>(entity));
+    assert!(workspace_focus(w, "a.md"));
+    assert!(!workspace_focus(w, "missing.md"));
+    assert_eq!(
+        w.resource::<Notes>().unwrap().selected.as_deref(),
+        Some("a.md")
+    );
+    workspace_show(w, &[]);
+    set_parent(w, entity, home);
+    tick(w);
+    let n = w.resource::<Notes>().unwrap();
+    assert_eq!(n.views["a.md"].root, entity);
+    assert_eq!(n.views["a.md"].document, document);
+    assert_eq!(n.core.get("a.md").unwrap().content, "unsaved draft");
+    assert!(n.core.get("a.md").unwrap().dirty);
+}

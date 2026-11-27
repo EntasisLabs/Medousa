@@ -28,7 +28,7 @@ pub const SIDE_DEFAULT: f32 = 288.;
 pub const SIDE_MIN: f32 = 200.;
 pub const SIDE_MAX: f32 = 480.;
 /// Sidebars of the non-chat destinations, by surface name.
-pub const SIDE_NAMES: [&str; 9] = [
+pub const SIDE_NAMES: [&str; 10] = [
     "notes",
     "code",
     "create",
@@ -38,6 +38,7 @@ pub const SIDE_NAMES: [&str; 9] = [
     "settings",
     "artifacts",
     "terminal",
+    "workspace",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -47,7 +48,7 @@ pub struct Preferences {
     pub sidebar_open: bool,
     pub details_open: bool,
     /// Non-chat destinations, in [`SIDE_NAMES`] order.
-    pub sides: [Side; 9],
+    pub sides: [Side; 10],
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -56,7 +57,7 @@ impl Default for Preferences {
             chat_ratio: 0.68,
             sidebar_open: true,
             details_open: false,
-            sides: [Side::default(); 9],
+            sides: [Side::default(); 10],
         }
     }
 }
@@ -398,7 +399,7 @@ mod tests {
             sidebar_open: false,
             details_open: true,
             sides: {
-                let mut sides = [Side::default(); 9];
+                let mut sides = [Side::default(); 10];
                 sides[0] = Side {
                     open: false,
                     width: 340.,

@@ -279,6 +279,25 @@ pub fn mount(w: &mut World, parent: Entity) {
     })));
 }
 
+/// The canonical open canvas, without destination navigation chrome.
+pub(crate) fn workspace_item(w: &World) -> Option<(String, Entity)> {
+    let s = state(w)?;
+    Some((s.open.clone()?, s.editor))
+}
+/// Create has one canonical canvas. Switching it must not abandon edits or requests.
+/// A successful return means the exact Get was accepted, not that it exists remotely.
+pub(crate) fn workspace_open(w: &mut World, document_id: &str) -> bool {
+    if document_id.is_empty() || state(w).is_none() {
+        return false;
+    }
+    if state(w).is_some_and(|s| s.open.as_deref() == Some(document_id)) {
+        return true;
+    }
+    if !can_rebind(w) {
+        return false;
+    }
+    with_state(w, |_, s| s.open(document_id.to_owned())).is_some()
+}
 pub fn activate(w: &mut World) {
     if let Some(s) = state_mut(w) {
         // Every return re-lists: projects may have been made or renamed in
@@ -390,13 +409,13 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
 /// else (the sidebar, a dialog) holds focus, so tool letters never fire while
 /// you type elsewhere.
 pub fn take_wheel(w: &mut World) {
-    if crate::surfaces::active(w) == crate::surfaces::SurfaceId::Create {
+    if crate::surfaces::effective(w) == crate::surfaces::SurfaceId::Create {
         canvas_view::take_wheel(w);
     }
 }
 
 pub fn sync(w: &mut World) {
-    let active = crate::surfaces::active(w) == crate::surfaces::SurfaceId::Create;
+    let active = crate::surfaces::effective(w) == crate::surfaces::SurfaceId::Create;
     if active
         && state(w).and_then(|s| s.open.as_deref()).is_some_and(|id| {
             w.resource::<CanvasView>()
@@ -938,3 +957,28 @@ fn apply_update(w: &mut World, s: &mut State, u: Update) {
 #[cfg(test)]
 #[path = "create_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod workspace_open_tests {
+    use super::*;
+    #[test]
+    fn workspace_open_exact_canvas_without_navigation_and_preserves_draft() {
+        let mut app = crate::ui::app();
+        app.update();
+        let w = app.world_mut();
+        let before = crate::surfaces::active(w);
+        assert!(workspace_open(w, "exact-document"));
+        assert_eq!(crate::surfaces::active(w), before);
+        assert!(
+            state(w)
+                .unwrap()
+                .queue
+                .iter()
+                .any(|c| matches!(&c.kind, Kind::Get(id) if id == "exact-document"))
+        );
+        state_mut(w).unwrap().ask.draft = "unsent prompt".into();
+        assert!(!workspace_open(w, "different-document"));
+        assert_eq!(state(w).unwrap().open.as_deref(), Some("exact-document"));
+        assert!(workspace_open(w, "exact-document"));
+    }
+}
