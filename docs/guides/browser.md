@@ -1,5 +1,43 @@
 # Browser surfaces
 
+## Native macOS device browser
+
+The RNDR-based native app has a **Browser** destination (the globe icon).
+This is the device browser, not a workshop-owned or agent-controlled browser
+world. If hidden by your saved navigation layout, enable **Browser** in the
+existing navigation editor.
+
+- Use **+** for a new tab, select a tab to return to it, or **×** to close it.
+  Closing the last tab leaves a fresh blank tab. Up to 16 tabs can stay open;
+  tabs can be dragged to reorder; overflow controls appear when they no longer fit.
+- Enter an HTTP(S) address or a search and press **Enter**. Bare domain
+  names use HTTPS; `localhost:port` and `127.0.0.1:port` use HTTP. Searches use
+  Google. Custom schemes, local-file addresses, and embedded URL credentials
+  are refused by the address bar.
+- **Back**, **Forward**, **Reload**, and **Stop** operate on the selected tab.
+  Reload switches to Stop while loading, and unavailable history controls are
+  disabled. Routine status text stays out of the toolbar; errors remain visible.
+  Navigation updates the address when you are not editing it.
+- Tabs keep their page state when switching destinations. The page is hidden
+  while another destination, modal, or host popup is active so it cannot cover
+  or intercept those controls. Tabs are not restored after quitting the app.
+- Downloads require a native save dialog. Uploads require choosing local files
+  in a native file dialog. Cancelling selects no files or download destination;
+  requests from inactive/covered tabs are cancelled. These are files on the
+  device running Medousa, not the selected workshop's disk.
+
+Ordinary browsing uses RNDR's `Browser`; saved HTML artifacts continue to use
+its separate isolated `ArtifactPreview`. No workshop transport credentials,
+Medousa command bridge, or agent browser-tool access are installed in a page.
+The `native-browser` Cargo feature can be built independently of the private
+WebKit artifact feature. Unsupported builds show an explicit unavailable state.
+
+This initial native view does not implement workshop-world selection,
+find-in-page, host JavaScript evaluation, or cross-restart tab restoration.
+Popup/new-window behavior and login persistence follow the RNDR backend and
+need native interactive validation; this is not full Tauri-browser parity.
+
+
 ## Choose where a governed browser runs
 
 In Medousa's **Browser** view, open the browser-world selector and choose the

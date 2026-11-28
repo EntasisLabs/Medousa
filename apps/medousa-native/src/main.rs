@@ -4,6 +4,7 @@ mod bot_assets;
 mod nav_layout;
 mod approvals;
 mod artifact_preview;
+mod browser;
 mod artifacts;
 mod attachments;
 mod auxiliary;
@@ -39,7 +40,20 @@ mod ui;
 mod workshops;
 mod workspace;
 
+const APP_ICON: &[u8] =
+    include_bytes!("../../medousa-home/static/brand/app-icons/png/medousa-icon-1024.png");
+
+#[test]
+fn embedded_app_icon_is_square_and_accepted_by_rndr() {
+    let icon = image::load_from_memory(APP_ICON).unwrap();
+    assert_eq!((icon.width(), icon.height()), (1024, 1024));
+    rndr_render::set_app_icon(APP_ICON.to_vec()).unwrap();
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Embed the shared brand asset so Cargo launches also get the Dock icon.
+    rndr_render::set_app_icon(APP_ICON.to_vec())
+        .map_err(|error| std::io::Error::other(format!("Invalid embedded app icon: {error:?}")))?;
     medousa_desktop_host::paths::load_env_overlay();
     let mut app = ui::app();
     // Device chrome is local; it must not follow a daemon or legacy selection.
@@ -53,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     workshops::install(app.world_mut());
     let layouts = multiplexer::storage(app.world());
     rndr_render::Session::new(app)
-        .native_host(|_| Box::new(artifact_preview::Host::default()))
+        .native_host(|_| Box::new(browser::Host::default()))
         .run();
     // UI is closed: the bounded flush never blocks an interactive or async task.
     if let Some(layouts) = layouts {

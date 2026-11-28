@@ -10,9 +10,11 @@ publish = false
 [features]
 # Artifacts are a core Medousa feature; RNDR itself keeps this backend opt-in.
 # Use --no-default-features for a build without native HTML preview.
-default = ["macos-private-webkit-artifacts"]
+default = ["native-browser", "macos-private-webkit-artifacts"]
+# Ordinary device browsing uses public WebKit APIs, independently of artifacts.
+native-browser = ["dep:rndr_browser"]
 # Private WebKit SPI: not App Store/public-API-only.
-macos-private-webkit-artifacts = ["dep:rndr_browser", "rndr_browser/macos-private-webkit-artifacts"]
+macos-private-webkit-artifacts = ["native-browser", "rndr_browser/macos-private-webkit-artifacts"]
 
 [dependencies]
 regex = "1"

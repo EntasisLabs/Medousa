@@ -7,6 +7,24 @@ cd apps/medousa-native
 cargo run
 ```
 
+The app embeds the shared Medousa icon and sets it through RNDR's lifecycle
+API, including when launched with Cargo. To package a local macOS app with a
+Finder/Dock icon, run from the repository root:
+
+```sh
+sh scripts/package-native-macos.sh
+```
+
+This builds a release executable and creates
+`../.cache/cargo-target/bundle/Medousa.app`, with a multi-resolution `.icns`
+generated from the tracked `medousa-home/static/brand/app-icons/png/medousa-icon-1024.png`.
+No Desktop assets or Tauri build are required. The bundle is ad-hoc signed for
+local use, not Developer ID signed or notarized for distribution. It will not
+overwrite an existing bundle: move that bundle aside before repackaging. Quit
+the current native app normally before opening the bundle; the script does not
+restart the app or daemon. Launch/pin this `.app` for the persistent Dock icon,
+rather than pinning a bare Cargo executable.
+
 Uses the sibling RNDR checkout at `../../../../rndr`, shared
 `medousa-app-core`, and the shared desktop-host saved-connection and trusted-pairing
 paths. On launch it attaches to saved sources concurrently, without a global

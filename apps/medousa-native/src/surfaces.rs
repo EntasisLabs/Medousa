@@ -25,8 +25,9 @@ const ARTIFACTS: u64 = 0x5355_0009;
 const TERMINAL: u64 = 0x5355_000a;
 const WORKSPACE: u64 = 0x5355_000b;
 // Bot conversations have a retained view, but no extra rail destination.
-const SURFACE_COUNT: usize = 11;
-const VIEW_COUNT: usize = 12;
+const WEB: u64 = 0x5355_000c;
+const SURFACE_COUNT: usize = 12;
+const VIEW_COUNT: usize = 13;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SurfaceId {
     Chat,
@@ -40,6 +41,7 @@ pub enum SurfaceId {
     Artifacts,
     Terminal,
     Workspace,
+    Web,
     Bots,
 }
 impl SurfaceId {
@@ -56,7 +58,8 @@ impl SurfaceId {
             Self::Artifacts => 8,
             Self::Terminal => 9,
             Self::Workspace => 10,
-            Self::Bots => 11,
+            Self::Web => 11,
+            Self::Bots => 12,
         }
     }
 }
@@ -186,6 +189,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         (ARTIFACTS, Icon::Code, "Artifacts"),
         (TERMINAL, Icon::Code, "Terminal"),
         (WORKSPACE, Icon::Code, "Workspace"),
+        (WEB, Icon::Globe, "Browser"),
     ] {
         let tile = panel(
             world,
@@ -295,6 +299,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         "Artifacts",
         "Terminal",
         "Workspace",
+        "Browser",
         "Bots",
     ]
     .map(|name| {
@@ -320,6 +325,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     crate::artifacts::mount(world, roots[8]);
     crate::terminal::mount_view(world, roots[9]);
     crate::multiplexer::mount(world, roots[10]);
+    crate::browser::mount(world, roots[11]);
     for root in &roots[1..] {
         world.insert(*root, Hidden);
     }
@@ -349,7 +355,7 @@ pub fn settings_to_foot(world: &mut World) {
     }
 }
 /// Native-supported destinations; persisted IDs match the shared environment.
-pub(crate) const DESTINATIONS: [(SurfaceId, &str, &str); 11] = [
+pub(crate) const DESTINATIONS: [(SurfaceId, &str, &str); 12] = [
     (SurfaceId::Workspace, "home", "Workspace"),
     (SurfaceId::Chat, "chat", "Chat"),
     (SurfaceId::Notes, "notes", "Notes"),
@@ -361,6 +367,7 @@ pub(crate) const DESTINATIONS: [(SurfaceId, &str, &str); 11] = [
     (SurfaceId::Peers, "peers", "Peers"),
     (SurfaceId::Artifacts, "artifacts", "Artifacts"),
     (SurfaceId::Settings, "settings", "Settings"),
+    (SurfaceId::Web, "web", "Browser"),
 ];
 pub(crate) fn configure_rail(world: &mut World, ordered: &[(String, bool)]) {
     let Some(host) = world.resource::<SurfaceHost>() else {
@@ -492,7 +499,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Peers => !crate::peers::can_deactivate(world),
         SurfaceId::Settings => !crate::settings::can_deactivate(world),
         SurfaceId::Artifacts => crate::artifacts::composing(world),
-        SurfaceId::Terminal => false,
+        SurfaceId::Terminal | SurfaceId::Web => false,
         SurfaceId::Workspace => !crate::multiplexer::can_deactivate(world),
     };
     if composing {
@@ -529,7 +536,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Artifacts => crate::artifacts::activate(world),
         SurfaceId::Terminal => crate::terminal::activate(world),
         SurfaceId::Workspace => crate::multiplexer::activate(world),
-        SurfaceId::Bots => {}
+        SurfaceId::Bots | SurfaceId::Web => {}
     }
     frame_wake(world).wake();
 }
@@ -546,6 +553,7 @@ pub fn action(world: &mut World, intent: &HostIntent) -> bool {
         HostIntent::Command(ARTIFACTS) => SurfaceId::Artifacts,
         HostIntent::Command(TERMINAL) => SurfaceId::Terminal,
         HostIntent::Command(WORKSPACE) => SurfaceId::Workspace,
+        HostIntent::Command(WEB) => SurfaceId::Web,
         _ => return false,
     };
     select(world, target);
@@ -687,6 +695,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4], filled: bool) -> rndr_render
             include_str!("nav_icons/artifacts-filled.svg"),
             include_str!("nav_icons/terminal-filled.svg"),
             include_str!("nav_icons/workspace-filled.svg"),
+            include_str!("nav_icons/globe-filled.svg"),
         ][index]
     } else {
         [
@@ -701,6 +710,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4], filled: bool) -> rndr_render
             include_str!("nav_icons/artifacts.svg"),
             include_str!("nav_icons/terminal.svg"),
             include_str!("nav_icons/workspace.svg"),
+            include_str!("nav_icons/globe.svg"),
         ][index]
     };
     let color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
@@ -884,7 +894,8 @@ mod tests {
                             "Settings",
                             "Artifacts",
                             "Terminal",
-                            "Workspace"
+                            "Workspace",
+                            "Browser"
                         ][i]
                     )
                 );

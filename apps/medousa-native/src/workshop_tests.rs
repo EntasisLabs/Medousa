@@ -50,7 +50,7 @@ fn choose(app: &mut App, view: SurfaceId, source: u64) {
         SurfaceId::Settings => 7,
         SurfaceId::Artifacts => 8,
         SurfaceId::Terminal => 9,
-        SurfaceId::Workspace | SurfaceId::Bots => {
+        SurfaceId::Workspace | SurfaceId::Bots | SurfaceId::Web => {
             panic!("View does not have a global workshop binding")
         }
     };

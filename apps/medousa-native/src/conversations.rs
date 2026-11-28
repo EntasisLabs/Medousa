@@ -1686,9 +1686,15 @@ mod tests {
                 app.update();
             }
             let w = app.world();
-            for (tab, _) in w.query::<Tab>() {
-                let r = w.get::<Rect>(tab).unwrap();
-                assert!(r.h <= chrome::HEIGHT);
+            // Browser tabs are retained under a hidden surface too; this
+            // assertion is about the chat's window-titlebar integration.
+            for cached in w.resource::<Deck>().unwrap().strip_cache.iter().flatten() {
+                for tab in children_of(w, cached.3.list) {
+                    if w.has::<Tab>(tab) {
+                        let r = w.get::<Rect>(tab).unwrap();
+                        assert!(r.h <= chrome::HEIGHT);
+                    }
+                }
             }
         }
         action(app.world_mut(), JOIN);

@@ -56,7 +56,7 @@ Assistant runtime: [Batch-stop workers, jobs and follow-ups](engine/agent-tools.
 | [VS Code](guides/vscode.md) | Medousa chat, editor context, and workshop sessions in VS Code |
 | [Neovim](guides/neovim.md) | Keyboard-first coding room with contextual chat and safe code application |
 | [Obsidian](guides/obsidian.md) | Vault-native Medousa chat and bounded note context |
-| [Browser](guides/browser.md) | Choose governed workshop worlds, review activity, or use the Chromium companion |
+| [Browser](guides/browser.md) | Use the native macOS device browser, choose governed workshop worlds, review activity, or use the Chromium companion |
 | [Web in Medousa](guides/web-in-medousa.md) | Choose a workshop or device browser, take control, and keep identities separate |
 | [Secure credential handoff](guides/secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for addressed conversations, approvals, notes, Web, and views |

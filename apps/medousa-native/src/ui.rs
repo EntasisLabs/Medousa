@@ -235,6 +235,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Update, workshop_status::update);
     app.add_system(Schedule::Update, command_palette::update);
     app.add_system(Schedule::Update, crate::settings::update);
+    app.add_system(Schedule::Update, crate::browser::update);
     app.add_system(Schedule::Layout, workspace::chrome);
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
     app.add_system(Schedule::Layout, crate::calendar::chrome);
@@ -249,6 +250,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Layout, crate::sidebars::sync);
     app.add_system(Schedule::Layout, chrome::polish);
     app.add_system(Schedule::Layout, visual::action_icons);
+    app.add_system(Schedule::Layout, crate::browser::layout);
     app.add_system(Schedule::Layout, visual::borders);
     app.add_system(Schedule::Layout, visual::quiet_chrome);
     app
@@ -1499,7 +1501,7 @@ fn update(world: &mut World) {
                 }
                 continue;
             }
-            crate::surfaces::SurfaceId::Workspace => continue,
+            crate::surfaces::SurfaceId::Workspace | crate::surfaces::SurfaceId::Web => continue,
             crate::surfaces::SurfaceId::Chat | crate::surfaces::SurfaceId::Bots => {}
         }
         conversations::focus_entity(world, intent.entity);
